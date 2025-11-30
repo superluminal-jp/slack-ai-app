@@ -49,9 +49,10 @@ See [quickstart.md](specs/001-slack-bedrock-mvp/quickstart.md) for detailed depl
 ### Quick Deploy
 
 ```bash
-# 1. Configure environment variables
-cp .env.example .env
-# Edit .env with your Slack credentials and AWS region
+# 1. Configure environment variables (first deployment only)
+export SLACK_SIGNING_SECRET=your-signing-secret
+export SLACK_BOT_TOKEN=your-bot-token
+# Or use .env file - see quickstart.md for details
 
 # 2. Install dependencies
 cd cdk && npm install
@@ -101,12 +102,29 @@ slack-ai-app/
 
 ## Environment Variables
 
-See `.env.example` for required environment variables:
+### Initial Deployment
 
-- `SLACK_SIGNING_SECRET`: Slack app signing secret
-- `SLACK_BOT_TOKEN`: Slack bot OAuth token
-- `AWS_REGION_NAME`: AWS region (e.g., `ap-northeast-1`)
-- `BEDROCK_MODEL_ID`: Bedrock model ID (e.g., `amazon.nova-pro-v1:0`)
+For the **first deployment only**, you need to set the following environment variables so that CDK can create the secrets in AWS Secrets Manager:
+
+- `SLACK_SIGNING_SECRET`: Slack app signing secret (from Slack App settings)
+- `SLACK_BOT_TOKEN`: Slack bot OAuth token (from Slack App installation)
+
+After the first deployment, these environment variables are no longer needed. The secrets are stored securely in AWS Secrets Manager and are automatically used by Lambda functions.
+
+### Other Configuration
+
+- `AWS_REGION_NAME`: AWS region (e.g., `ap-northeast-1`) - configured in `cdk.json`
+- `BEDROCK_MODEL_ID`: Bedrock model ID (e.g., `amazon.nova-pro-v1:0`) - configured in `cdk.json`
+
+### Secrets Management
+
+Secrets are managed using **AWS Secrets Manager**:
+
+- Secrets are created automatically during CDK deployment
+- Secrets are encrypted at rest using AWS managed keys
+- Lambda functions are granted read-only access to secrets
+- Secrets are automatically injected as environment variables in Lambda functions
+- To update secrets after deployment, use AWS CLI or AWS Console (see [quickstart.md](specs/001-slack-bedrock-mvp/quickstart.md) for details)
 
 ## Documentation
 
@@ -197,9 +215,10 @@ See [quickstart.md](specs/001-slack-bedrock-mvp/quickstart.md#troubleshooting) f
 
 ### Common Issues
 
-- **Slack verification fails**: Check Lambda Function URL and `SLACK_SIGNING_SECRET`
+- **Slack verification fails**: Check Lambda Function URL and verify the secret value in AWS Secrets Manager
 - **Bot doesn't respond**: Verify Event Subscriptions are enabled and bot is installed
 - **Bedrock errors**: Check IAM permissions and model access in AWS Console
+- **Secret access errors**: Ensure Lambda function has permission to read secrets (should be automatically granted by CDK)
 
 ## License
 

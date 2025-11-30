@@ -34,7 +34,7 @@ Create a minimal Slack bot that integrates with Amazon Bedrock to provide AI-gen
 | Principle | MVP Status | Compliance | Justification |
 |-----------|-----------|------------|---------------|
 | I. Security-First Architecture | ⚠️ PARTIAL VIOLATION | HMAC SHA256 signature verification: YES<br>Authorization checks: DEFERRED<br>Input sanitization: DEFERRED<br>AI protections (Guardrails, PII): DEFERRED | **VIOLATION JUSTIFIED**: Spec explicitly states "ベストプラクティスに従った構成や要件は全て後回しに" (defer all best practices). MVP prioritizes basic connectivity. Signature verification included as minimum security. Full multi-layer defense deferred to post-MVP. |
-| II. Non-Blocking Async Processing | ✅ COMPLIANT | Must implement async pattern | Slack's 3-second timeout and Bedrock's 5-30 second latency mandate async processing (Lambda① acknowledgment + Lambda② background processing). |
+| II. Non-Blocking Async Processing | ✅ COMPLIANT | Must implement async pattern | Slack's 3-second timeout and Bedrock's 5-30 second latency mandate async processing (Slack Event Handler acknowledgment + Bedrock Processor background processing). |
 | III. Context History Management | ⚠️ VIOLATION | DEFERRED | **VIOLATION JUSTIFIED**: Spec explicitly lists "Multi-turn conversations with context retention" and "Conversation history storage" as Out of Scope. Single-turn interactions only for MVP. |
 | IV. Observability & Monitoring | ⚠️ PARTIAL VIOLATION | Basic CloudWatch: YES<br>Structured JSON logs: DEFERRED<br>Correlation IDs: DEFERRED<br>PII filtering in logs: DEFERRED | **VIOLATION JUSTIFIED**: Spec defers "Comprehensive monitoring and alerting" to post-MVP. Basic CloudWatch logs sufficient for MVP debugging. |
 | V. Error Handling & Resilience | ✅ PARTIAL COMPLIANT | Basic error handling: YES<br>Production-grade retry logic: DEFERRED | Spec requires "graceful error handling" (User Story 3, P2) with user-friendly messages. Advanced retry logic explicitly deferred. |
@@ -79,8 +79,8 @@ cdk/
 ├── lib/
 │   ├── slack-bedrock-stack.ts     # CDK infrastructure stack
 │   ├── constructs/
-│   │   ├── slack-event-handler.ts  # Lambda① construct
-│   │   ├── bedrock-processor.ts    # Lambda② construct
+│   │   ├── slack-event-handler.ts  # Slack Event Handler construct
+│   │   ├── bedrock-processor.ts    # Bedrock Processor construct
 │   │   └── token-storage.ts        # DynamoDB construct
 │   └── config/
 │       └── env.ts                  # Environment configuration
@@ -90,13 +90,13 @@ cdk/
     └── slack-bedrock-stack.test.ts
 
 lambda/
-├── slack-event-handler/            # Lambda① - receives Slack events
+├── slack-event-handler/            # Slack Event Handler - receives Slack events
 │   ├── handler.py                  # Main Lambda handler
 │   ├── slack_verifier.py           # HMAC SHA256 signature verification
 │   ├── requirements.txt
 │   └── tests/
 │       └── test_handler.py
-└── bedrock-processor/              # Lambda② - processes with Bedrock
+└── bedrock-processor/              # Bedrock Processor - processes with Bedrock
     ├── handler.py                  # Main Lambda handler
     ├── bedrock_client.py           # Bedrock API wrapper
     ├── slack_poster.py             # Posts response to Slack
@@ -141,7 +141,7 @@ README.md                           # Repository documentation
 - ✅ quickstart.md: Deployment and testing guide with troubleshooting
 
 **Architecture Decisions**:
-1. **Async Processing**: Lambda① (event handler) + Lambda② (Bedrock processor) pattern confirmed
+1. **Async Processing**: Slack Event Handler (event handler) + Bedrock Processor (Bedrock processor) pattern confirmed
 2. **Storage**: DynamoDB with AWS-managed encryption (not KMS CMK) for workspace tokens only
 3. **Model**: Claude 3 Haiku for speed (1-3 seconds) within 10-second constraint
 4. **Event Delivery**: Lambda Function URL (no API Gateway) for simplicity
@@ -152,7 +152,7 @@ README.md                           # Repository documentation
 | Principle | Status Change | Notes |
 |-----------|---------------|-------|
 | I. Security-First Architecture | ⚠️ No change (PARTIAL VIOLATION) | HMAC SHA256 signature verification designed in contracts/. Timestamp validation (±5 minutes) specified. AI protections remain deferred. |
-| II. Non-Blocking Async | ✅ No change (COMPLIANT) | Dual-Lambda architecture confirmed in data-model.md. Lambda① <3s acknowledgment, Lambda② async Bedrock processing. |
+| II. Non-Blocking Async | ✅ No change (COMPLIANT) | Dual-Lambda architecture confirmed in data-model.md. Slack Event Handler <3s acknowledgment, Bedrock Processor async Bedrock processing. |
 | III. Context History | ⚠️ No change (VIOLATION) | Single-turn only confirmed. DynamoDB schema in data-model.md excludes context history table. |
 | IV. Observability | ⚠️ No change (PARTIAL VIOLATION) | Basic CloudWatch only. No structured logging designed. Correlation IDs deferred. |
 | V. Error Handling | ✅ No change (PARTIAL COMPLIANT) | Error message catalog defined in research.md (7 user-friendly messages). Graceful degradation confirmed. |

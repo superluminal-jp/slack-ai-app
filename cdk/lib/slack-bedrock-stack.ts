@@ -1,4 +1,5 @@
 import * as cdk from "aws-cdk-lib";
+import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import { Construct } from "constructs";
 import { SlackEventHandler } from "./constructs/slack-event-handler";
 import { TokenStorage } from "./constructs/token-storage";
@@ -9,17 +10,31 @@ export class SlackBedrockStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // Get Slack Bot Token from environment variable
+    // Get Slack Bot Token from environment variable (required for initial secret creation)
     const slackBotToken = process.env.SLACK_BOT_TOKEN;
     if (!slackBotToken) {
-      throw new Error("SLACK_BOT_TOKEN environment variable is required");
+      throw new Error("SLACK_BOT_TOKEN environment variable is required for initial deployment");
     }
 
-    // Get Slack Signing Secret from environment variable
+    // Get Slack Signing Secret from environment variable (required for initial secret creation)
     const slackSigningSecret = process.env.SLACK_SIGNING_SECRET;
     if (!slackSigningSecret) {
-      throw new Error("SLACK_SIGNING_SECRET environment variable is required");
+      throw new Error("SLACK_SIGNING_SECRET environment variable is required for initial deployment");
     }
+
+    // Create Secrets Manager secrets for Slack credentials
+    // These secrets are created in the stack and will be automatically deleted when the stack is destroyed
+    const slackSigningSecretResource = new secretsmanager.Secret(this, "SlackSigningSecret", {
+      secretName: `${this.stackName}/slack/signing-secret`,
+      description: "Slack app signing secret for request verification",
+      secretStringValue: cdk.SecretValue.unsafePlainText(slackSigningSecret),
+    });
+
+    const slackBotTokenSecret = new secretsmanager.Secret(this, "SlackBotToken", {
+      secretName: `${this.stackName}/slack/bot-token`,
+      description: "Slack bot OAuth token",
+      secretStringValue: cdk.SecretValue.unsafePlainText(slackBotToken),
+    });
 
     // Get AWS Region from CDK context (cdk.json)
     const awsRegion = this.node.tryGetContext("awsRegion") || "ap-northeast-1";
@@ -42,8 +57,8 @@ export class SlackBedrockStack extends cdk.Stack {
 
     // Create Slack event handler Lambda with Function URL
     const slackEventHandler = new SlackEventHandler(this, "SlackEventHandler", {
-      slackBotToken,
-      slackSigningSecret,
+      slackSigningSecret: slackSigningSecretResource,
+      slackBotTokenSecret: slackBotTokenSecret,
       tokenTableName: tokenStorage.table.tableName,
       dedupeTableName: eventDedupe.table.tableName,
       awsRegion,

@@ -68,22 +68,42 @@ aws bedrock list-foundation-models --region us-east-1
 # Select: Anthropic → Claude 3 Haiku
 ```
 
-### 2.2 Set Environment Variables
+### 2.2 Set Environment Variables (Initial Deployment Only)
+
+For the initial deployment, you need to set environment variables so that CDK can create the secrets in AWS Secrets Manager. After the first deployment, these environment variables are no longer needed.
+
+**Option 1: Using environment variables (recommended for first deployment)**
+
+```bash
+# Set environment variables for CDK deployment
+export SLACK_SIGNING_SECRET=a1b2c3d4e5f6...  # From Step 1.3
+export SLACK_BOT_TOKEN=xoxb-...              # From Step 1.4
+```
+
+**Option 2: Using .env file**
 
 Create `.env` file in repository root:
 
 ```bash
-# Copy template
+# Copy template (if exists)
 cp .env.example .env
 
 # Edit .env with your values
 SLACK_SIGNING_SECRET=a1b2c3d4e5f6...  # From Step 1.3
 SLACK_BOT_TOKEN=xoxb-...              # From Step 1.4
-AWS_REGION=us-east-1                  # Or your preferred Bedrock region
-BEDROCK_MODEL_ID=anthropic.claude-3-haiku-20240307-v1:0
 ```
 
-**Security Note**: Never commit `.env` file to Git. It's already in `.gitignore`.
+Then load the environment variables:
+
+```bash
+# Load .env file (if using bash/zsh)
+export $(cat .env | xargs)
+```
+
+**Security Note**: 
+- Never commit `.env` file to Git. It's already in `.gitignore`.
+- After the first deployment, secrets are stored in AWS Secrets Manager and environment variables are no longer needed.
+- The secrets are automatically created in AWS Secrets Manager during CDK deployment.
 
 ---
 
@@ -108,11 +128,11 @@ cdk bootstrap aws://ACCOUNT-ID/REGION
 ### 3.3 Install Lambda Dependencies
 
 ```bash
-# Install dependencies for Lambda① (slack-event-handler)
+# Install dependencies for Slack Event Handler (slack-event-handler)
 cd ../lambda/slack-event-handler
 pip install -r requirements.txt -t .
 
-# Install dependencies for Lambda② (bedrock-processor)
+# Install dependencies for Bedrock Processor (bedrock-processor)
 cd ../bedrock-processor
 pip install -r requirements.txt -t .
 ```
@@ -124,6 +144,12 @@ cd ../../cdk
 cdk deploy --require-approval never
 ```
 
+**What happens during deployment**:
+- CDK creates AWS Secrets Manager secrets for `SLACK_SIGNING_SECRET` and `SLACK_BOT_TOKEN`
+- Secrets are stored securely in AWS Secrets Manager (encrypted at rest)
+- Lambda functions are granted permission to read the secrets
+- Secrets are automatically injected as environment variables in Lambda functions
+
 **Expected Output**:
 ```
 Outputs:
@@ -132,6 +158,24 @@ SlackBedrockStack.TokenTableName = slack-workspace-tokens
 ```
 
 **Save the Function URL** - you'll need it in Step 4.
+
+**Note**: After the first deployment, you don't need to set `SLACK_SIGNING_SECRET` and `SLACK_BOT_TOKEN` environment variables anymore. The secrets are stored in AWS Secrets Manager and will be automatically used in subsequent deployments.
+
+**Updating Secrets**: If you need to update the secret values after initial deployment, use AWS CLI or AWS Console:
+
+```bash
+# Update signing secret
+aws secretsmanager update-secret \
+  --secret-id SlackBedrockStack/slack/signing-secret \
+  --secret-string "new-signing-secret-value" \
+  --region us-east-1
+
+# Update bot token
+aws secretsmanager update-secret \
+  --secret-id SlackBedrockStack/slack/bot-token \
+  --secret-string "new-bot-token-value" \
+  --region us-east-1
+```
 
 ---
 
@@ -155,7 +199,8 @@ SlackBedrockStack.TokenTableName = slack-workspace-tokens
 
 **Troubleshooting**: If verification fails:
 - Check CloudWatch Logs: AWS Console → Lambda → slack-event-handler → Monitor → Logs
-- Verify `SLACK_SIGNING_SECRET` is correct in CDK deployment
+- Verify the secret value in AWS Secrets Manager: AWS Console → Secrets Manager → `SlackBedrockStack/slack/signing-secret`
+- Ensure Lambda function has permission to read the secret (should be automatically granted by CDK)
 
 ### 4.3 Subscribe to Bot Events
 
@@ -297,7 +342,7 @@ cat response.json
 
 **Solutions**:
 1. Verify Bedrock model access granted in AWS Console
-2. Check IAM role for Lambda② has `bedrock:InvokeModel` permission
+2. Check IAM role for Bedrock Processor has `bedrock:InvokeModel` permission
 3. Confirm region has Bedrock available:
    ```bash
    aws bedrock list-foundation-models --region us-east-1
@@ -309,8 +354,8 @@ cat response.json
 **Symptoms**: User sees timeout or delayed response
 
 **Solutions**:
-1. Check Lambda② CloudWatch metrics for duration
-2. Verify async invocation is working (Lambda① should return immediately)
+1. Check Bedrock Processor CloudWatch metrics for duration
+2. Verify async invocation is working (Slack Event Handler should return immediately)
 3. Check Bedrock model latency in CloudWatch
 4. Consider switching to faster model (already using Haiku - fastest option)
 

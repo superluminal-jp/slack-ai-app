@@ -1,12 +1,13 @@
 import * as cdk from "aws-cdk-lib";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import { Construct } from "constructs";
 import * as path from "path";
 
 export interface SlackEventHandlerProps {
-  slackBotToken: string; // Bot OAuth token from environment
-  slackSigningSecret: string; // Slack app signing secret for request verification
+  slackSigningSecret: secretsmanager.ISecret; // Slack app signing secret from Secrets Manager
+  slackBotTokenSecret: secretsmanager.ISecret; // Bot OAuth token from Secrets Manager
   tokenTableName: string; // DynamoDB table name for token storage
   dedupeTableName: string; // DynamoDB table name for event deduplication
   awsRegion: string; // AWS region (e.g., ap-northeast-1)
@@ -40,15 +41,21 @@ export class SlackEventHandler extends Construct {
       ),
       timeout: cdk.Duration.seconds(10),
       environment: {
-        SLACK_BOT_TOKEN: props.slackBotToken,
-        SLACK_SIGNING_SECRET: props.slackSigningSecret,
         TOKEN_TABLE_NAME: props.tokenTableName,
         DEDUPE_TABLE_NAME: props.dedupeTableName,
         AWS_REGION_NAME: props.awsRegion,
         BEDROCK_MODEL_ID: props.bedrockModelId,
         BEDROCK_PROCESSOR_ARN: props.bedrockProcessorArn,
+        // Store secret names (not values) in environment variables
+        // Lambda function will fetch the actual secret values from Secrets Manager at runtime
+        SLACK_SIGNING_SECRET_NAME: props.slackSigningSecret.secretName,
+        SLACK_BOT_TOKEN_SECRET_NAME: props.slackBotTokenSecret.secretName,
       },
     });
+
+    // Grant Lambda function permission to read secrets
+    props.slackSigningSecret.grantRead(this.function);
+    props.slackBotTokenSecret.grantRead(this.function);
 
     // Grant Bedrock permissions to Lambda function
     // Per AWS official documentation, use wildcard resource with optional conditions

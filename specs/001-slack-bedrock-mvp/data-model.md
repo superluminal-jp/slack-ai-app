@@ -44,7 +44,7 @@ This MVP uses minimal data persistence. Primary focus is on workspace installati
 ```
 
 **Access Patterns**:
-1. **Lookup token by workspace**: `GetItem(team_id)` - Used by Lambda① to validate workspace and retrieve bot_token
+1. **Lookup token by workspace**: `GetItem(team_id)` - Used by Slack Event Handler to validate workspace and retrieve bot_token
 2. **Store new installation**: `PutItem(team_id, bot_token, ...)` - Used by OAuth handler during installation
 3. **Update existing installation**: `UpdateItem(team_id)` - Used if user re-installs or updates scopes
 
@@ -207,13 +207,13 @@ This MVP uses minimal data persistence. Primary focus is on workspace installati
 ## Data Flow
 
 ```
-1. Slack Event → Lambda① (slack-event-handler)
+1. Slack Event → Slack Event Handler (slack-event-handler)
    ├─ Extract: team_id, user, channel, text
    ├─ Validate: signature, timestamp, event type
    ├─ Lookup: bot_token from DynamoDB(team_id)
-   └─ Invoke: Lambda② with (team_id, user, channel, text, bot_token)
+   └─ Invoke: Bedrock Processor with (team_id, user, channel, text, bot_token)
 
-2. Lambda② (bedrock-processor)
+2. Bedrock Processor (bedrock-processor)
    ├─ Prepare: Bedrock request payload
    ├─ Invoke: Bedrock API (model_id, prompt)
    ├─ Extract: AI response text
@@ -222,7 +222,7 @@ This MVP uses minimal data persistence. Primary focus is on workspace installati
 
 ## Validation Summary
 
-**Security Validations** (Lambda①):
+**Security Validations** (Slack Event Handler):
 - [x] HMAC SHA256 signature verification (Slack signing secret)
 - [x] Timestamp validation (±5 minutes window)
 - [x] Team ID format validation

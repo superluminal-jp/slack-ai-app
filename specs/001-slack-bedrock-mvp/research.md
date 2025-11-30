@@ -126,27 +126,27 @@ TEMPERATURE = 1.0  # Default conversational temperature
 **Rationale**:
 - **Slack constraint**: Must respond to event within 3 seconds
 - **Bedrock latency**: 5-30 seconds per constitution
-- **Pattern**: Lambda① acknowledges immediately, invokes Lambda② asynchronously, Lambda② posts to response_url
+- **Pattern**: Slack Event Handler acknowledges immediately, invokes Bedrock Processor asynchronously, Bedrock Processor posts to response_url
 
 **Implementation Flow**:
 ```
-1. Slack Event → API Gateway → Lambda① (slack-event-handler)
-2. Lambda① validates signature (< 100ms)
-3. Lambda① returns 200 OK to Slack (< 1 second total)
-4. Lambda① invokes Lambda② (bedrock-processor) with Event type
-5. Lambda② executes asynchronously:
+1. Slack Event → API Gateway → Slack Event Handler (slack-event-handler)
+2. Slack Event Handler validates signature (< 100ms)
+3. Slack Event Handler returns 200 OK to Slack (< 1 second total)
+4. Slack Event Handler invokes Bedrock Processor (bedrock-processor) with Event type
+5. Bedrock Processor executes asynchronously:
    - Calls Bedrock API (5-30 seconds)
    - Posts response to Slack response_url
-   - No response to Lambda①
+   - No response to Slack Event Handler
 ```
 
 **CDK Configuration**:
 ```typescript
-// Lambda① invokes Lambda② asynchronously
+// Slack Event Handler invokes Bedrock Processor asynchronously
 const bedrockProcessor = new lambda.Function(/* ... */);
 bedrockProcessor.grantInvoke(slackEventHandler);
 
-// In Lambda① handler.py
+// In Slack Event Handler handler.py
 lambda_client.invoke(
     FunctionName=BEDROCK_PROCESSOR_ARN,
     InvocationType='Event',  # Async fire-and-forget
@@ -176,7 +176,7 @@ lambda_client.invoke(
 
 **Implementation**:
 ```typescript
-// CDK: Enable Function URL for Lambda①
+// CDK: Enable Function URL for Slack Event Handler
 const slackEventHandler = new lambda.Function(/* ... */);
 const functionUrl = slackEventHandler.addFunctionUrl({
   authType: lambda.FunctionUrlAuthType.NONE, // Slack signature verification in code

@@ -7,6 +7,47 @@ from token_storage import store_token, get_token
 from slack_verifier import verify_signature
 from validation import validate_prompt
 from event_dedupe import is_duplicate_event, mark_event_processed
+from botocore.exceptions import ClientError
+from typing import Optional
+
+# Cache for secrets (to avoid repeated API calls)
+_secrets_cache: dict[str, str] = {}
+
+
+def get_secret_from_secrets_manager(secret_name: str) -> Optional[str]:
+    """
+    Retrieve secret value from AWS Secrets Manager with caching.
+
+    This function fetches secrets from AWS Secrets Manager and caches them
+    in memory to reduce API calls and improve performance.
+
+    Args:
+        secret_name: Name or ARN of the secret in Secrets Manager
+
+    Returns:
+        Secret value as string if successful, None otherwise
+
+    Raises:
+        ClientError: If Secrets Manager API call fails
+    """
+    # Check cache first
+    if secret_name in _secrets_cache:
+        return _secrets_cache[secret_name]
+
+    try:
+        secrets_client = boto3.client("secretsmanager")
+        response = secrets_client.get_secret_value(SecretId=secret_name)
+        secret_value = response["SecretString"]
+
+        # Cache the secret value
+        _secrets_cache[secret_name] = secret_value
+        return secret_value
+    except ClientError as e:
+        print(f"Error retrieving secret {secret_name}: {str(e)}")
+        return None
+    except Exception as e:
+        print(f"Unexpected error retrieving secret {secret_name}: {str(e)}")
+        return None
 
 
 def log_event(level: str, event_type: str, data: dict, context=None):
@@ -66,8 +107,13 @@ def lambda_handler(event, context):
             "X-Slack-Request-Timestamp"
         )
 
-        # Get signing secret from environment
-        signing_secret = os.environ.get("SLACK_SIGNING_SECRET")
+        # Get signing secret from Secrets Manager or environment variable (fallback)
+        signing_secret_name = os.environ.get("SLACK_SIGNING_SECRET_NAME")
+        if signing_secret_name:
+            signing_secret = get_secret_from_secrets_manager(signing_secret_name)
+        else:
+            # Fallback to environment variable for backward compatibility
+            signing_secret = os.environ.get("SLACK_SIGNING_SECRET")
 
         # Verify signature (except for URL verification which happens before app is installed)
         if signing_secret and slack_signature and slack_timestamp:
@@ -275,12 +321,17 @@ def lambda_handler(event, context):
                     }
 
                 # Get bot token from DynamoDB (with fallback to environment variable)
-                bot_token = None
-                if team_id:
-                    bot_token = get_token(team_id)
-                    if not bot_token:
-                        # Fallback to environment variable
-                        bot_token = os.environ.get("SLACK_BOT_TOKEN")
+                    bot_token = None
+                    if team_id:
+                        bot_token = get_token(team_id)
+                        if not bot_token:
+                            # Fallback to Secrets Manager or environment variable
+                            bot_token_secret_name = os.environ.get("SLACK_BOT_TOKEN_SECRET_NAME")
+                            if bot_token_secret_name:
+                                bot_token = get_secret_from_secrets_manager(bot_token_secret_name)
+                            else:
+                                # Fallback to environment variable for backward compatibility
+                                bot_token = os.environ.get("SLACK_BOT_TOKEN")
                         # Store token in DynamoDB for future use
                         if bot_token:
                             try:
@@ -299,8 +350,13 @@ def lambda_handler(event, context):
                                     context,
                                 )
                 else:
-                    # Fallback to environment variable if no team_id
-                    bot_token = os.environ.get("SLACK_BOT_TOKEN")
+                    # Fallback to Secrets Manager or environment variable if no team_id
+                    bot_token_secret_name = os.environ.get("SLACK_BOT_TOKEN_SECRET_NAME")
+                    if bot_token_secret_name:
+                        bot_token = get_secret_from_secrets_manager(bot_token_secret_name)
+                    else:
+                        # Fallback to environment variable for backward compatibility
+                        bot_token = os.environ.get("SLACK_BOT_TOKEN")
 
                 # Invoke Bedrock Processor (bedrock-processor) asynchronously
                 bedrock_processor_arn = os.environ.get("BEDROCK_PROCESSOR_ARN")

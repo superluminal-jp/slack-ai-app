@@ -4,7 +4,7 @@ Amazon Bedrock client for AI inference.
 This module provides a simple wrapper around the Bedrock Runtime API
 for invoking Claude 3 Haiku model for conversational AI responses.
 
-Note: This is Phase 6 implementation (async processing in Lambda②).
+Note: This is Phase 6 implementation (async processing in Bedrock Processor).
 """
 
 import json
