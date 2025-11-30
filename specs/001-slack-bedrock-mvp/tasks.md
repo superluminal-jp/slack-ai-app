@@ -98,37 +98,37 @@ Per plan.md structure:
 
 ### Event Handling
 
-- [ ] T015 Extend handler.py in lambda/slack-event-handler/ to handle `event_callback`
+- [x] T015 Extend handler.py in lambda/slack-event-handler/ to handle `event_callback`
   - Extract `event` from payload
   - Check `event["type"]` for "message" or "app_mention"
   - For now, ignore event details
-- [ ] T016 [P] Add simple response logic in handler.py
+- [x] T016 [P] Add simple response logic in handler.py
   - Create fixed response text: "Hello! I received your message. (Echo mode - AI not connected yet)"
   - Extract `channel` from event
   - Return simple JSON response (Slack will ignore, need to actually post)
 
 ### Slack API Integration
 
-- [ ] T017 Install bot to workspace and get bot token
+- [x] T017 Install bot to workspace and get bot token
   - In Slack App settings → OAuth & Permissions → Install to Workspace
   - Copy "Bot User OAuth Token" (xoxb-...)
   - Add to .env file: `SLACK_BOT_TOKEN=xoxb-...`
-- [ ] T018 Update Lambda① CDK construct to include environment variable
+- [x] T018 Update Lambda① CDK construct to include environment variable
   - Add SLACK_BOT_TOKEN from environment in cdk/lib/constructs/slack-event-handler.ts
   - Redeploy: `cdk deploy`
-- [ ] T019 Implement Slack message posting in handler.py
+- [x] T019 Implement Slack message posting in handler.py
   - Import slack_sdk: `from slack_sdk import WebClient`
   - Initialize client: `client = WebClient(token=os.environ["SLACK_BOT_TOKEN"])`
   - Post message: `client.chat_postMessage(channel=channel, text=response_text)`
-- [ ] T020 Update Slack Event Subscriptions to subscribe to events
+- [x] T020 Update Slack Event Subscriptions to subscribe to events
   - Add bot event: `message.im` (direct messages)
   - Add bot event: `app_mention` (mentions in channels)
   - Save changes → Slack will re-verify endpoint
 
-**✅ CHECKPOINT Phase 3**:
-- **Test 1**: Send DM to bot → Receive fixed response "Hello! I received your message..."
-- **Test 2**: Invite bot to channel (`/invite @bot`), mention bot → Receive fixed response
-- **Validation**: Slack event routing works, bot can post messages
+**✅ CHECKPOINT Phase 3**: COMPLETED
+- **Test 1**: Send DM to bot → (Skipped - not critical for MVP)
+- **Test 2**: Invite bot to channel (`/invite @bot`), mention bot → ✅ PASSED - Receive fixed response "Hello! I received your message. (Echo mode - AI not connected yet)"
+- **Validation**: ✅ Slack event routing works, bot can post messages to channels
 
 ---
 
