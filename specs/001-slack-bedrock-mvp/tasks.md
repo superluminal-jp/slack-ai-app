@@ -16,6 +16,7 @@
 ## Path Conventions
 
 Per plan.md structure:
+
 - **Infrastructure**: `cdk/` (TypeScript)
 - **Lambda①**: `lambda/slack-event-handler/` (Python 3.11)
 - **Lambda②**: `lambda/bedrock-processor/` (Python 3.11)
@@ -81,6 +82,7 @@ Per plan.md structure:
   - Subscribe to bot events: (none yet - just verification)
 
 **✅ CHECKPOINT Phase 2**:
+
 - CDK deployed successfully
 - Lambda Function URL obtained
 - Slack Event Subscriptions shows "Verified ✓"
@@ -126,6 +128,7 @@ Per plan.md structure:
   - Save changes → Slack will re-verify endpoint
 
 **✅ CHECKPOINT Phase 3**: COMPLETED
+
 - **Test 1**: Send DM to bot → (Skipped - not critical for MVP)
 - **Test 2**: Invite bot to channel (`/invite @bot`), mention bot → ✅ PASSED - Receive fixed response "Hello! I received your message. (Echo mode - AI not connected yet)"
 - **Validation**: ✅ Slack event routing works, bot can post messages to channels
@@ -142,34 +145,35 @@ Per plan.md structure:
 
 ### Infrastructure
 
-- [ ] T021 Create DynamoDB table construct in cdk/lib/constructs/token-storage.ts
+- [x] T021 Create DynamoDB table construct in cdk/lib/constructs/token-storage.ts
   - Table name: `slack-workspace-tokens`
   - Partition key: `team_id` (String)
   - Billing mode: PAY_PER_REQUEST
   - Encryption: AWS_MANAGED
-- [ ] T022 Add DynamoDB table to stack in cdk/lib/slack-bedrock-stack.ts
-- [ ] T023 Grant Lambda① read/write permissions to DynamoDB table
+- [x] T022 Add DynamoDB table to stack in cdk/lib/slack-bedrock-stack.ts
+- [x] T023 Grant Lambda① read/write permissions to DynamoDB table
   - `tokenTable.grantReadWriteData(slackEventHandler)`
-- [ ] T024 Add DynamoDB table name to Lambda① environment variables
+- [x] T024 Add DynamoDB table name to Lambda① environment variables
   - `TOKEN_TABLE_NAME: tokenTable.tableName`
 - [ ] T025 Redeploy CDK stack (`cdk deploy`)
 
 ### Token Storage Implementation
 
-- [ ] T026 [P] Create token_storage.py in lambda/slack-event-handler/
+- [x] T026 [P] Create token_storage.py in lambda/slack-event-handler/
   - Function: `store_token(team_id, bot_token)`
   - Function: `get_token(team_id)`
   - Use boto3 DynamoDB client
-- [ ] T027 Add boto3 to requirements.txt in lambda/slack-event-handler/
-- [ ] T028 Update handler.py to store token on first event
+- [x] T027 Add boto3 to requirements.txt in lambda/slack-event-handler/
+- [x] T028 Update handler.py to store token on first event
   - Extract `team_id` from event
   - On first run, store current SLACK_BOT_TOKEN to DynamoDB
   - Log: "Token stored for team {team_id}"
-- [ ] T029 Update handler.py to retrieve token from DynamoDB
+- [x] T029 Update handler.py to retrieve token from DynamoDB
   - Lookup token by team_id instead of using environment variable
   - Fallback to environment variable if not in DynamoDB
 
 **✅ CHECKPOINT Phase 4**:
+
 - **Test 1**: Send message to bot → Response still works
 - **Test 2**: Check DynamoDB table in AWS Console → Token entry exists for team_id
 - **Validation**: Token storage works, bot uses DynamoDB for authentication
@@ -221,6 +225,7 @@ Per plan.md structure:
 **⚠️ WARNING**: This phase may cause Slack timeout warnings (>3 seconds) because Bedrock calls are synchronous. This is expected and will be fixed in Phase 6.
 
 **✅ CHECKPOINT Phase 5**:
+
 - **Test 1**: Run pytest for signature verification tests (`pytest lambda/slack-event-handler/tests/`)
 - **Test 2**: Send message to bot → Receive AI-generated response (may take 5-10 seconds)
 - **Test 3**: Check CloudWatch Logs → Verify no signature verification errors
@@ -278,6 +283,7 @@ Per plan.md structure:
   - `lambda_client.invoke(FunctionName=PROCESSOR_ARN, InvocationType='Event', Payload=json.dumps(payload))`
 
 **✅ CHECKPOINT Phase 6**:
+
 - **Test 1**: Send message to bot → Immediate "typing..." indicator, then AI response within 10 seconds
 - **Test 2**: Check CloudWatch Logs for Lambda① → Shows "200 OK" within 1-2 seconds
 - **Test 3**: Check CloudWatch Logs for Lambda② → Shows Bedrock invocation and Slack posting
@@ -324,6 +330,7 @@ Per plan.md structure:
   - Post friendly message: "Please send me a message and I'll respond! For example, 'Hello' or 'What can you do?'"
 
 **✅ CHECKPOINT Phase 7**:
+
 - **Test 1**: Simulate Bedrock error (invalid model ID) → Receive friendly error message
 - **Test 2**: Send empty message → Receive "Please send me a message..." prompt
 - **Test 3**: Send very long message (>4000 chars) → Receive length error
@@ -380,6 +387,7 @@ Per plan.md structure:
 - [ ] T067 Document known limitations in README.md (link to spec.md Out of Scope section)
 
 **✅ CHECKPOINT Phase 8 (FINAL)**:
+
 - All tests pass
 - Documentation complete
 - Fresh deployment successful
@@ -408,21 +416,27 @@ Per plan.md structure:
 ### Parallel Opportunities Within Each Phase
 
 **Phase 1**:
+
 - T003, T004, T005 (different files)
 
 **Phase 3**:
+
 - T016, T017 (different tasks)
 
 **Phase 5**:
+
 - T030, T031, T032 (security tests - different test functions)
 
 **Phase 6**:
+
 - T048, T049 (different files in Lambda②)
 
 **Phase 7**:
+
 - T054, T055, T056, T057 (different error handlers - if separate functions)
 
 **Phase 8**:
+
 - T059, T060, T061, T062, T063 (all different files)
 
 ---
@@ -442,6 +456,7 @@ This task list follows the "Walking Skeleton" pattern:
 ### Checkpoint Validation
 
 **At Each Checkpoint**:
+
 1. ✅ Run manual tests specified in checkpoint
 2. ✅ Verify CloudWatch Logs show expected behavior
 3. ✅ Take notes on what works / what doesn't
@@ -449,6 +464,7 @@ This task list follows the "Walking Skeleton" pattern:
 5. ✅ Git commit with checkpoint message
 
 **Example Git Commits**:
+
 ```bash
 git commit -m "Phase 2 complete: Walking skeleton - Slack verification works"
 git commit -m "Phase 3 complete: Event echo - Bot responds with fixed message"
@@ -495,22 +511,26 @@ git commit -m "Phase 4 complete: Token storage - DynamoDB integration working"
 ## Recommended Daily Plan
 
 ### Day 1 (3-4 hours)
+
 - Phase 1: Setup
 - Phase 2: Walking Skeleton
 - Phase 3: Event Echo
 - **End of Day 1**: Working bot that responds with fixed messages
 
 ### Day 2 (3-4 hours)
+
 - Phase 4: Token Storage
 - Phase 5: Bedrock Sync
 - **End of Day 2**: Bot responds with AI (may timeout)
 
 ### Day 3 (3-4 hours)
+
 - Phase 6: Async Processing
 - Phase 7: Error Handling
 - **End of Day 3**: Production-quality async AI bot
 
 ### Day 4 (1-2 hours)
+
 - Phase 8: Polish
 - Final validation
 - **End of Day 4**: MVP ready for stakeholder demo
