@@ -1,0 +1,318 @@
+openapi: 3.0.3
+info:
+  title: Slack Event Handler API
+  description: |
+    API contract for Slack Event Subscriptions endpoint.
+    This endpoint receives events from Slack (direct messages and app mentions)
+    and processes them asynchronously via Bedrock.
+  version: 1.0.0
+  contact:
+    name: Slack Bedrock MVP
+
+servers:
+  - url: https://{lambda_function_url}
+    description: AWS Lambda Function URL
+    variables:
+      lambda_function_url:
+        default: example.lambda-url.us-east-1.on.aws
+        description: Auto-generated Lambda Function URL
+
+paths:
+  /:
+    post:
+      summary: Handle Slack Event
+      description: |
+        Receives Slack events via Event Subscriptions API.
+        Handles URL verification challenge and processes message events.
+
+        **Security**: Verifies Slack signature (HMAC SHA256) in headers.
+        **Timeout**: Must respond within 3 seconds per Slack requirement.
+      operationId: handleSlackEvent
+      security:
+        - SlackSignature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/UrlVerificationEvent'
+                - $ref: '#/components/schemas/EventCallbackEvent'
+            examples:
+              urlVerification:
+                summary: URL Verification Challenge
+                value:
+                  type: url_verification
+                  challenge: 3eZbrw1aBm2rZgRNFdxV2595E9CY3gmdALWMmHkvFXO7tYXAYM8P
+              directMessage:
+                summary: Direct Message Event
+                value:
+                  type: event_callback
+                  team_id: T01234567
+                  event:
+                    type: message
+                    channel: D01234567
+                    user: U01234567
+                    text: Hello, can you help me?
+                    ts: "1234567890.123456"
+                    channel_type: im
+              appMention:
+                summary: App Mention Event
+                value:
+                  type: event_callback
+                  team_id: T01234567
+                  event:
+                    type: app_mention
+                    channel: C01234567
+                    user: U01234567
+                    text: <@U98765432> What is the weather today?
+                    ts: "1234567890.123456"
+      responses:
+        '200':
+          description: Event received and acknowledged
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/UrlVerificationResponse'
+                  - $ref: '#/components/schemas/EventAckResponse'
+              examples:
+                challengeResponse:
+                  summary: URL Verification Response
+                  value:
+                    challenge: 3eZbrw1aBm2rZgRNFdxV2595E9CY3gmdALWMmHkvFXO7tYXAYM8P
+                eventAck:
+                  summary: Event Acknowledgment
+                  value:
+                    ok: true
+        '400':
+          description: Invalid request (missing required fields)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: invalid_request
+                message: Missing required field 'event.text'
+        '401':
+          description: Invalid Slack signature
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: invalid_signature
+                message: Request signature verification failed
+        '403':
+          description: Timestamp outside valid window
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: invalid_timestamp
+                message: Request timestamp is too old (replay attack prevention)
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: internal_error
+                message: An unexpected error occurred
+
+components:
+  securitySchemes:
+    SlackSignature:
+      type: apiKey
+      in: header
+      name: X-Slack-Signature
+      description: |
+        HMAC SHA256 signature of request body.
+        Calculated as: hex(HMAC-SHA256(signing_secret, "v0:{timestamp}:{body}"))
+
+        Required headers:
+        - X-Slack-Signature: v0={signature}
+        - X-Slack-Request-Timestamp: {unix_epoch}
+
+  schemas:
+    UrlVerificationEvent:
+      type: object
+      description: Slack URL verification challenge (one-time setup)
+      required:
+        - type
+        - challenge
+        - token
+      properties:
+        type:
+          type: string
+          enum: [url_verification]
+          description: Event type
+        challenge:
+          type: string
+          description: Random string to echo back
+          example: 3eZbrw1aBm2rZgRNFdxV2595E9CY3gmdALWMmHkvFXO7tYXAYM8P
+        token:
+          type: string
+          description: Verification token (deprecated, use signature instead)
+          deprecated: true
+
+    EventCallbackEvent:
+      type: object
+      description: Slack event callback (message or app mention)
+      required:
+        - type
+        - team_id
+        - event
+      properties:
+        type:
+          type: string
+          enum: [event_callback]
+          description: Event type
+        team_id:
+          type: string
+          pattern: '^T[A-Z0-9]{8,}$'
+          description: Slack workspace ID
+          example: T01234567
+        event:
+          oneOf:
+            - $ref: '#/components/schemas/MessageEvent'
+            - $ref: '#/components/schemas/AppMentionEvent'
+
+    MessageEvent:
+      type: object
+      description: Direct message event (channel_type = 'im')
+      required:
+        - type
+        - channel
+        - user
+        - text
+        - ts
+        - channel_type
+      properties:
+        type:
+          type: string
+          enum: [message]
+        channel:
+          type: string
+          pattern: '^D[A-Z0-9]{8,}$'
+          description: DM channel ID
+          example: D01234567
+        user:
+          type: string
+          pattern: '^U[A-Z0-9]{8,}$'
+          description: User who sent message
+          example: U01234567
+        text:
+          type: string
+          minLength: 1
+          maxLength: 40000
+          description: Message text
+          example: Hello, can you help me?
+        ts:
+          type: string
+          pattern: '^\d+\.\d+$'
+          description: Message timestamp (unique ID)
+          example: "1234567890.123456"
+        channel_type:
+          type: string
+          enum: [im]
+          description: Must be 'im' for direct messages
+
+    AppMentionEvent:
+      type: object
+      description: Bot mentioned in channel event
+      required:
+        - type
+        - channel
+        - user
+        - text
+        - ts
+      properties:
+        type:
+          type: string
+          enum: [app_mention]
+        channel:
+          type: string
+          pattern: '^C[A-Z0-9]{8,}$'
+          description: Channel ID where bot was mentioned
+          example: C01234567
+        user:
+          type: string
+          pattern: '^U[A-Z0-9]{8,}$'
+          description: User who mentioned bot
+          example: U01234567
+        text:
+          type: string
+          minLength: 1
+          maxLength: 40000
+          description: Message text (includes bot mention like <@U98765432>)
+          example: <@U98765432> What is the weather today?
+        ts:
+          type: string
+          pattern: '^\d+\.\d+$'
+          description: Message timestamp (unique ID)
+          example: "1234567890.123456"
+
+    UrlVerificationResponse:
+      type: object
+      description: Response to URL verification challenge
+      required:
+        - challenge
+      properties:
+        challenge:
+          type: string
+          description: Echo back the challenge string
+          example: 3eZbrw1aBm2rZgRNFdxV2595E9CY3gmdALWMmHkvFXO7tYXAYM8P
+
+    EventAckResponse:
+      type: object
+      description: Acknowledgment of event receipt
+      required:
+        - ok
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+          description: Always true for successful acknowledgment
+
+    ErrorResponse:
+      type: object
+      description: Error response
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          enum:
+            - invalid_request
+            - invalid_signature
+            - invalid_timestamp
+            - internal_error
+          description: Error code
+        message:
+          type: string
+          description: Human-readable error message
+          example: Request signature verification failed
+
+  headers:
+    X-Slack-Signature:
+      description: HMAC SHA256 signature for request verification
+      required: true
+      schema:
+        type: string
+        pattern: '^v0=[a-f0-9]{64}$'
+        example: v0=a2114d57b48eac39b9ad189dd8316235a7b4a8d21a10bd27519666489c69b503
+
+    X-Slack-Request-Timestamp:
+      description: Unix epoch timestamp of request
+      required: true
+      schema:
+        type: integer
+        example: 1234567890
+
+tags:
+  - name: Events
+    description: Slack event handling endpoints
