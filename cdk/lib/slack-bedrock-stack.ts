@@ -3,6 +3,7 @@ import { Construct } from "constructs";
 import { SlackEventHandler } from "./constructs/slack-event-handler";
 import { TokenStorage } from "./constructs/token-storage";
 import { EventDedupe } from "./constructs/event-dedupe";
+import { BedrockProcessor } from "./constructs/bedrock-processor";
 
 export class SlackBedrockStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -33,6 +34,12 @@ export class SlackBedrockStack extends cdk.Stack {
     // Create DynamoDB table for event deduplication
     const eventDedupe = new EventDedupe(this, "EventDedupe");
 
+    // Create Bedrock processor Lambda (Lambda②)
+    const bedrockProcessor = new BedrockProcessor(this, "BedrockProcessor", {
+      awsRegion,
+      bedrockModelId,
+    });
+
     // Create Slack event handler Lambda with Function URL
     const slackEventHandler = new SlackEventHandler(this, "SlackEventHandler", {
       slackBotToken,
@@ -41,11 +48,15 @@ export class SlackBedrockStack extends cdk.Stack {
       dedupeTableName: eventDedupe.table.tableName,
       awsRegion,
       bedrockModelId,
+      bedrockProcessorArn: bedrockProcessor.function.functionArn,
     });
 
-    // Grant Lambda read/write permissions to DynamoDB tables
+    // Grant Lambda① read/write permissions to DynamoDB tables
     tokenStorage.table.grantReadWriteData(slackEventHandler.function);
     eventDedupe.table.grantReadWriteData(slackEventHandler.function);
+
+    // Grant Lambda① permission to invoke Lambda② asynchronously
+    bedrockProcessor.function.grantInvoke(slackEventHandler.function);
 
     // Output the Function URL for Slack Event Subscriptions configuration
     new cdk.CfnOutput(this, "SlackEventHandlerUrl", {

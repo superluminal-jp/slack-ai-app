@@ -205,14 +205,17 @@ Per plan.md structure:
 ### Bedrock Integration (Sync)
 
 - [x] T036 Add Bedrock IAM permissions to Lambda① role in cdk/lib/slack-bedrock-stack.ts
-  - `bedrock:InvokeModel` for Claude Haiku 4.5
+  - `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` permissions
+  - Resources: `*` (AWS recommended approach)
 - [x] T037 Add AWS region to Lambda① environment variables: `AWS_REGION_NAME=ap-northeast-1`
 - [x] T038 Configure CDK stack for ap-northeast-1 region deployment (ready to deploy with `cdk deploy`)
 - [x] T039 [P] Create bedrock_client.py in lambda/slack-event-handler/ (temporary - will move to Lambda② later)
   - Function: `invoke_bedrock(prompt: str) -> str`
-  - Model: `anthropic.claude-3-haiku-20240307-v1:0`
+  - Model: Configurable via `BEDROCK_MODEL_ID` environment variable (default: `amazon.nova-pro-v1:0`)
+  - Supports both Claude models (`anthropic.claude-*`) and Nova models (`amazon.nova-*`)
   - Max tokens: 1024, Temperature: 1.0
   - Use boto3 bedrock-runtime client
+  - Function: `validate_prompt(prompt: str, max_length: int = 4000) -> tuple[bool, Optional[str]]`
 - [x] T040 Update handler.py to call Bedrock instead of fixed response
   - Extract message text from event
   - Strip bot mention if app_mention: `<@U12345>` → ""
@@ -221,17 +224,51 @@ Per plan.md structure:
 - [x] T041 Add message validation in handler.py
   - Check text is not empty - return friendly error if empty
   - Check text length ≤4000 chars - return error if exceeded
+  - Uses `validate_prompt()` from bedrock_client.py
+
+### Event Deduplication (Additional Implementation)
+
+- [x] T041a [P] Create event_dedupe.py in lambda/slack-event-handler/
+  - Function: `is_duplicate_event(event_id: str) -> bool`
+  - Function: `mark_event_processed(event_id: str) -> bool`
+  - Uses DynamoDB conditional writes to prevent race conditions
+  - TTL: 1 hour (automatic cleanup)
+- [x] T041b Create EventDedupe construct in cdk/lib/constructs/event-dedupe.ts
+  - Table name: `slack-event-dedupe`
+  - Partition key: `event_id` (String)
+  - Billing mode: PAY_PER_REQUEST
+  - TTL attribute: `ttl`
+- [x] T041c Add event deduplication to handler.py
+  - Check for duplicate events before processing (prevents Slack retries)
+  - Mark events as processed using atomic DynamoDB operations
+  - Return 200 OK immediately for duplicates (prevents duplicate Bedrock calls)
+
+### Error Handling (Partial - Phase 7 Preview)
+
+- [x] T041d Add basic error handling in handler.py (Phase 7 preview)
+  - Handle Bedrock `ThrottlingException` → User-friendly message
+  - Handle Bedrock `AccessDeniedException` → User-friendly message
+  - Handle Bedrock timeout errors → User-friendly message
+  - Handle invalid Bedrock responses (`ValueError`) → User-friendly message
+  - Generic error handler for unexpected exceptions
 
 **⚠️ WARNING**: This phase may cause Slack timeout warnings (>3 seconds) because Bedrock calls are synchronous. This is expected and will be fixed in Phase 6.
 
-**✅ CHECKPOINT Phase 5**: IN PROGRESS
+**✅ CHECKPOINT Phase 5**: COMPLETED
 
 - **Test 1**: ✅ PASSED - Run pytest for signature verification tests (`pytest lambda/slack-event-handler/tests/`) - 14/14 tests passed
-- **Test 2**: READY - Send message to bot → Receive AI-generated response (may take 5-10 seconds)
-- **Test 3**: READY - Check CloudWatch Logs → Verify no signature verification errors
-- **Validation**: Bedrock integration ready to test, AI responses to be validated
-- **Known Issue**: Slack may show timeout warnings - acceptable for this phase
+- **Test 2**: ✅ PASSED - Send message to bot → Receive AI-generated response (synchronous, may take 5-10 seconds)
+- **Test 3**: ✅ PASSED - Check CloudWatch Logs → Verify no signature verification errors
+- **Test 4**: ✅ PASSED - Event deduplication working (duplicate events return 200 OK immediately)
+- **Test 5**: ✅ PASSED - Error handling working (Bedrock errors return user-friendly messages)
+- **Validation**: ✅ Bedrock integration working, AI responses validated, error handling in place
+- **Known Issue**: Slack may show timeout warnings - acceptable for this phase (will be fixed in Phase 6)
 - **Deployment**: ✅ COMPLETED - Stack deployed to ap-northeast-1
+- **Additional Features Implemented**:
+  - Event deduplication (prevents duplicate processing)
+  - Basic error handling (Phase 7 preview)
+  - Multi-model support (Claude and Nova models)
+  - Configurable model ID via environment variable
 
 ---
 
@@ -245,27 +282,27 @@ Per plan.md structure:
 
 ### Infrastructure
 
-- [ ] T042 Create Lambda② construct in cdk/lib/constructs/bedrock-processor.ts
+- [x] T042 Create Lambda② construct in cdk/lib/constructs/bedrock-processor.ts
   - Python 3.11 runtime
   - No Function URL (invoked by Lambda① only)
   - Timeout: 30 seconds (enough for Bedrock)
   - Environment: AWS_REGION_NAME, (no SLACK_BOT_TOKEN yet)
-- [ ] T043 Add Lambda② to stack in cdk/lib/slack-bedrock-stack.ts
-- [ ] T044 Grant Lambda① permission to invoke Lambda② asynchronously
+- [x] T043 Add Lambda② to stack in cdk/lib/slack-bedrock-stack.ts
+- [x] T044 Grant Lambda① permission to invoke Lambda② asynchronously
   - `bedrockProcessor.grantInvoke(slackEventHandler)`
-- [ ] T045 Add Lambda② ARN to Lambda① environment variables
+- [x] T045 Add Lambda② ARN to Lambda① environment variables
   - `BEDROCK_PROCESSOR_ARN: bedrockProcessor.functionArn`
-- [ ] T046 Create Python requirements.txt for lambda/bedrock-processor/
+- [x] T046 Create Python requirements.txt for lambda/bedrock-processor/
   - slack-sdk, boto3
 - [ ] T047 Redeploy CDK stack (`cdk deploy`)
 
 ### Lambda② Implementation
 
-- [ ] T048 [P] Move bedrock_client.py from lambda/slack-event-handler/ to lambda/bedrock-processor/
-- [ ] T049 [P] Create slack_poster.py in lambda/bedrock-processor/
+- [x] T048 [P] Move bedrock_client.py from lambda/slack-event-handler/ to lambda/bedrock-processor/
+- [x] T049 [P] Create slack_poster.py in lambda/bedrock-processor/
   - Function: `post_to_slack(channel: str, text: str, bot_token: str)`
   - Use slack_sdk.WebClient
-- [ ] T050 Create handler.py in lambda/bedrock-processor/
+- [x] T050 Create handler.py in lambda/bedrock-processor/
   - Parse event payload: `{ "channel": "...", "text": "...", "bot_token": "..." }`
   - Call `invoke_bedrock(text)`
   - Call `post_to_slack(channel, ai_response, bot_token)`
@@ -273,13 +310,13 @@ Per plan.md structure:
 
 ### Lambda① Update (Async Invocation)
 
-- [ ] T051 Update handler.py in lambda/slack-event-handler/ to invoke Lambda② asynchronously
+- [x] T051 Update handler.py in lambda/slack-event-handler/ to invoke Lambda② asynchronously
   - Remove Bedrock call (moved to Lambda②)
   - Retrieve bot_token from DynamoDB
   - Create payload: `{"channel": channel, "text": user_message, "bot_token": bot_token}`
   - Invoke Lambda② with `InvocationType='Event'` (fire-and-forget)
   - Return 200 OK immediately (no waiting for Lambda②)
-- [ ] T052 Add boto3 lambda client to handler.py
+- [x] T052 Add boto3 lambda client to handler.py
   - `lambda_client = boto3.client('lambda')`
   - `lambda_client.invoke(FunctionName=PROCESSOR_ARN, InvocationType='Event', Payload=json.dumps(payload))`
 
@@ -301,6 +338,8 @@ Per plan.md structure:
 
 **Estimated Time**: 1-2 hours
 
+**Note**: Basic error handling was implemented in Phase 5 (Lambda①). Phase 7 moves error handling to Lambda② and expands it with a centralized error message catalog.
+
 ### Error Message Catalog
 
 - [ ] T053 Create ERROR_MESSAGES dictionary in lambda/bedrock-processor/handler.py (per research.md)
@@ -309,6 +348,7 @@ Per plan.md structure:
   - bedrock_access_denied: "I'm having trouble connecting to the AI service. Please contact your administrator."
   - invalid_response: "I received an unexpected response from the AI service. Please try again."
   - generic: "Something went wrong. I've logged the issue and will try to fix it. Please try again later."
+  - **Note**: These messages are already implemented in Phase 5 (handler.py). Move to Lambda② and centralize in ERROR_MESSAGES dictionary.
 
 ### Error Handlers
 
@@ -316,19 +356,24 @@ Per plan.md structure:
   - Catch `ReadTimeoutException` or timeout errors
   - Post ERROR_MESSAGES["bedrock_timeout"] to Slack
   - Log error to CloudWatch
+  - **Note**: Already implemented in Phase 5 (handler.py). Move to Lambda②.
 - [ ] T055 [P] Add throttling error handler in lambda/bedrock-processor/handler.py
   - Catch `ThrottlingException` from boto3
   - Post ERROR_MESSAGES["bedrock_throttling"] to Slack
+  - **Note**: Already implemented in Phase 5 (handler.py). Move to Lambda②.
 - [ ] T056 [P] Add access denied error handler in lambda/bedrock-processor/handler.py
   - Catch `AccessDeniedException`
   - Post ERROR_MESSAGES["bedrock_access_denied"] to Slack
+  - **Note**: Already implemented in Phase 5 (handler.py). Move to Lambda②.
 - [ ] T057 [P] Add generic error handler in lambda/bedrock-processor/handler.py
   - Catch all other exceptions
   - Log full traceback to CloudWatch (no PII in logs)
   - Post ERROR_MESSAGES["generic"] to Slack
+  - **Note**: Already implemented in Phase 5 (handler.py). Move to Lambda②.
 - [ ] T058 Add empty message validation to Lambda① in lambda/slack-event-handler/handler.py
   - If text is empty after mention stripping: Don't invoke Lambda②
   - Post friendly message: "Please send me a message and I'll respond! For example, 'Hello' or 'What can you do?'"
+  - **Note**: Already implemented in Phase 5 (validate_prompt function). Ensure it works with Lambda② invocation.
 
 **✅ CHECKPOINT Phase 7**:
 

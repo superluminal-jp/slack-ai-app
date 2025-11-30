@@ -11,6 +11,7 @@ export interface SlackEventHandlerProps {
   dedupeTableName: string; // DynamoDB table name for event deduplication
   awsRegion: string; // AWS region (e.g., ap-northeast-1)
   bedrockModelId: string; // Bedrock model ID (e.g., amazon.nova-pro-v1:0)
+  bedrockProcessorArn: string; // Lambda② ARN for async Bedrock processing
 }
 
 export class SlackEventHandler extends Construct {
@@ -45,6 +46,7 @@ export class SlackEventHandler extends Construct {
         DEDUPE_TABLE_NAME: props.dedupeTableName,
         AWS_REGION_NAME: props.awsRegion,
         BEDROCK_MODEL_ID: props.bedrockModelId,
+        BEDROCK_PROCESSOR_ARN: props.bedrockProcessorArn,
       },
     });
 

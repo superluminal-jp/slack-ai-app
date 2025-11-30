@@ -1,31 +1,27 @@
 import json
 import os
 import re
+import boto3
 from slack_sdk import WebClient
-from botocore.exceptions import ClientError
 from token_storage import store_token, get_token
 from slack_verifier import verify_signature
-from bedrock_client import invoke_bedrock, validate_prompt
+from validation import validate_prompt
 from event_dedupe import is_duplicate_event, mark_event_processed
 
 
 def lambda_handler(event, context):
     """
-    Slack event handler with Bedrock AI integration.
+    Slack event handler with async Bedrock AI integration.
 
-    Phase 5: Handles url_verification and event_callback.
+    Phase 6: Handles url_verification and event_callback.
     - Verifies HMAC SHA256 signature before processing
     - Validates timestamp within ±5 minutes window
     - Uses DynamoDB for event deduplication (prevents duplicate processing)
-    - Returns 200 OK immediately to Slack (prevents retries)
+    - Returns 200 OK immediately to Slack (<3 seconds)
     - Stores token in DynamoDB on first event, retrieves from DynamoDB for subsequent events
-    - Calls Amazon Bedrock Claude 3 Haiku for AI-generated responses
     - Validates message text (length, emptiness)
-    - Posts AI response to Slack for message.im and app_mention events
-
-    WARNING: This is Phase 5 (synchronous Bedrock call).
-    Returns 200 immediately to prevent Slack retries, then processes asynchronously.
-    Will be fixed in Phase 6 (full async with SQS/EventBridge).
+    - Invokes Lambda② (bedrock-processor) asynchronously for AI processing
+    - Lambda② handles Bedrock API call and Slack posting
     """
     try:
         # Get raw request body for signature verification
@@ -185,52 +181,44 @@ def lambda_handler(event, context):
                     # Fallback to environment variable if no team_id
                     bot_token = os.environ.get("SLACK_BOT_TOKEN")
 
-                # Call Bedrock for AI response (synchronous - Phase 5)
+                # Invoke Lambda② (bedrock-processor) asynchronously
+                bedrock_processor_arn = os.environ.get("BEDROCK_PROCESSOR_ARN")
+                if not bedrock_processor_arn:
+                    print("Error: BEDROCK_PROCESSOR_ARN environment variable not set")
+                    return {
+                        "statusCode": 500,
+                        "headers": {"Content-Type": "application/json"},
+                        "body": json.dumps({"error": "Configuration error"}),
+                    }
+
+                # Create payload for Lambda②
+                payload = {
+                    "channel": channel,
+                    "text": user_text,
+                    "bot_token": bot_token,
+                }
+
                 try:
-                    print(f"Calling Bedrock with prompt: {user_text[:100]}...")
-                    ai_response = invoke_bedrock(user_text)
-                    response_text = ai_response
-                    print(f"Bedrock response received: {ai_response[:100]}...")
-                except ClientError as e:
-                    # Bedrock API errors (throttling, access denied, timeout)
-                    error_code = e.response["Error"]["Code"]
-                    print(f"Bedrock error: {error_code}")
+                    # Invoke Lambda② asynchronously (fire-and-forget)
+                    lambda_client = boto3.client("lambda")
+                    print(f"Invoking Lambda② asynchronously: {bedrock_processor_arn}")
+                    print(f"Payload: channel={channel}, text_length={len(user_text)}")
 
-                    # User-friendly error messages
-                    if error_code == "ThrottlingException":
-                        response_text = "The AI service is currently busy. Please try again in a minute."
-                    elif error_code == "AccessDeniedException":
-                        response_text = "I'm having trouble connecting to the AI service. Please contact your administrator."
-                    elif "Timeout" in error_code:
-                        response_text = "Sorry, the AI service is taking longer than usual. Please try again in a moment."
-                    else:
-                        response_text = "Something went wrong. I've logged the issue and will try to fix it. Please try again later."
-                except ValueError as e:
-                    # Invalid Bedrock response
-                    print(f"Bedrock response validation error: {str(e)}")
-                    response_text = "I received an unexpected response from the AI service. Please try again."
-                except Exception as e:
-                    # Unexpected errors
-                    print(f"Unexpected error: {str(e)}")
-                    response_text = "Something went wrong. I've logged the issue and will try to fix it. Please try again later."
-
-                # Post message to Slack
-                if bot_token and channel:
-                    client = WebClient(token=bot_token)
-                    client.chat_postMessage(channel=channel, text=response_text)
-                    print(f"Posted AI response to channel: {channel}")
-                else:
-                    print(
-                        f"Missing bot token or channel. Token exists: {bool(bot_token)}, Channel: {channel}"
+                    lambda_client.invoke(
+                        FunctionName=bedrock_processor_arn,
+                        InvocationType="Event",  # Async invocation
+                        Payload=json.dumps(payload),
                     )
+
+                    print("Lambda② invoked successfully (async)")
+                except Exception as e:
+                    # Error invoking Lambda②
+                    print(f"Error invoking Lambda②: {str(e)}")
+                    # Log error but still return 200 OK to Slack (prevent retries)
+                    # Lambda② error handling will post error message to Slack
 
         # Return 200 OK to Slack (acknowledgment)
         # Note: If Slack retries, the duplicate check above will catch it
-        return {
-            "statusCode": 200,
-            "headers": {"Content-Type": "application/json"},
-            "body": json.dumps({"ok": True}),
-        }
         return {
             "statusCode": 200,
             "headers": {"Content-Type": "application/json"},
