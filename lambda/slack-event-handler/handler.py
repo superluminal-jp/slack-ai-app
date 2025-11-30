@@ -9,6 +9,24 @@ from validation import validate_prompt
 from event_dedupe import is_duplicate_event, mark_event_processed
 
 
+def log_event(level: str, event_type: str, data: dict, context=None):
+    """
+    Structured logging helper for CloudWatch-friendly JSON logs.
+
+    Args:
+        level: Log level (INFO, WARN, ERROR)
+        event_type: Event type identifier (e.g., "event_received", "signature_verified")
+        data: Event-specific data dictionary
+        context: Lambda context object (optional, for request_id)
+    """
+    log_entry = {"level": level, "event": event_type, **data}
+
+    if context and hasattr(context, "request_id"):
+        log_entry["request_id"] = context.request_id
+
+    print(json.dumps(log_entry))
+
+
 def lambda_handler(event, context):
     """
     Slack event handler with async Bedrock AI integration.
@@ -20,10 +38,21 @@ def lambda_handler(event, context):
     - Returns 200 OK immediately to Slack (<3 seconds)
     - Stores token in DynamoDB on first event, retrieves from DynamoDB for subsequent events
     - Validates message text (length, emptiness)
-    - Invokes Lambda② (bedrock-processor) asynchronously for AI processing
-    - Lambda② handles Bedrock API call and Slack posting
+    - Invokes Bedrock Processor (bedrock-processor) asynchronously for AI processing
+    - Bedrock Processor handles Bedrock API call and Slack posting
     """
     try:
+        # Log event received
+        log_event(
+            "INFO",
+            "event_received",
+            {
+                "source": "slack",
+                "has_body": bool(event.get("body")),
+                "has_headers": bool(event.get("headers")),
+            },
+            context,
+        )
         # Get raw request body for signature verification
         raw_body = event.get("body", "")
 
@@ -48,21 +77,46 @@ def lambda_handler(event, context):
                 signature=slack_signature,
                 signing_secret=signing_secret,
             ):
-                print(f"Invalid signature - rejecting request")
+                log_event(
+                    "WARN",
+                    "signature_verification_failed",
+                    {
+                        "reason": "invalid_signature",
+                        "has_timestamp": bool(slack_timestamp),
+                        "has_signature": bool(slack_signature),
+                    },
+                    context,
+                )
                 return {
                     "statusCode": 401,
                     "headers": {"Content-Type": "application/json"},
                     "body": json.dumps({"error": "Invalid signature"}),
                 }
-            print("Signature verification passed")
+            log_event("INFO", "signature_verification_success", {}, context)
         else:
-            print("Signature verification skipped (missing secret or headers)")
+            log_event(
+                "INFO",
+                "signature_verification_skipped",
+                {
+                    "reason": "missing_secret_or_headers",
+                    "has_secret": bool(signing_secret),
+                    "has_signature": bool(slack_signature),
+                    "has_timestamp": bool(slack_timestamp),
+                },
+                context,
+            )
 
         # Parse the incoming request body
         body = json.loads(raw_body)
 
         # Handle Slack's URL verification challenge
         if body.get("type") == "url_verification":
+            log_event(
+                "INFO",
+                "url_verification_challenge",
+                {"challenge_present": bool(body.get("challenge"))},
+                context,
+            )
             return {
                 "statusCode": 200,
                 "headers": {"Content-Type": "application/json"},
@@ -81,22 +135,40 @@ def lambda_handler(event, context):
                 # Check if event was already processed (DynamoDB lookup)
                 try:
                     if is_duplicate_event(event_id):
-                        print(f"Duplicate event detected: {event_id} - skipping")
+                        log_event(
+                            "INFO",
+                            "duplicate_event_detected",
+                            {"event_id": event_id, "reason": "already_processed"},
+                            context,
+                        )
                         is_duplicate = True
                     else:
                         # Try to mark event as processed (atomic operation)
                         # Returns False if event already exists (race condition)
                         was_new = mark_event_processed(event_id)
                         if not was_new:
-                            print(
-                                f"Duplicate event detected (race condition): {event_id} - skipping"
+                            log_event(
+                                "INFO",
+                                "duplicate_event_detected",
+                                {"event_id": event_id, "reason": "race_condition"},
+                                context,
                             )
                             is_duplicate = True
                         else:
-                            print(f"Processing event: {event_id}")
+                            log_event(
+                                "INFO",
+                                "event_processing_started",
+                                {"event_id": event_id},
+                                context,
+                            )
                 except Exception as e:
                     # If deduplication fails, log but continue processing (fail open)
-                    print(f"Warning: Event deduplication check failed: {str(e)}")
+                    log_event(
+                        "WARN",
+                        "event_deduplication_failed",
+                        {"event_id": event_id, "error": str(e)},
+                        context,
+                    )
                     # Try to mark anyway (may fail, but we'll continue)
                     try:
                         mark_event_processed(event_id)
@@ -116,6 +188,19 @@ def lambda_handler(event, context):
             event_type = slack_event.get("type")
             team_id = body.get("team_id")
 
+            # Log event details
+            log_event(
+                "INFO",
+                "event_callback_received",
+                {
+                    "event_type": event_type,
+                    "team_id": team_id,
+                    "channel": slack_event.get("channel"),
+                    "user": slack_event.get("user"),
+                },
+                context,
+            )
+
             # Handle message and app_mention events
             if event_type in ["message", "app_mention"]:
                 # Ignore bot messages to prevent infinite loops
@@ -124,7 +209,16 @@ def lambda_handler(event, context):
                     slack_event.get("bot_id")
                     or slack_event.get("subtype") == "bot_message"
                 ):
-                    print("Ignoring bot message to prevent loop")
+                    log_event(
+                        "INFO",
+                        "bot_message_ignored",
+                        {
+                            "reason": "prevent_loop",
+                            "bot_id": slack_event.get("bot_id"),
+                            "subtype": slack_event.get("subtype"),
+                        },
+                        context,
+                    )
                     return {
                         "statusCode": 200,
                         "headers": {"Content-Type": "application/json"},
@@ -142,6 +236,18 @@ def lambda_handler(event, context):
                 # Validate message text
                 is_valid, error_message = validate_prompt(user_text)
                 if not is_valid:
+                    log_event(
+                        "WARN",
+                        "message_validation_failed",
+                        {
+                            "team_id": team_id,
+                            "channel": channel,
+                            "text_length": len(user_text),
+                            "error": error_message,
+                        },
+                        context,
+                    )
+
                     # Post validation error to user
                     bot_token = None
                     if team_id:
@@ -154,7 +260,12 @@ def lambda_handler(event, context):
                     if bot_token and channel:
                         client = WebClient(token=bot_token)
                         client.chat_postMessage(channel=channel, text=error_message)
-                        print(f"Posted validation error to channel: {channel}")
+                        log_event(
+                            "INFO",
+                            "validation_error_posted",
+                            {"channel": channel},
+                            context,
+                        )
 
                     # Return 200 OK to Slack (message acknowledged)
                     return {
@@ -174,14 +285,24 @@ def lambda_handler(event, context):
                         if bot_token:
                             try:
                                 store_token(team_id, bot_token)
-                                print(f"Token stored for team {team_id}")
+                                log_event(
+                                    "INFO",
+                                    "token_stored",
+                                    {"team_id": team_id},
+                                    context,
+                                )
                             except Exception as e:
-                                print(f"Error storing token: {str(e)}")
+                                log_event(
+                                    "ERROR",
+                                    "token_storage_failed",
+                                    {"team_id": team_id, "error": str(e)},
+                                    context,
+                                )
                 else:
                     # Fallback to environment variable if no team_id
                     bot_token = os.environ.get("SLACK_BOT_TOKEN")
 
-                # Invoke Lambda② (bedrock-processor) asynchronously
+                # Invoke Bedrock Processor (bedrock-processor) asynchronously
                 bedrock_processor_arn = os.environ.get("BEDROCK_PROCESSOR_ARN")
                 if not bedrock_processor_arn:
                     print("Error: BEDROCK_PROCESSOR_ARN environment variable not set")
@@ -191,7 +312,7 @@ def lambda_handler(event, context):
                         "body": json.dumps({"error": "Configuration error"}),
                     }
 
-                # Create payload for Lambda②
+                # Create payload for Bedrock Processor
                 payload = {
                     "channel": channel,
                     "text": user_text,
@@ -199,10 +320,20 @@ def lambda_handler(event, context):
                 }
 
                 try:
-                    # Invoke Lambda② asynchronously (fire-and-forget)
+                    # Invoke Bedrock Processor asynchronously (fire-and-forget)
                     lambda_client = boto3.client("lambda")
-                    print(f"Invoking Lambda② asynchronously: {bedrock_processor_arn}")
-                    print(f"Payload: channel={channel}, text_length={len(user_text)}")
+
+                    log_event(
+                        "INFO",
+                        "bedrock_processor_invocation_started",
+                        {
+                            "function_arn": bedrock_processor_arn,
+                            "channel": channel,
+                            "text_length": len(user_text),
+                            "invocation_type": "Event",
+                        },
+                        context,
+                    )
 
                     lambda_client.invoke(
                         FunctionName=bedrock_processor_arn,
@@ -210,12 +341,22 @@ def lambda_handler(event, context):
                         Payload=json.dumps(payload),
                     )
 
-                    print("Lambda② invoked successfully (async)")
+                    log_event(
+                        "INFO",
+                        "bedrock_processor_invocation_success",
+                        {"function_arn": bedrock_processor_arn},
+                        context,
+                    )
                 except Exception as e:
-                    # Error invoking Lambda②
-                    print(f"Error invoking Lambda②: {str(e)}")
+                    # Error invoking Bedrock Processor
+                    log_event(
+                        "ERROR",
+                        "bedrock_processor_invocation_failed",
+                        {"function_arn": bedrock_processor_arn, "error": str(e)},
+                        context,
+                    )
                     # Log error but still return 200 OK to Slack (prevent retries)
-                    # Lambda② error handling will post error message to Slack
+                    # Bedrock Processor error handling will post error message to Slack
 
         # Return 200 OK to Slack (acknowledgment)
         # Note: If Slack retries, the duplicate check above will catch it
@@ -226,7 +367,12 @@ def lambda_handler(event, context):
         }
 
     except Exception as e:
-        print(f"Error: {str(e)}")
+        log_event(
+            "ERROR",
+            "unhandled_exception",
+            {"error": str(e), "error_type": type(e).__name__},
+            context,
+        )
         return {
             "statusCode": 500,
             "headers": {"Content-Type": "application/json"},

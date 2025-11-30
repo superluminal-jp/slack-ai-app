@@ -2,7 +2,7 @@
 Bedrock processor Lambda handler.
 
 This Lambda function processes Slack events asynchronously:
-1. Receives event payload from Lambda① (slack-event-handler)
+1. Receives event payload from Slack Event Handler (slack-event-handler)
 2. Invokes Bedrock API for AI inference
 3. Posts AI response to Slack
 
@@ -11,10 +11,32 @@ Phase 6: Async processing to meet Slack's 3-second timeout requirement.
 
 import json
 import os
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, ReadTimeoutError
 
 from bedrock_client import invoke_bedrock
 from slack_poster import post_to_slack
+
+
+def log_event(level: str, event_type: str, data: dict, context=None):
+    """
+    Structured logging helper for CloudWatch-friendly JSON logs.
+    
+    Args:
+        level: Log level (INFO, WARN, ERROR)
+        event_type: Event type identifier (e.g., "bedrock_request", "slack_post_success")
+        data: Event-specific data dictionary
+        context: Lambda context object (optional, for request_id)
+    """
+    log_entry = {
+        "level": level,
+        "event": event_type,
+        **data
+    }
+    
+    if context and hasattr(context, "request_id"):
+        log_entry["request_id"] = context.request_id
+    
+    print(json.dumps(log_entry))
 
 # Error message catalog (per research.md and Phase 7 preview)
 ERROR_MESSAGES = {
@@ -38,7 +60,7 @@ def lambda_handler(event, context):
     }
 
     Args:
-        event: Lambda event payload from Lambda①
+        event: Lambda event payload from Slack Event Handler
         context: Lambda context object
 
     Returns:
@@ -46,7 +68,7 @@ def lambda_handler(event, context):
     """
     try:
         # Parse event payload
-        # Lambda① sends JSON string in event body for async invocations
+        # Slack Event Handler sends JSON string in event body for async invocations
         if isinstance(event, str):
             payload = json.loads(event)
         elif isinstance(event, dict) and "body" in event:
@@ -60,28 +82,59 @@ def lambda_handler(event, context):
 
         # Validate required fields
         if not channel:
-            print("Error: Missing channel in payload")
+            log_event("ERROR", "payload_validation_failed", {
+                "reason": "missing_channel"
+            }, context)
             return {"statusCode": 400, "body": "Missing channel"}
 
         if not text:
-            print("Error: Missing text in payload")
+            log_event("ERROR", "payload_validation_failed", {
+                "reason": "missing_text"
+            }, context)
             return {"statusCode": 400, "body": "Missing text"}
 
         if not bot_token:
-            print("Error: Missing bot_token in payload")
+            log_event("ERROR", "payload_validation_failed", {
+                "reason": "missing_bot_token"
+            }, context)
             return {"statusCode": 400, "body": "Missing bot_token"}
 
-        print(f"Processing Bedrock request for channel: {channel}")
-        print(f"User message length: {len(text)} characters")
+        log_event("INFO", "bedrock_request_received", {
+            "channel": channel,
+            "text_length": len(text),
+            "model_id": os.environ.get("BEDROCK_MODEL_ID", "amazon.nova-pro-v1:0")
+        }, context)
 
         # Invoke Bedrock for AI response
         try:
             ai_response = invoke_bedrock(text)
-            print(f"Bedrock response received: {ai_response[:100]}...")
+            log_event("INFO", "bedrock_response_received", {
+                "channel": channel,
+                "response_length": len(ai_response),
+                "input_length": len(text)
+            }, context)
+        except ReadTimeoutError as e:
+            # HTTP connection timeout (botocore ReadTimeoutError)
+            log_event("ERROR", "bedrock_timeout", {
+                "channel": channel,
+                "error": str(e),
+                "error_type": "ReadTimeoutError"
+            }, context)
+            error_message = ERROR_MESSAGES["bedrock_timeout"]
+            post_to_slack(channel, error_message, bot_token)
+            log_event("INFO", "error_message_posted", {
+                "channel": channel,
+                "error_type": "timeout"
+            }, context)
+            return {"statusCode": 200, "body": "Timeout error handled"}
         except ClientError as e:
             # Bedrock API errors (throttling, access denied, timeout)
             error_code = e.response["Error"]["Code"]
-            print(f"Bedrock error: {error_code}")
+            log_event("ERROR", "bedrock_api_error", {
+                "channel": channel,
+                "error_code": error_code,
+                "error_message": e.response["Error"].get("Message", "")
+            }, context)
 
             # Select appropriate error message
             if error_code == "ThrottlingException":
@@ -95,40 +148,66 @@ def lambda_handler(event, context):
 
             # Post error message to Slack
             post_to_slack(channel, error_message, bot_token)
-            print(f"Posted error message to Slack: {error_code}")
+            log_event("INFO", "error_message_posted", {
+                "channel": channel,
+                "error_code": error_code
+            }, context)
             return {"statusCode": 200, "body": "Error handled"}
 
         except ValueError as e:
             # Invalid Bedrock response
-            print(f"Bedrock response validation error: {str(e)}")
+            log_event("ERROR", "bedrock_response_validation_failed", {
+                "channel": channel,
+                "error": str(e)
+            }, context)
             error_message = ERROR_MESSAGES["invalid_response"]
             post_to_slack(channel, error_message, bot_token)
-            print("Posted validation error message to Slack")
+            log_event("INFO", "error_message_posted", {
+                "channel": channel,
+                "error_type": "validation"
+            }, context)
             return {"statusCode": 200, "body": "Validation error handled"}
 
         except Exception as e:
             # Unexpected errors
-            print(f"Unexpected error: {str(e)}")
+            log_event("ERROR", "bedrock_unexpected_error", {
+                "channel": channel,
+                "error": str(e),
+                "error_type": type(e).__name__
+            }, context)
             error_message = ERROR_MESSAGES["generic"]
             post_to_slack(channel, error_message, bot_token)
-            print("Posted generic error message to Slack")
+            log_event("INFO", "error_message_posted", {
+                "channel": channel,
+                "error_type": "generic"
+            }, context)
             return {"statusCode": 200, "body": "Error handled"}
 
         # Post AI response to Slack
         try:
             post_to_slack(channel, ai_response, bot_token)
-            print(f"Posted AI response to channel: {channel}")
+            log_event("INFO", "slack_post_success", {
+                "channel": channel,
+                "response_length": len(ai_response)
+            }, context)
             return {"statusCode": 200, "body": "Success"}
 
         except Exception as e:
             # Error posting to Slack
-            print(f"Error posting to Slack: {str(e)}")
+            log_event("ERROR", "slack_post_failed", {
+                "channel": channel,
+                "error": str(e),
+                "error_type": type(e).__name__
+            }, context)
             # Log error but don't retry (async invocation)
             return {"statusCode": 500, "body": "Slack posting failed"}
 
     except Exception as e:
         # Top-level error handler
-        print(f"Unexpected error in lambda_handler: {str(e)}")
+        log_event("ERROR", "unhandled_exception", {
+            "error": str(e),
+            "error_type": type(e).__name__
+        }, context)
         # Log error to CloudWatch
         # Note: Cannot post to Slack here because we don't have channel/token
         return {"statusCode": 500, "body": "Internal error"}
