@@ -4,12 +4,15 @@ name: slack-ai-app
 description: Slack ワークスペースから AWS Bedrock を利用して AI 機能を提供するためのアーキテクチャと実装ガイド。2 層 Lambda + Bedrock Guardrails + 非同期 response_url アーキテクチャでセキュアに AI システムを実行。
 ---
 
+> 🔒 **セキュリティファースト設計**
+> 本ドキュメントは、多層防御による認証・認可を最優先事項として設計されたアーキテクチャを記述しています。
+
 # Slack to AWS Bedrock AI 統合アーキテクチャ
 
 **ドキュメントタイプ**: システムアーキテクチャ & 実装ガイド
 **ステータス**: 推奨
-**バージョン**: 2.2
-**最終更新日**: 2025-11-30
+**バージョン**: 2.3
+**最終更新日**: 2025-12-01
 **対象読者**: AI エンジニア、クラウドアーキテクト、DevOps チーム、プロダクトマネージャー
 
 ## エグゼクティブサマリー
@@ -51,19 +54,50 @@ Slack ワークスペース上で AI 機能を提供し、Slack ユーザーの�
 
 **適用範囲**: 本アーキテクチャは Slack-to-Bedrock に特化していますが、Microsoft Teams、Google Chat など他のチャットプラットフォームにも応用可能です。
 
----
+### セキュリティファースト設計 (Security-First Design)
 
-## 主な変更点（v2.1 から v2.2）
+本アーキテクチャは、AI システムの特性を考慮した**多層防御による認証・認可**を最優先事項として設計されています：
 
-| 変更カテゴリ     | v2.1                | v2.2                                        | 理由                                             |
-| ---------------- | ------------------- | ------------------------------------------- | ------------------------------------------------ |
-| **AI モデル**    | 特定モデルに依存    | AWS Bedrock 汎用対応                        | モデル選択の柔軟性向上、Lambda② セキュリティ重視 |
-| **Guardrails**   | 基本フィルタ        | Automated Reasoning（99%精度）、60 言語対応 | プロンプトインジェクション検出精度向上           |
-| **PII 検出**     | AWS Comprehend 想定 | 正規表現ベース（日本語対応）                | Comprehend 日本語未対応のため代替実装            |
-| **ユーザー体験** | 未記載              | 5 ステップフロー詳細化                      | 実装後の体験を明確化                             |
-| **技術仕様**     | 2025 年初頭         | 2025 年 11 月最新                           | AWS 公式発表に準拠                               |
+**多層認証アーキテクチャ（6 層防御）**:
 
-**互換性**: v2.1 から v2.2 への移行は、モデル選択の柔軟化と PII 検出ロジックの変更（破壊的変更なし）
+1. **Slack レイヤー**: SSO + MFA による組織レベル認証
+2. **API Gateway**: WAF レート制限による DoS 防止
+3. **Lambda① (エッジ)**:
+   - HMAC SHA256 署名検証（Slack Signing Secret）
+   - Slack API 動的実在性確認（Bot Token） ← **2 鍵防御モデル**
+   - ホワイトリスト認可（team_id, user_id, channel_id）
+4. **API Gateway②**: IAM 認証による内部 API 保護
+5. **Lambda② (プロセッサ)**: Bedrock Guardrails, PII 検出
+6. **Bedrock**: Automated Reasoning によるプロンプトインジェクション検出
+
+**認証・認可の特徴**:
+
+- **2 鍵防御**: Signing Secret と Bot Token の両方が必要（いずれか漏洩時も攻撃面を縮小）
+- **動的検証**: Slack API による実在性確認（偽造リクエスト検出率 ≥95%）
+- **fail-closed 原則**: 認証失敗時は即座にリクエスト拒否
+- **キャッシュ戦略**: 検証済みエンティティを 5 分間キャッシュ（パフォーマンスとセキュリティのバランス）
+
+**防げる攻撃（脅威対応マトリクス）**:
+
+| 攻撃タイプ                                        | 防御レイヤー                          | 防御効果                                  |
+| ------------------------------------------------- | ------------------------------------- | ----------------------------------------- |
+| **署名シークレット漏洩** (T-01)                   | 2 鍵防御 (Signing Secret + Bot Token) | ✅ Existence Check で偽造リクエストを検出 |
+| **Bot Token 漏洩** (T-01)                         | HMAC SHA256 署名検証                  | ✅ 署名検証失敗で即座にブロック           |
+| **削除されたユーザー/チャンネルからのリクエスト** | Slack API 動的実在性確認              | ✅ 実在しないエンティティを即座に検出     |
+| **プロンプトインジェクション** (T-09)             | Bedrock Guardrails (L5-6)             | ✅ 99%精度で検出・ブロック                |
+| **PII 漏洩** (T-10)                               | PII 検出・自動マスキング (L5)         | ✅ 日本語対応、85%以上の精度              |
+| **DDoS / レート乱用** (T-07)                      | WAF レート制限 (L2)                   | ✅ ユーザー単位スロットリング             |
+| **リプレイアタック** (T-03)                       | タイムスタンプ検証 (L3)               | ✅ ±5 分以内の検証                        |
+| **権限昇格** (T-08)                               | IAM 最小権限 + 認可 (L3-4)            | ✅ ホワイトリスト + ロール分離            |
+| **モデル乱用（コスト）** (T-11)                   | トークン制限 (L5)                     | ✅ ユーザー単位クォータ                   |
+| **コンテキスト情報漏洩** (T-12)                   | DynamoDB 暗号化 + アクセス制御        | ✅ コンテキスト ID 分離                   |
+
+**セキュリティ成果指標**:
+
+- 署名検証レイテンシ: ≤50ms (p99)
+- Existence Check 精度: ≥95%
+- プロンプトインジェクション検出率: ≥95%
+- セキュリティインシデント: 0 件（目標）
 
 ---
 
@@ -75,16 +109,16 @@ Slack ワークスペース上で AI 機能を提供し、Slack ユーザーの�
 2. [アーキテクチャ概要](#2-アーキテクチャ概要) - システム全体像と設計原則
 3. [ユーザー体験](#3-ユーザー体験) - エンドユーザーフロー、パフォーマンス期待値
 
-### II. 実装（Implementation）
+### II. セキュリティ対策（Security）
 
-4. [実装例（Bedrock 統合）](#4-実装例bedrock統合) - Python 実装コード
-5. [アーキテクチャ詳細](#5-アーキテクチャ詳細) - Lambda 構成、データフロー
+4. [セキュリティ要件](#4-セキュリティ要件) - 機能的・非機能的要件
+5. [脅威モデル](#5-脅威モデル) - リスク分析とアクター
+6. [セキュリティ実装](#6-セキュリティ実装) - 多層防御、認証・認可、AI 保護
 
-### III. セキュリティ対策（Security）
+### III. 実装（Implementation）
 
-6. [セキュリティ要件](#6-セキュリティ要件) - 機能的・非機能的要件
-7. [脅威モデル](#7-脅威モデル) - リスク分析とアクター
-8. [セキュリティ実装](#8-セキュリティ実装) - 多層防御、認証・認可、AI 保護
+7. [実装例（Bedrock 統合）](#7-実装例bedrock統合) - Python 実装コード
+8. [アーキテクチャ詳細](#8-アーキテクチャ詳細) - Lambda 構成、データフロー
 
 ### IV. 検証と運用（Verification & Operations）
 
@@ -259,6 +293,43 @@ Slack ワークスペース上で AI 機能を提供し、Slack ユーザーの�
 **データフロー**: Slack → API GW① → Lambda①（即座応答）→ Lambda②（非同期）→ Bedrock → response_url → Slack
 
 **非同期処理の利点**: Slack の 3 秒タイムアウト制約を回避し、ユーザーに即座のフィードバックを提供しながら、バックグラウンドで AI 処理を実行できます。
+
+## 2.3 セキュリティ設計の原則
+
+本システムは、AI の特性を考慮した**多層防御（Defense in Depth）**を採用しています：
+
+### 認証・認可の基本方針
+
+1. **2 鍵防御モデル**: Signing Secret と Bot Token の両方が必要
+
+   - Signing Secret 漏洩時も Bot Token がなければ攻撃不可
+   - Bot Token 漏洩時も署名検証で偽造リクエストを検出
+   - **防げる攻撃**: T-01 (署名シークレット漏洩)、T-04 (API Gateway URL 漏洩)
+
+2. **動的検証**: Slack API による実在性確認
+
+   - 静的ホワイトリストではなく、動的に team_id, user_id, channel_id を検証
+   - 削除されたユーザー/チャンネルからのリクエストを即座に検出
+   - **防げる攻撃**: 偽造リクエスト、削除済みエンティティからの攻撃
+
+3. **fail-closed 原則**: 認証・認可失敗時は即座に拒否
+
+   - Slack API ダウン時もリクエストを拒否（セキュリティ優先）
+   - **防げる攻撃**: タイミング攻撃、障害時の攻撃
+
+4. **最小権限の原則**: IAM ロールは必要最小限の権限のみ付与
+   - **防げる攻撃**: T-08 (権限昇格)、T-05 (IAM ロール侵害)
+
+### 多層防御による攻撃対応
+
+各レイヤーが特定の脅威に対応：
+
+- **レイヤー 1-2 (Slack/WAF)**: T-02 (アカウント乗っ取り)、T-07 (DDoS)
+- **レイヤー 3 (Lambda①)**: T-01 (シークレット漏洩)、T-03 (リプレイ)、T-08 (権限昇格)
+- **レイヤー 4 (IAM 認証)**: T-05 (IAM 侵害)、内部 API 保護
+- **レイヤー 5-6 (Guardrails/Bedrock)**: T-09 (プロンプトインジェクション)、T-10 (PII 漏洩)、T-11 (モデル乱用)
+
+詳細は [セクション 4: セキュリティ要件](#4-セキュリティ要件) を参照してください。
 
 ---
 
@@ -466,9 +537,9 @@ AWS Bedrockの主な特徴は以下の通りです：
 
 ---
 
-# 4. 実装例（Bedrock 統合 + response_url 非同期処理）
+# 7. 実装例（Bedrock 統合 + response_url 非同期処理）
 
-## 4.1 Lambda①（Slack エッジレイヤー） - 非同期呼び出し版
+## 7.1 Lambda①（Slack エッジレイヤー） - 非同期呼び出し版
 
 | ID         | 要件                                 | 目標値                       | 測定方法                           |
 | ---------- | ------------------------------------ | ---------------------------- | ---------------------------------- |
@@ -487,9 +558,9 @@ AWS Bedrockの主な特徴は以下の通りです：
 
 ---
 
-# 5. アーキテクチャ詳細
+# 8. アーキテクチャ詳細
 
-## 5.1 Lambda②（AI 処理ロジック）
+## 8.1 Lambda②（AI 処理ロジック）
 
 **目的**: Bedrock API を呼び出して AI 機能を提供（会話、画像生成、コード生成、データ分析など）
 
@@ -564,7 +635,7 @@ AWS Bedrockの主な特徴は以下の通りです：
 
 ---
 
-## 4.1 Lambda①（Slack エッジレイヤー） - 非同期呼び出し版
+### Lambda①（Slack エッジレイヤー） - Python 実装
 
 **ファイル**: `src/adapters/slack/edge_handler.py`
 
@@ -875,7 +946,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 ---
 
-## 4.2 Lambda②（AI 処理ロジック） - Python
+## 7.2 Lambda②（AI 処理ロジック） - Python
 
 **ファイル**: `src/application/bedrock_ai_handler.py`
 
@@ -1316,11 +1387,74 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 ---
 
-# 6. セキュリティ要件
+# 4. セキュリティ要件
 
-セキュリティは機能実現のための重要な要素として、以下の要件を満たす必要があります。
+> **🔒 セキュリティファースト原則**
+>
+> 本システムは、AI の特性を考慮した**多層認証・認可**を採用しています。
+> すべてのリクエストは以下の認証・認可レイヤーを通過する必要があります：
+>
+> 1. ✅ Slack 署名検証（HMAC SHA256）
+> 2. ✅ Slack API 動的実在性確認（team_id, user_id, channel_id）
+> 3. ✅ ホワイトリスト認可
+> 4. ✅ IAM 認証（内部 API）
+>
+> **2 鍵防御**: いずれかの鍵（Signing Secret または Bot Token）が漏洩しても、
+> 両方なければ攻撃は成功しません。
 
-## 6.1 機能的セキュリティ要件
+## 防御可能な脅威一覧
+
+本システムの多層防御アーキテクチャは、以下の脅威に対して効果的な防御を提供します：
+
+### 認証・認可関連の脅威
+
+- **T-01: 署名シークレット漏洩** → 2 鍵防御（Existence Check）により影響を「高」から「中」に軽減
+- **T-02: Slack アカウント乗っ取り** → SSO + MFA、IP 制限で防御
+- **T-03: リプレイアタック** → タイムスタンプ検証（±5 分）で防御
+- **T-04: API Gateway URL 漏洩** → 署名検証により不正アクセスをブロック
+- **T-05: Lambda IAM ロール侵害** → 最小権限の原則、認証情報ローテーション
+- **T-08: 権限昇格** → ホワイトリスト認可、IAM ポリシーレビュー
+
+### AI 特有の脅威
+
+- **T-09: プロンプトインジェクション** → Bedrock Guardrails（99%精度）で検出・ブロック
+- **T-10: PII 漏洩** → PII 検出・自動マスキング（日本語対応、85%以上精度）
+- **T-11: モデル乱用（コスト）** → トークン制限、ユーザー単位クォータ
+- **T-12: コンテキスト履歴情報漏洩** → コンテキスト ID 分離、DynamoDB 暗号化
+
+### その他の脅威
+
+- **T-06: コマンドインジェクション** → 入力検証、パラメータ化クエリ
+- **T-07: DDoS / レート乱用** → WAF レート制限、ユーザー単位スロットリング
+
+## 認証・認可フロー
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ 1. Slack User Request                                       │
+│    ↓ SSO + MFA (Slack レイヤー)                            │
+├─────────────────────────────────────────────────────────────┤
+│ 2. API Gateway ①                                            │
+│    ↓ WAF レート制限                                         │
+├─────────────────────────────────────────────────────────────┤
+│ 3. Lambda ① (エッジレイヤー)                                │
+│    ├─ 3a. 署名検証 (Signing Secret) ← 鍵1                  │
+│    ├─ 3b. Existence Check (Bot Token) ← 鍵2                │
+│    │   └─ Slack API (team.info, users.info, conversations) │
+│    ├─ 3c. 認可 (ホワイトリスト)                            │
+│    └─ 3d. プロンプト検証                                    │
+│    ↓ すべて成功時のみ次へ                                   │
+├─────────────────────────────────────────────────────────────┤
+│ 4. API Gateway ② (IAM 認証)                                 │
+│    ↓                                                         │
+├─────────────────────────────────────────────────────────────┤
+│ 5. Lambda ② → Bedrock                                       │
+│    ├─ Guardrails (プロンプトインジェクション検出)          │
+│    └─ PII 検出                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## 4.1 機能的セキュリティ要件
 
 ### SR-01: Slack 署名検証
 
@@ -1345,28 +1479,51 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 - 各リクエストは最大 4000 トークンを超えてはなりません
 
-## 6.2 非機能的セキュリティ要件
+### SR-06: Slack API Existence Check (Dynamic Entity Verification)
 
-| ID     | 要件                             | 目標値                   | 測定方法                       |
-| ------ | -------------------------------- | ------------------------ | ------------------------------ |
-| NFR-01 | 署名検証レイテンシ               | ≤50ms（p99）             | CloudWatch メトリクス          |
-| NFR-02 | シークレットローテーション       | 90 日ごと                | AWS Secrets Manager            |
-| NFR-03 | 認証失敗アラートレイテンシ       | ≤1 分                    | CloudWatch アラーム            |
-| NFR-04 | セキュリティログ保持             | 365 日                   | S3 + Glacier                   |
-| NFR-05 | IAM ポリシーレビュー             | 30 日ごと                | 手動監査                       |
-| NFR-06 | 脆弱性スキャン                   | 週次                     | Snyk、Trivy                    |
-| NFR-07 | ペネトレーションテスト           | 四半期ごと               | 外部企業                       |
-| NFR-08 | Bedrock 呼び出しレイテンシ       | ≤5 秒（p95）             | CloudWatch メトリクス          |
-| NFR-09 | プロンプトインジェクション検出率 | ≥95%                     | Guardrails Automated Reasoning |
-| NFR-10 | PII 検出精度（日本語）           | ≥85% Recall              | 正規表現パターンテスト         |
-| NFR-11 | ユーザー単位 Bedrock コスト      | ≤$10/月                  | Cost Explorer                  |
-| NFR-12 | コンテキスト履歴暗号化           | すべての DynamoDB データ | KMS 暗号化確認                 |
+すべてのリクエストは、Slack API を使用して team_id、user_id、channel_id が実在するエンティティであることを動的に検証しなければなりません。
+
+**セキュリティモデル**:
+
+- Slack API (team.info, users.info, conversations.info) による実在性確認
+- Bot Token (xoxb-...) を使用した API 呼び出し
+- 2 鍵防御モデル: Signing Secret と Bot Token の両方が必要
+
+**実装レイヤー**: Lambda①（エッジレイヤー）
+
+**キャッシュ戦略**:
+
+- 検証成功したエンティティを 5 分間キャッシュ（DynamoDB）
+- キャッシュキー: `{team_id}#{user_id}#{channel_id}`
+- TTL: 300 秒
+
+**パフォーマンス要件**: Slack API 呼び出しレイテンシ ≤500ms (p95)
+
+## 4.2 非機能的セキュリティ要件
+
+| ID     | 要件                               | 目標値                          | 測定方法                       |
+| ------ | ---------------------------------- | ------------------------------- | ------------------------------ |
+| NFR-01 | 署名検証レイテンシ                 | ≤50ms（p99）                    | CloudWatch メトリクス          |
+| NFR-02 | シークレットローテーション         | 90 日ごと                       | AWS Secrets Manager            |
+| NFR-03 | 認証失敗アラートレイテンシ         | ≤1 分                           | CloudWatch アラーム            |
+| NFR-04 | セキュリティログ保持               | 365 日                          | S3 + Glacier                   |
+| NFR-05 | IAM ポリシーレビュー               | 30 日ごと                       | 手動監査                       |
+| NFR-06 | 脆弱性スキャン                     | 週次                            | Snyk、Trivy                    |
+| NFR-07 | ペネトレーションテスト             | 四半期ごと                      | 外部企業                       |
+| NFR-08 | Bedrock 呼び出しレイテンシ         | ≤5 秒（p95）                    | CloudWatch メトリクス          |
+| NFR-09 | プロンプトインジェクション検出率   | ≥95%                            | Guardrails Automated Reasoning |
+| NFR-10 | PII 検出精度（日本語）             | ≥85% Recall                     | 正規表現パターンテスト         |
+| NFR-11 | ユーザー単位 Bedrock コスト        | ≤$10/月                         | Cost Explorer                  |
+| NFR-12 | コンテキスト履歴暗号化             | すべての DynamoDB データ        | KMS 暗号化確認                 |
+| NFR-13 | Existence Check レイテンシ         | ≤500ms（p95、キャッシュミス時） | CloudWatch メトリクス          |
+| NFR-14 | Existence Check キャッシュヒット率 | ≥80%                            | DynamoDB + CloudWatch          |
+| NFR-15 | Slack API 呼び出し成功率           | ≥99%                            | CloudWatch メトリクス          |
 
 ---
 
-# 7. 脅威モデル
+# 5. 脅威モデル
 
-## 7.1 脅威アクター
+## 5.1 脅威アクター
 
 | アクター                   | 能力                                       | 意図                                                 |
 | -------------------------- | ------------------------------------------ | ---------------------------------------------------- |
@@ -1375,39 +1532,239 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 | 侵害されたボットアカウント | フルボットトークンスコープ                 | 自動化されたプロンプト攻撃、コスト増大               |
 | 好奇心旺盛なユーザー       | 正規 Slack アクセス                        | ジェイルブレイク試行、システムプロンプト抽出         |
 
-## 7.2 脅威分析（AI 特有の脅威を含む）
+## 5.2 脅威分析（AI 特有の脅威を含む）
 
-| 脅威 ID  | 脅威                               | 攻撃ベクター                         | 影響                                           | 可能性 | リスク     | 緩和レイヤー                               |
-| -------- | ---------------------------------- | ------------------------------------ | ---------------------------------------------- | ------ | ---------- | ------------------------------------------ |
-| T-01     | 署名シークレット漏洩               | GitHub コミット、ログ露出、内部者    | 完全なリクエスト偽造                           | 中     | 高         | Lambda① 認可、モニタリング                 |
-| T-02     | Slack アカウント乗っ取り           | フィッシング、認証情報総当たり       | 不正質問実行                                   | 中     | 高         | SSO+MFA、IP 制限                           |
-| T-03     | リプレイアタック                   | ネットワークキャプチャ               | 重複質問実行                                   | 低     | 中         | タイムスタンプ検証、nonce 追跡             |
-| T-04     | API Gateway① URL 漏洩              | ログ露出、ドキュメント               | 直接呼び出し試行                               | 高     | 中         | 署名検証（シークレットなしで失敗）         |
-| T-05     | Lambda① IAM ロール侵害             | AWS 認証情報漏洩                     | 内部 API アクセス                              | 低     | 致命的     | 最小権限、認証情報ローテーション           |
-| T-06     | コマンドインジェクション           | サニタイズされていない Slack 入力    | Lambda② でのコード実行                         | 低     | 致命的     | 入力検証、パラメータ化クエリ               |
-| T-07     | DDoS / レート乱用                  | Slack API 自動化                     | サービス利用不可、高額コスト                   | 中     | 中         | WAF レート制限、ユーザー単位スロットリング |
-| T-08     | 権限昇格                           | 誤設定された IAM ポリシー            | 不正リソースアクセス                           | 低     | 高         | IAM ポリシーレビュー、最小権限             |
-| **T-09** | **プロンプトインジェクション**     | **悪意のあるプロンプト**             | **システムプロンプト上書き、ジェイルブレイク** | **高** | **致命的** | **Guardrails、入力サニタイズ**             |
-| **T-10** | **PII 漏洩**                       | **AI レスポンスに PII 含まれる**     | **プライバシー侵害、GDPR 違反**                | **中** | **高**     | **PII 検出、レスポンスフィルタ**           |
-| **T-11** | **モデル乱用（コスト）**           | **大量リクエスト、長いコンテキスト** | **高額な Bedrock コスト**                      | **高** | **中**     | **トークン制限、クォータ**                 |
-| **T-12** | **コンテキスト履歴からの情報漏洩** | **他ユーザーのコンテキストアクセス** | **機密情報露出**                               | **低** | **高**     | **コンテキスト ID の分離、アクセス制御**   |
+| 脅威 ID  | 脅威                               | 攻撃ベクター                         | 影響                                           | 可能性 | リスク         | 緩和レイヤー                                          |
+| -------- | ---------------------------------- | ------------------------------------ | ---------------------------------------------- | ------ | -------------- | ----------------------------------------------------- |
+| T-01     | 署名シークレット漏洩               | GitHub コミット、ログ露出、内部者    | リクエスト偽造（但し実在エンティティのみ）     | 中     | 中（従来: 高） | Slack API Existence Check、Lambda① 認可、モニタリング |
+| T-02     | Slack アカウント乗っ取り           | フィッシング、認証情報総当たり       | 不正質問実行                                   | 中     | 高             | SSO+MFA、IP 制限                                      |
+| T-03     | リプレイアタック                   | ネットワークキャプチャ               | 重複質問実行                                   | 低     | 中             | タイムスタンプ検証、nonce 追跡                        |
+| T-04     | API Gateway① URL 漏洩              | ログ露出、ドキュメント               | 直接呼び出し試行                               | 高     | 中             | 署名検証（シークレットなしで失敗）                    |
+| T-05     | Lambda① IAM ロール侵害             | AWS 認証情報漏洩                     | 内部 API アクセス                              | 低     | 致命的         | 最小権限、認証情報ローテーション                      |
+| T-06     | コマンドインジェクション           | サニタイズされていない Slack 入力    | Lambda② でのコード実行                         | 低     | 致命的         | 入力検証、パラメータ化クエリ                          |
+| T-07     | DDoS / レート乱用                  | Slack API 自動化                     | サービス利用不可、高額コスト                   | 中     | 中             | WAF レート制限、ユーザー単位スロットリング            |
+| T-08     | 権限昇格                           | 誤設定された IAM ポリシー            | 不正リソースアクセス                           | 低     | 高             | IAM ポリシーレビュー、最小権限                        |
+| **T-09** | **プロンプトインジェクション**     | **悪意のあるプロンプト**             | **システムプロンプト上書き、ジェイルブレイク** | **高** | **致命的**     | **Guardrails、入力サニタイズ**                        |
+| **T-10** | **PII 漏洩**                       | **AI レスポンスに PII 含まれる**     | **プライバシー侵害、GDPR 違反**                | **中** | **高**         | **PII 検出、レスポンスフィルタ**                      |
+| **T-11** | **モデル乱用（コスト）**           | **大量リクエスト、長いコンテキスト** | **高額な Bedrock コスト**                      | **高** | **中**         | **トークン制限、クォータ**                            |
+| **T-12** | **コンテキスト履歴からの情報漏洩** | **他ユーザーのコンテキストアクセス** | **機密情報露出**                               | **低** | **高**         | **コンテキスト ID の分離、アクセス制御**              |
 
 **リスク評価**: 致命的 = 即時対応、高 = 優先修正、中 = 計画的緩和、低 = モニタリング
 
+### T-01 詳細分析: 署名シークレット漏洩時の防御メカニズム
+
+Slack API Existence Check により、署名シークレット漏洩時のリスクは「高」から「中」に軽減されます：
+
+**攻撃シナリオ 1: Signing Secret のみ漏洩**
+
+- 攻撃者は正しい署名を生成可能
+- 任意の team_id/user_id/channel_id を使用したリクエストは Existence Check で失敗
+- Slack API 呼び出しには Bot Token が必要（攻撃者は持っていない）
+- **結果**: 攻撃はブロックされる
+
+**攻撃シナリオ 2: 実在エンティティへの攻撃**
+
+- 攻撃者が正規の team_id/user_id/channel_id を発見
+- Existence Check は通過（実在するため）
+- しかし、認可レイヤー（ホワイトリスト）で検出可能
+- **結果**: 認可レイヤーで防御
+
+**攻撃シナリオ 3: Signing Secret + Bot Token の両方漏洩**
+
+- 両方の鍵が漏洩した場合、Existence Check は突破される
+- これは正規ワークスペースの完全侵害を意味する
+- **結果**: プロンプトインジェクション防止、Guardrails などの後続レイヤーで防御
+
+**セキュリティ原則**: 防御の深層化（Defense in Depth）
+
+- Existence Check は単独の防御ではなく、多層防御の 1 層として機能
+- Signing Secret 漏洩の影響範囲を大幅に縮小
+
 ---
 
-# 8. セキュリティ実装
+# 6. セキュリティ実装
 
-## 8.1 多層防御アーキテクチャ
+## 6.1 多層防御アーキテクチャ
 
 セキュリティは機能実現のための重要な要素として、以下の多層防御を実装します：
 
 - **レイヤー 1（Slack）**: SSO + MFA による認証
 - **レイヤー 2（API GW①）**: WAF レート制限
-- **レイヤー 3（Lambda①）**: HMAC SHA256 署名検証、認可、基本的プロンプト検証
+- **レイヤー 3（Lambda①）**:
+  - 3a. HMAC SHA256 署名検証
+  - **3b. Slack API Existence Check（NEW）**
+  - 3c. 認可（ホワイトリスト）
+  - 3d. 基本的プロンプト検証
 - **レイヤー 4（API GW②）**: IAM 認証による内部 API 保護
 - **レイヤー 5（Lambda②）**: Bedrock Guardrails、PII 検出
 - **レイヤー 6（Bedrock）**: Automated Reasoning（99%精度）によるプロンプトインジェクション検出
+
+### 8.1.1 レイヤー 3b: Slack API Existence Check 実装詳細
+
+**目的**: Signing Secret 漏洩時の攻撃面を縮小し、偽造リクエストを検出する
+
+**実装フロー**:
+
+1. 署名検証（3a）が成功した後、Existence Check を実行
+2. 以下の Slack API を順次呼び出し:
+   - `team.info`: team_id が実在するワークスペースか確認
+   - `users.info`: user_id が実在するユーザーか確認
+   - `conversations.info`: channel_id が実在するチャンネルか確認
+3. すべての API 呼び出しが成功した場合のみ、認可レイヤー（3c）に進む
+4. いずれかが失敗した場合、セキュリティイベントをログに記録し、403 を返す
+
+**キャッシュ戦略**:
+
+- 検証成功したエンティティを DynamoDB に 5 分間キャッシュ
+- キャッシュキー: `{team_id}#{user_id}#{channel_id}`
+- TTL: 300 秒（5 分）
+- キャッシュヒット時は Slack API 呼び出しをスキップ
+
+**エラーハンドリング**:
+
+- Slack API レート制限: 429 エラー時は指数バックオフでリトライ（最大 3 回）
+- **Slack API ダウン: タイムアウト時（>2 秒）は fail-closed（リクエスト拒否）** ← セキュリティ優先
+- 不正エンティティ: 403 Forbidden + セキュリティアラート
+
+**セキュリティメトリクス**:
+
+- `ExistenceCheckFailed`: 存在チェック失敗回数
+- `ExistenceCheckCacheHitRate`: キャッシュヒット率
+- `SlackAPILatency`: Slack API 呼び出しレイテンシ
+
+## 6.2 Slack API Existence Check 実装コード
+
+### Python 実装例（Lambda①）
+
+```python
+"""Slack API Existence Check - 動的エンティティ検証"""
+
+import boto3
+from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
+from typing import Optional, Dict
+import time
+
+dynamodb = boto3.resource('dynamodb')
+existence_cache_table = dynamodb.Table('ExistenceCheckCache')
+
+class ExistenceCheckError(Exception):
+    """エンティティ存在チェックが失敗した場合に発生"""
+    pass
+
+def check_entity_existence(
+    bot_token: str,
+    team_id: str,
+    user_id: str,
+    channel_id: str
+) -> bool:
+    """Slack API を使用してエンティティの存在を動的に検証する"""
+
+    # キャッシュチェック
+    cache_key = f"{team_id}#{user_id}#{channel_id}"
+    cached = get_from_cache(cache_key)
+    if cached:
+        return True
+
+    client = WebClient(token=bot_token)
+
+    try:
+        # 1. team_id 検証
+        team_info = client.team_info(team=team_id)
+        if not team_info["ok"]:
+            raise ExistenceCheckError(f"Invalid team_id: {team_id}")
+
+        # 2. user_id 検証
+        user_info = client.users_info(user=user_id)
+        if not user_info["ok"]:
+            raise ExistenceCheckError(f"Invalid user_id: {user_id}")
+
+        # 3. channel_id 検証
+        channel_info = client.conversations_info(channel=channel_id)
+        if not channel_info["ok"]:
+            raise ExistenceCheckError(f"Invalid channel_id: {channel_id}")
+
+        # キャッシュに保存（TTL: 5分）
+        save_to_cache(cache_key, ttl=300)
+
+        return True
+
+    except SlackApiError as e:
+        if e.response["error"] == "team_not_found":
+            raise ExistenceCheckError(f"Team not found: {team_id}")
+        elif e.response["error"] == "user_not_found":
+            raise ExistenceCheckError(f"User not found: {user_id}")
+        elif e.response["error"] == "channel_not_found":
+            raise ExistenceCheckError(f"Channel not found: {channel_id}")
+        elif e.response.status_code == 429:
+            raise ExistenceCheckError("Slack API rate limit exceeded")
+        else:
+            raise ExistenceCheckError(f"Slack API error: {e.response['error']}")
+
+def get_from_cache(cache_key: str) -> Optional[Dict]:
+    """DynamoDB からキャッシュを取得"""
+    try:
+        response = existence_cache_table.get_item(Key={'cache_key': cache_key})
+        item = response.get('Item')
+        if item and item.get('ttl', 0) > int(time.time()):
+            return item
+        return None
+    except Exception:
+        return None
+
+def save_to_cache(cache_key: str, ttl: int):
+    """DynamoDB にキャッシュを保存（TTL 付き）"""
+    try:
+        existence_cache_table.put_item(
+            Item={
+                'cache_key': cache_key,
+                'ttl': int(time.time()) + ttl,
+                'verified_at': int(time.time())
+            }
+        )
+    except Exception as e:
+        print(f"Cache save failed: {str(e)}")
+```
+
+### TypeScript 実装例（CDK スタック）
+
+```typescript
+// DynamoDB テーブル定義（Existence Check キャッシュ）
+const existenceCheckCacheTable = new dynamodb.Table(
+  this,
+  "ExistenceCheckCache",
+  {
+    partitionKey: { name: "cache_key", type: dynamodb.AttributeType.STRING },
+    timeToLiveAttribute: "ttl",
+    billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+    removalPolicy: cdk.RemovalPolicy.DESTROY,
+  }
+);
+
+// Lambda① に DynamoDB アクセス権限を付与
+existenceCheckCacheTable.grantReadWriteData(slackEventHandlerLambda);
+
+// CloudWatch アラーム: Existence Check 失敗
+const existenceCheckFailedAlarm = new cloudwatch.Alarm(
+  this,
+  "ExistenceCheckFailedAlarm",
+  {
+    metric: new cloudwatch.Metric({
+      namespace: "SlackAI/Security",
+      metricName: "ExistenceCheckFailed",
+      statistic: "Sum",
+      period: cdk.Duration.minutes(5),
+    }),
+    threshold: 5,
+    evaluationPeriods: 1,
+    alarmDescription: "Existence Check が 5 分間に 5 回以上失敗",
+  }
+);
+
+existenceCheckFailedAlarm.addAlarmAction(
+  new cloudwatch_actions.SnsAction(securityTeamTopic)
+);
+```
 
 ---
 
@@ -1496,6 +1853,77 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     かつ 応答は "[NAME]さん（[EMAIL]、[PHONE]）にご連絡ください" である必要がある
 ```
 
+### Slack API Existence Check（動的エンティティ検証）
+
+```gherkin
+フィーチャー: Slack API Existence Check
+  セキュリティ管理として
+  システムは Slack API を使用してエンティティの存在を動的に検証する必要がある
+  Signing Secret 漏洩時の攻撃を防ぐため
+
+  背景:
+    前提 署名検証が成功している
+    かつ Bot Token が利用可能である
+    かつ Existence Check キャッシュが空である
+
+  シナリオ: 実在するエンティティでのリクエスト
+    前提 team_id "T01234567" がワークスペース "AcmeCorp" として実在する
+    かつ user_id "U01234567" がユーザー "alice" として実在する
+    かつ channel_id "C01234567" がチャンネル "#general" として実在する
+    もし Lambda① が Existence Check を実行する
+    ならば Slack API team.info が成功する必要がある
+    かつ Slack API users.info が成功する必要がある
+    かつ Slack API conversations.info が成功する必要がある
+    かつ エンティティがキャッシュに保存される必要がある（TTL: 5 分）
+    かつ レスポンスステータスコードは 200 である必要がある
+
+  シナリオ: 偽造された team_id でのリクエスト（Signing Secret 漏洩攻撃）
+    前提 攻撃者が Signing Secret を入手している
+    かつ 攻撃者が偽の team_id "T99999999" を使用する
+    かつ team_id "T99999999" は実在しない
+    もし Lambda① が Existence Check を実行する
+    ならば Slack API team.info が "team_not_found" エラーを返す必要がある
+    かつ レスポンスステータスコードは 403 である必要がある
+    かつ エラーメッセージは "不正なワークスペースが検出されました" である必要がある
+    かつ セキュリティアラート "ExistenceCheckFailed" がトリガーされる必要がある
+    かつ CloudWatch メトリクス "ExistenceCheckFailed" が +1 される必要がある
+
+  シナリオ: 偽造された user_id でのリクエスト
+    前提 team_id "T01234567" が実在する
+    かつ user_id "U99999999" が実在しない
+    かつ channel_id "C01234567" が実在する
+    もし Lambda① が Existence Check を実行する
+    ならば Slack API users.info が "user_not_found" エラーを返す必要がある
+    かつ レスポンスステータスコードは 403 である必要がある
+    かつ セキュリティアラートがトリガーされる必要がある
+
+  シナリオ: キャッシュヒット時のパフォーマンス
+    前提 エンティティ "{T01234567}#{U01234567}#{C01234567}" がキャッシュに存在する
+    かつ キャッシュの TTL が有効である（<5 分）
+    もし Lambda① が Existence Check を実行する
+    ならば Slack API 呼び出しがスキップされる必要がある
+    かつ キャッシュから検証結果が取得される必要がある
+    かつ レイテンシは <50ms である必要がある
+    かつ CloudWatch メトリクス "ExistenceCheckCacheHitRate" が更新される必要がある
+
+  シナリオ: Slack API レート制限時の動作
+    前提 team_id、user_id、channel_id がすべて実在する
+    かつ Slack API が 429 エラー（レート制限）を返す
+    もし Lambda① が Existence Check を実行する
+    ならば 指数バックオフでリトライする必要がある（最大 3 回）
+    かつ リトライ後も失敗した場合、レスポンスステータスコードは 503 である必要がある
+    かつ エラーメッセージは "現在サービスが混雑しています" である必要がある
+
+  シナリオ: Slack API ダウン時の fail-closed 動作
+    前提 team_id、user_id、channel_id がすべて実在する
+    かつ Slack API がタイムアウトする（>2 秒）
+    もし Lambda① が Existence Check を実行する
+    ならば リクエストは拒否される必要がある（fail-closed）
+    かつ レスポンスステータスコードは 503 である必要がある
+    かつ エラーメッセージは "Slack API との通信に失敗しました" である必要がある
+    かつ CloudWatch メトリクス "SlackAPITimeout" が +1 される必要がある
+```
+
 ## 9.2 品質ゲート & コンプライアンス
 
 ### コンプライアンス標準（AI 特有を含む）
@@ -1514,12 +1942,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 ### 脅威 → セキュリティ管理 → テスト
 
-| 脅威 ID | 脅威                       | セキュリティ管理                      | 検証（BDD シナリオ）                               | テストファイル                                |
-| ------- | -------------------------- | ------------------------------------- | -------------------------------------------------- | --------------------------------------------- |
-| T-09    | プロンプトインジェクション | Lambda① パターン検出 + Guardrails     | `prompt_injection.feature::ジェイルブレイク試行`   | `tests/bdd/features/prompt_injection.feature` |
-| T-10    | PII 漏洩                   | AWS Comprehend PII 検出 + フィルタ    | `pii_protection.feature::メールアドレスを含む応答` | `tests/bdd/features/pii_protection.feature`   |
-| T-11    | モデル乱用（コスト）       | トークン制限、ユーザー単位クォータ    | 手動負荷テスト                                     | `tests/security/test_token_limits.py`         |
-| T-12    | コンテキスト履歴情報漏洩   | コンテキスト ID 分離、DynamoDB 暗号化 | アクセス制御テスト                                 | `tests/security/test_context_isolation.py`    |
+| 脅威 ID | 脅威                       | セキュリティ管理                                            | 検証（BDD シナリオ）                                         | テストファイル                                |
+| ------- | -------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------- |
+| T-01    | 署名シークレット漏洩       | **Slack API Existence Check** + Lambda① 認可 + モニタリング | `existence_check.feature::偽造された team_id でのリクエスト` | `tests/bdd/features/existence_check.feature`  |
+| T-09    | プロンプトインジェクション | Lambda① パターン検出 + Guardrails                           | `prompt_injection.feature::ジェイルブレイク試行`             | `tests/bdd/features/prompt_injection.feature` |
+| T-10    | PII 漏洩                   | AWS Comprehend PII 検出 + フィルタ                          | `pii_protection.feature::メールアドレスを含む応答`           | `tests/bdd/features/pii_protection.feature`   |
+| T-11    | モデル乱用（コスト）       | トークン制限、ユーザー単位クォータ                          | 手動負荷テスト                                               | `tests/security/test_token_limits.py`         |
+| T-12    | コンテキスト履歴情報漏洩   | コンテキスト ID 分離、DynamoDB 暗号化                       | アクセス制御テスト                                           | `tests/security/test_context_isolation.py`    |
 
 ---
 
@@ -1527,15 +1956,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 ## 10.1 CloudWatch アラーム（AI 特有を含む）
 
-| アラーム                           | メトリクス                              | 閾値                     | アクション                           |
-| ---------------------------------- | --------------------------------------- | ------------------------ | ------------------------------------ |
-| **署名検証失敗**                   | カスタム: `SignatureVerificationFailed` | 5 分間に 5 回以上        | SNS → PagerDuty → セキュリティチーム |
-| **プロンプトインジェクション検出** | カスタム: `PromptInjectionDetected`     | 1 時間に 10 回以上       | SNS → セキュリティチーム             |
-| **Guardrails ブロック**            | カスタム: `GuardrailsBlocked`           | 1 時間に 20 回以上       | SNS → AI 運用チーム                  |
-| **PII 検出**                       | カスタム: `PIIDetected`                 | 1 日に 100 回以上        | SNS → コンプライアンスチーム         |
-| **Bedrock コスト超過**             | Cost Explorer                           | ユーザー単位で$10/月超過 | SNS → 財務チーム                     |
-| **Bedrock エラー率**               | `Errors`                                | 5%以上                   | SNS → エンジニアリングチーム         |
-| **レイテンシ**                     | `Duration`                              | p95 で 5 秒以上          | SNS → エンジニアリングチーム         |
+| アラーム                             | メトリクス                              | 閾値                     | アクション                           |
+| ------------------------------------ | --------------------------------------- | ------------------------ | ------------------------------------ |
+| **署名検証失敗**                     | カスタム: `SignatureVerificationFailed` | 5 分間に 5 回以上        | SNS → PagerDuty → セキュリティチーム |
+| **プロンプトインジェクション検出**   | カスタム: `PromptInjectionDetected`     | 1 時間に 10 回以上       | SNS → セキュリティチーム             |
+| **Guardrails ブロック**              | カスタム: `GuardrailsBlocked`           | 1 時間に 20 回以上       | SNS → AI 運用チーム                  |
+| **PII 検出**                         | カスタム: `PIIDetected`                 | 1 日に 100 回以上        | SNS → コンプライアンスチーム         |
+| **Bedrock コスト超過**               | Cost Explorer                           | ユーザー単位で$10/月超過 | SNS → 財務チーム                     |
+| **Bedrock エラー率**                 | `Errors`                                | 5%以上                   | SNS → エンジニアリングチーム         |
+| **レイテンシ**                       | `Duration`                              | p95 で 5 秒以上          | SNS → エンジニアリングチーム         |
+| **Existence Check 失敗**             | カスタム: `ExistenceCheckFailed`        | 5 分間に 5 回以上        | SNS → PagerDuty → セキュリティチーム |
+| **Slack API レート制限**             | カスタム: `SlackAPIRateLimitExceeded`   | 1 時間に 10 回以上       | SNS → エンジニアリングチーム         |
+| **Existence Check キャッシュミス率** | カスタム: `ExistenceCheckCacheMissRate` | >50% が 10 分間継続      | SNS → エンジニアリングチーム         |
 
 ---
 
@@ -1576,6 +2008,54 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
    - Red Team によるペネトレーションテスト実施
    - プロンプトエンジニアリングトレーニング（ユーザー向け）
    - Bedrock Guardrails のカスタムワードリスト更新
+
+### シナリオ: Existence Check 失敗の大規模発生（Signing Secret 漏洩疑い）
+
+**検出**:
+
+- Existence Check 失敗アラームが継続的にトリガー
+- 偽造された team_id/user_id/channel_id を使用した大量のリクエスト
+- CloudWatch Logs に "team_not_found" エラーが頻発
+
+**初期対応（0-15 分）**:
+
+1. セキュリティチームにページャー通知
+2. CloudWatch Logs Insights でアクセスパターンを分析:
+   ```
+   fields @timestamp, team_id, user_id, channel_id, source_ip
+   | filter event = "ExistenceCheckFailed"
+   | stats count() by team_id, source_ip
+   | sort count desc
+   ```
+3. 攻撃元 IP を特定し、WAF でブロック
+4. Signing Secret 漏洩の可能性を評価
+
+**封じ込め（15-60 分）**:
+
+1. **Signing Secret の即時ローテーション**:
+   - AWS Secrets Manager で新しい Signing Secret を生成
+   - Slack App 設定で新しい Signing Secret を更新
+   - 古い Signing Secret は無効化
+2. Bot Token のローテーション（念のため）
+3. すべてのチーム・ユーザーに通知
+
+**根絶（1-4 時間）**:
+
+1. GitHub、CloudWatch Logs、S3 で Signing Secret 漏洩元を調査
+2. 漏洩原因を特定し、修正
+3. 侵害されたリソースを洗い出し
+
+**回復（4-24 時間）**:
+
+1. 通常運用に復帰
+2. モニタリング強化（異常検知）
+3. インシデントレポート作成
+
+**事後対応（1-2 週間）**:
+
+1. Signing Secret ローテーションプロセスの自動化を検討
+2. Existence Check のしきい値調整
+3. セキュリティトレーニング実施
 
 ---
 
@@ -1822,6 +2302,88 @@ Bedrock の処理時間（5〜30 秒）が Slack の 3 秒タイムアウト制�
 ### 関連資料
 
 - [Slack response_url 仕様](https://api.slack.com/messaging/webhooks)
+
+---
+
+## ADR-004: Slack API Existence Check の採用
+
+**ステータス**: Accepted
+**決定日**: 2025-12-01
+**決定者**: セキュリティアーキテクチャチーム
+
+### コンテキスト
+
+T-01（Signing Secret 漏洩）は「高」リスクとして評価されていました。現在の緩和策（Lambda① 認可、モニタリング）では、Signing Secret が漏洩した場合、攻撃者が任意のリクエストを偽造できる可能性があります。
+
+**課題**:
+
+- Signing Secret のみで署名検証を突破可能
+- 静的ホワイトリスト（team_id、user_id、channel_id）は設定が煩雑
+- 攻撃者が正規の ID を推測または発見した場合、認可を突破できる
+
+### 決定
+
+**Slack API Existence Check を Lambda① に実装し、動的エンティティ検証を追加**
+
+**アプローチ**:
+
+1. 署名検証後、Slack API (team.info, users.info, conversations.info) を呼び出す
+2. すべてのエンティティが実在することを確認
+3. 検証結果を DynamoDB に 5 分間キャッシュ（パフォーマンス最適化）
+
+**セキュリティモデル**:
+
+- **2 鍵防御**: Signing Secret と Bot Token の両方が必要
+- Signing Secret のみ漏洩 → Existence Check で検出
+- Bot Token のみ漏洩 → 署名検証で検出
+
+### 代替案の検討
+
+| アプローチ                            | 長所                 | 短所                                     | 不採用理由             |
+| ------------------------------------- | -------------------- | ---------------------------------------- | ---------------------- |
+| **Slack API Existence Check**         | 動的検証、2 鍵防御   | Slack API レイテンシ（キャッシュで緩和） | 採用                   |
+| **静的ホワイトリストのみ**            | レイテンシなし       | 管理コスト高、ID 推測に脆弱              | 静的管理の限界         |
+| **nonce トラッキング**                | リプレイ攻撃完全防止 | DynamoDB 書き込みコスト高、複雑          | Existence Check で十分 |
+| **IP ホワイトリスト**                 | シンプル             | Slack 側 IP 変更に脆弱、VPN 使用時無効   | Slack IP 範囲の動的性  |
+| **Signing Secret 定期ローテーション** | 漏洩影響を時限化     | 運用負荷、ダウンタイムリスク             | 他の対策と併用可能     |
+
+### 結果（Consequences）
+
+**ポジティブ**:
+
+- **リスク軽減**: T-01 リスクレベル「高」→「中」
+- **2 鍵防御**: Signing Secret と Bot Token の両方が必要
+- **動的検証**: 実在エンティティのみを許可
+- **攻撃面縮小**: 偽造リクエストの大部分をブロック
+- **監査証跡**: Existence Check 失敗を CloudWatch にログ
+
+**ネガティブ・トレードオフ**:
+
+- **レイテンシ増加**: Slack API 呼び出しで +200-500ms（キャッシュミス時）
+- **Slack API 依存**: Slack ダウン時は fail-closed 動作が必要
+- **コスト増加**: Slack API 呼び出しコスト（月額推定 $5-10）
+- **複雑性**: キャッシュ管理、エラーハンドリング
+
+**技術的負債**:
+
+- キャッシュ戦略の最適化が必要（TTL、キーサイズ）
+- Slack API レート制限対策（リトライロジック、バックオフ）
+- フォールバック動作の定義と実装
+
+### 検証方法
+
+- **セキュリティテスト**: BDD シナリオ `existence_check.feature` で網羅的にテスト
+- **パフォーマンステスト**: キャッシュヒット率 ≥80%、レイテンシ ≤500ms (p95) を確認
+- **ペネトレーションテスト**: Signing Secret 漏洩を模擬した攻撃でブロック率を測定
+
+### 関連資料
+
+- [Slack API Methods](https://api.slack.com/methods)
+  - [team.info](https://api.slack.com/methods/team.info)
+  - [users.info](https://api.slack.com/methods/users.info)
+  - [conversations.info](https://api.slack.com/methods/conversations.info)
+- T-01 脅威分析: Section 5.2
+- 実装コード: Section 6.2
 
 ---
 
