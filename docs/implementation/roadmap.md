@@ -6,14 +6,14 @@
 
 ### 優先度: 必須（P0）
 
-1. **verification-lambda（検証層 Verification Layer）実装**
+1. **SlackEventHandler（検証層 Verification Layer）実装**
 
    - タスク: HMAC SHA256 署名検証、認可ロジック、非同期呼び出し
    - 成果物: `src/adapters/slack/verification_handler.py`
    - 検証: 署名検証テスト、認可テスト
    - 所要時間: 3 日
 
-2. **execution-lambda（実行層 Execution Layer）実装**
+2. **BedrockProcessor（実行層 Execution Layer）実装**
 
    - タスク: Bedrock API 呼び出し、正規表現 PII 検出、response_url 投稿
    - 成果物: `src/application/execution_handler.py`
@@ -28,7 +28,7 @@
    - 所要時間: 2 日
 
 4. **IAM ポリシー設定**
-   - タスク: verification-lambda、execution-lambda の最小権限ポリシー作成
+   - タスク: SlackEventHandler、BedrockProcessor の最小権限ポリシー作成
    - 成果物: IAM Policy JSON ファイル
    - 検証: ポリシーバリデーター、権限過剰チェック
    - 所要時間: 2 日
@@ -52,7 +52,7 @@
 
 6. **プロンプトインジェクション検出強化**
 
-   - タスク: verification-lambda の基本パターン検出実装
+   - タスク: SlackEventHandler の基本パターン検出実装
    - 成果物: 正規表現パターンリスト
    - 検証: OWASP LLM Top 10 テストケース
    - 所要時間: 2 日
@@ -168,7 +168,7 @@
 
 | リスク                         | 影響 | 確率 | 緩和策                                             |
 | ------------------------------ | ---- | ---- | -------------------------------------------------- |
-| Bedrock Guardrails 精度不足    | 高   | 中   | verification-lambda の正規表現検出で多層防御       |
+| Bedrock Guardrails 精度不足    | 高   | 中   | SlackEventHandler の正規表現検出で多層防御       |
 | PII 検出 False Positive 多発   | 中   | 高   | パターン継続的チューニング、ユーザーフィードバック |
 | レイテンシ超過（>35 秒）       | 中   | 低   | タイムアウトエラーハンドリング、ユーザー通知       |
 | AWS Comprehend 日本語対応遅延  | 低   | 高   | 正規表現で当面運用、移行計画準備                   |

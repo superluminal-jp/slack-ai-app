@@ -10,7 +10,7 @@ Bedrock の処理時間（5〜30 秒）が Slack の 3 秒タイムアウト制�
 
 ### 決定
 
-**verification-lambda が即座に応答 + execution-lambda が response_url に POST**の非同期パターンを採用
+**SlackEventHandler が即座に応答 + BedrockProcessor が Slack API に POST**の非同期パターンを採用
 
 ### 代替案の検討
 

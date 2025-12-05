@@ -34,7 +34,7 @@ Slack ワークスペース上で AI 機能を提供し、Slack ユーザーの�
 
 **機能実現の核心**:
 
-1. **非同期処理**: verification-lambda が即座に応答し、execution-lambda がバックグラウンドで Bedrock を呼び出して response_url に投稿
+1. **非同期処理**: SlackEventHandler が即座に応答し、BedrockProcessor がバックグラウンドで Bedrock を呼び出して Slack API に投稿
 2. **コンテキスト履歴管理**: DynamoDB でユーザー単位の処理コンテキストを保持（会話、画像生成、コード生成など）
 3. **AI モデル**: AWS Bedrock の Foundation Model で高品質な出力を提供（モデル選択は要件に応じて決定）
 4. **セキュリティ保護**: 多層防御、Guardrails、PII 検出により安全に運用
@@ -56,12 +56,12 @@ Slack ワークスペース上で AI 機能を提供し、Slack ユーザーの�
 
 1. **Slack レイヤー**: SSO + MFA による組織レベル認証
 2. **API Gateway**: WAF レート制限による DoS 防止
-3. **verification-lambda (検証層)**:
+3. **SlackEventHandler (検証層)**:
    - HMAC SHA256 署名検証（Slack Signing Secret）
    - Slack API 動的実在性確認（Bot Token） ← **2 鍵防御モデル**
    - ホワイトリスト認可（team_id, user_id, channel_id）
-4. **execution-api**: IAM 認証による内部 API 保護
-5. **execution-lambda (プロセッサ)**: Bedrock Guardrails, PII 検出
+4. **ExecutionApi**: IAM 認証による内部 API 保護
+5. **BedrockProcessor (プロセッサ)**: Bedrock Guardrails, PII 検出
 6. **Bedrock**: Automated Reasoning によるプロンプトインジェクション検出
 
 **認証・認可の特徴**:

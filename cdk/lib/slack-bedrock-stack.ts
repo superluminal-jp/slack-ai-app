@@ -1,10 +1,13 @@
 import * as cdk from "aws-cdk-lib";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
+import * as iam from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
 import { SlackEventHandler } from "./constructs/slack-event-handler";
 import { TokenStorage } from "./constructs/token-storage";
 import { EventDedupe } from "./constructs/event-dedupe";
 import { BedrockProcessor } from "./constructs/bedrock-processor";
+import { ExecutionApi } from "./constructs/execution-api";
+import { ApiGatewayMonitoring } from "./constructs/api-gateway-monitoring";
 
 export class SlackBedrockStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -13,28 +16,40 @@ export class SlackBedrockStack extends cdk.Stack {
     // Get Slack Bot Token from environment variable (required for initial secret creation)
     const slackBotToken = process.env.SLACK_BOT_TOKEN;
     if (!slackBotToken) {
-      throw new Error("SLACK_BOT_TOKEN environment variable is required for initial deployment");
+      throw new Error(
+        "SLACK_BOT_TOKEN environment variable is required for initial deployment"
+      );
     }
 
     // Get Slack Signing Secret from environment variable (required for initial secret creation)
     const slackSigningSecret = process.env.SLACK_SIGNING_SECRET;
     if (!slackSigningSecret) {
-      throw new Error("SLACK_SIGNING_SECRET environment variable is required for initial deployment");
+      throw new Error(
+        "SLACK_SIGNING_SECRET environment variable is required for initial deployment"
+      );
     }
 
     // Create Secrets Manager secrets for Slack credentials
     // These secrets are created in the stack and will be automatically deleted when the stack is destroyed
-    const slackSigningSecretResource = new secretsmanager.Secret(this, "SlackSigningSecret", {
-      secretName: `${this.stackName}/slack/signing-secret`,
-      description: "Slack app signing secret for request verification",
-      secretStringValue: cdk.SecretValue.unsafePlainText(slackSigningSecret),
-    });
+    const slackSigningSecretResource = new secretsmanager.Secret(
+      this,
+      "SlackSigningSecret",
+      {
+        secretName: `${this.stackName}/slack/signing-secret`,
+        description: "Slack app signing secret for request verification",
+        secretStringValue: cdk.SecretValue.unsafePlainText(slackSigningSecret),
+      }
+    );
 
-    const slackBotTokenSecret = new secretsmanager.Secret(this, "SlackBotToken", {
-      secretName: `${this.stackName}/slack/bot-token`,
-      description: "Slack bot OAuth token",
-      secretStringValue: cdk.SecretValue.unsafePlainText(slackBotToken),
-    });
+    const slackBotTokenSecret = new secretsmanager.Secret(
+      this,
+      "SlackBotToken",
+      {
+        secretName: `${this.stackName}/slack/bot-token`,
+        description: "Slack bot OAuth token",
+        secretStringValue: cdk.SecretValue.unsafePlainText(slackBotToken),
+      }
+    );
 
     // Get AWS Region from CDK context (cdk.json)
     const awsRegion = this.node.tryGetContext("awsRegion") || "ap-northeast-1";
@@ -55,6 +70,13 @@ export class SlackBedrockStack extends cdk.Stack {
       bedrockModelId,
     });
 
+    // Create Execution API Gateway with IAM authentication
+    // Note: Created before SlackEventHandler to get API URL for environment variable
+    const executionApi = new ExecutionApi(this, "ExecutionApi", {
+      executionLambda: bedrockProcessor.function,
+      // verificationLambdaRoleArn will be set after SlackEventHandler is created
+    });
+
     // Create Slack event handler Lambda with Function URL
     const slackEventHandler = new SlackEventHandler(this, "SlackEventHandler", {
       slackSigningSecret: slackSigningSecretResource,
@@ -63,20 +85,54 @@ export class SlackBedrockStack extends cdk.Stack {
       dedupeTableName: eventDedupe.table.tableName,
       awsRegion,
       bedrockModelId,
-      bedrockProcessorArn: bedrockProcessor.function.functionArn,
+      executionApiUrl: executionApi.apiUrl,
     });
+
+    // Add Verification Layer permission to API Gateway resource policy
+    executionApi.addVerificationLayerPermission(
+      slackEventHandler.function.role!.roleArn
+    );
+
+    // Grant Verification Layer permission to invoke API Gateway
+    // Add execute-api:Invoke permission to Lambda role
+    slackEventHandler.function.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["execute-api:Invoke"],
+        resources: [executionApi.api.arnForExecuteApi("*")],
+      })
+    );
 
     // Grant Lambda① read/write permissions to DynamoDB tables
     tokenStorage.table.grantReadWriteData(slackEventHandler.function);
     eventDedupe.table.grantReadWriteData(slackEventHandler.function);
-
-    // Grant Lambda① permission to invoke Lambda② asynchronously
-    bedrockProcessor.function.grantInvoke(slackEventHandler.function);
 
     // Output the Function URL for Slack Event Subscriptions configuration
     new cdk.CfnOutput(this, "SlackEventHandlerUrl", {
       value: slackEventHandler.functionUrl.url,
       description: "Slack Event Handler Function URL",
     });
+
+    // Output the Execution API Gateway URL
+    new cdk.CfnOutput(this, "ExecutionApiUrl", {
+      value: executionApi.apiUrl,
+      description: "Execution Layer API Gateway URL",
+    });
+
+    // Optional: Create CloudWatch monitoring (can be enabled via environment variable)
+    // Set ENABLE_API_GATEWAY_MONITORING=true to enable
+    const enableMonitoring =
+      process.env.ENABLE_API_GATEWAY_MONITORING === "true";
+    if (enableMonitoring) {
+      const monitoring = new ApiGatewayMonitoring(this, "ApiGatewayMonitoring", {
+        api: executionApi.api,
+        alarmEmail: process.env.ALARM_EMAIL, // Optional email for alerts
+      });
+
+      new cdk.CfnOutput(this, "MonitoringDashboardUrl", {
+        value: `https://${this.region}.console.aws.amazon.com/cloudwatch/home?region=${this.region}#dashboards:name=${monitoring.dashboard.dashboardName}`,
+        description: "CloudWatch Dashboard URL for API Gateway monitoring",
+      });
+    }
   }
 }

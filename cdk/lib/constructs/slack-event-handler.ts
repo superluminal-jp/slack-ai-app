@@ -12,7 +12,7 @@ export interface SlackEventHandlerProps {
   dedupeTableName: string; // DynamoDB table name for event deduplication
   awsRegion: string; // AWS region (e.g., ap-northeast-1)
   bedrockModelId: string; // Bedrock model ID (e.g., amazon.nova-pro-v1:0)
-  bedrockProcessorArn: string; // Lambda② ARN for async Bedrock processing
+  executionApiUrl: string; // API Gateway URL for Execution Layer (required)
 }
 
 export class SlackEventHandler extends Construct {
@@ -45,11 +45,12 @@ export class SlackEventHandler extends Construct {
         DEDUPE_TABLE_NAME: props.dedupeTableName,
         AWS_REGION_NAME: props.awsRegion,
         BEDROCK_MODEL_ID: props.bedrockModelId,
-        BEDROCK_PROCESSOR_ARN: props.bedrockProcessorArn,
         // Store secret names (not values) in environment variables
         // Lambda function will fetch the actual secret values from Secrets Manager at runtime
         SLACK_SIGNING_SECRET_NAME: props.slackSigningSecret.secretName,
         SLACK_BOT_TOKEN_SECRET_NAME: props.slackBotTokenSecret.secretName,
+        // API Gateway URL for Execution Layer (required)
+        EXECUTION_API_URL: props.executionApiUrl,
       },
     });
 

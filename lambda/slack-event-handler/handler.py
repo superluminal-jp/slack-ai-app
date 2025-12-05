@@ -9,6 +9,7 @@ from validation import validate_prompt
 from event_dedupe import is_duplicate_event, mark_event_processed
 from botocore.exceptions import ClientError
 from typing import Optional
+from api_gateway_client import invoke_execution_api
 
 # Cache for secrets (to avoid repeated API calls)
 _secrets_cache: dict[str, str] = {}
@@ -320,15 +321,19 @@ def lambda_handler(event, context):
                         "body": json.dumps({"ok": True}),
                     }
 
-                # Get bot token from DynamoDB (with fallback to environment variable)
+                    # Get bot token from DynamoDB (with fallback to environment variable)
                     bot_token = None
                     if team_id:
                         bot_token = get_token(team_id)
                         if not bot_token:
                             # Fallback to Secrets Manager or environment variable
-                            bot_token_secret_name = os.environ.get("SLACK_BOT_TOKEN_SECRET_NAME")
+                            bot_token_secret_name = os.environ.get(
+                                "SLACK_BOT_TOKEN_SECRET_NAME"
+                            )
                             if bot_token_secret_name:
-                                bot_token = get_secret_from_secrets_manager(bot_token_secret_name)
+                                bot_token = get_secret_from_secrets_manager(
+                                    bot_token_secret_name
+                                )
                             else:
                                 # Fallback to environment variable for backward compatibility
                                 bot_token = os.environ.get("SLACK_BOT_TOKEN")
@@ -351,24 +356,33 @@ def lambda_handler(event, context):
                                 )
                 else:
                     # Fallback to Secrets Manager or environment variable if no team_id
-                    bot_token_secret_name = os.environ.get("SLACK_BOT_TOKEN_SECRET_NAME")
+                    bot_token_secret_name = os.environ.get(
+                        "SLACK_BOT_TOKEN_SECRET_NAME"
+                    )
                     if bot_token_secret_name:
-                        bot_token = get_secret_from_secrets_manager(bot_token_secret_name)
+                        bot_token = get_secret_from_secrets_manager(
+                            bot_token_secret_name
+                        )
                     else:
                         # Fallback to environment variable for backward compatibility
                         bot_token = os.environ.get("SLACK_BOT_TOKEN")
 
-                # Invoke Bedrock Processor (bedrock-processor) asynchronously
-                bedrock_processor_arn = os.environ.get("BEDROCK_PROCESSOR_ARN")
-                if not bedrock_processor_arn:
-                    print("Error: BEDROCK_PROCESSOR_ARN environment variable not set")
+                # Invoke Execution Layer via API Gateway with IAM authentication
+                execution_api_url = os.environ.get("EXECUTION_API_URL", "")
+                if not execution_api_url:
+                    log_event(
+                        "ERROR",
+                        "execution_api_url_missing",
+                        {"error": "EXECUTION_API_URL environment variable not set"},
+                        context,
+                    )
                     return {
                         "statusCode": 500,
                         "headers": {"Content-Type": "application/json"},
                         "body": json.dumps({"error": "Configuration error"}),
                     }
 
-                # Create payload for Bedrock Processor
+                # Create payload for Execution Layer
                 payload = {
                     "channel": channel,
                     "text": user_text,
@@ -376,43 +390,63 @@ def lambda_handler(event, context):
                 }
 
                 try:
-                    # Invoke Bedrock Processor asynchronously (fire-and-forget)
-                    lambda_client = boto3.client("lambda")
-
+                    # Use API Gateway with IAM authentication
                     log_event(
                         "INFO",
-                        "bedrock_processor_invocation_started",
+                        "execution_api_invocation_started",
                         {
-                            "function_arn": bedrock_processor_arn,
+                            "api_url": execution_api_url,
                             "channel": channel,
                             "text_length": len(user_text),
-                            "invocation_type": "Event",
                         },
                         context,
                     )
 
-                    lambda_client.invoke(
-                        FunctionName=bedrock_processor_arn,
-                        InvocationType="Event",  # Async invocation
-                        Payload=json.dumps(payload),
+                    response = invoke_execution_api(
+                        api_url=execution_api_url,
+                        payload=payload,
+                        region=os.environ.get("AWS_REGION_NAME", "ap-northeast-1"),
                     )
 
-                    log_event(
-                        "INFO",
-                        "bedrock_processor_invocation_success",
-                        {"function_arn": bedrock_processor_arn},
-                        context,
-                    )
+                    # Accept both 200 and 202 as success
+                    # 200: Lambda proxy integration returns Lambda's statusCode
+                    # 202: Preferred for async operations
+                    if response.status_code in [200, 202]:
+                        log_event(
+                            "INFO",
+                            "execution_api_invocation_success",
+                            {
+                                "api_url": execution_api_url,
+                                "status_code": response.status_code,
+                            },
+                            context,
+                        )
+                    else:
+                        log_event(
+                            "ERROR",
+                            "execution_api_invocation_failed",
+                            {
+                                "api_url": execution_api_url,
+                                "status_code": response.status_code,
+                                "response_body": response.text,
+                            },
+                            context,
+                        )
+                        # Log error but still return 200 OK to Slack (prevent retries)
+                        # Execution Layer error handling will post error message to Slack
                 except Exception as e:
-                    # Error invoking Bedrock Processor
+                    # Error invoking Execution Layer via API Gateway
                     log_event(
                         "ERROR",
-                        "bedrock_processor_invocation_failed",
-                        {"function_arn": bedrock_processor_arn, "error": str(e)},
+                        "execution_api_invocation_failed",
+                        {
+                            "api_url": execution_api_url,
+                            "error": str(e),
+                        },
                         context,
                     )
                     # Log error but still return 200 OK to Slack (prevent retries)
-                    # Bedrock Processor error handling will post error message to Slack
+                    # Execution Layer error handling will post error message to Slack
 
         # Return 200 OK to Slack (acknowledgment)
         # Note: If Slack retries, the duplicate check above will catch it

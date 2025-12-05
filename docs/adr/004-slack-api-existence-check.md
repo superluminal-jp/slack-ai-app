@@ -6,7 +6,7 @@
 
 ### コンテキスト
 
-T-01（Signing Secret 漏洩）は「高」リスクとして評価されていました。現在の緩和策（verification-lambda 認可、モニタリング）では、Signing Secret が漏洩した場合、攻撃者が任意のリクエストを偽造できる可能性があります。
+T-01（Signing Secret 漏洩）は「高」リスクとして評価されていました。現在の緩和策（SlackEventHandler 認可、モニタリング）では、Signing Secret が漏洩した場合、攻撃者が任意のリクエストを偽造できる可能性があります。
 
 **課題**:
 
@@ -16,7 +16,7 @@ T-01（Signing Secret 漏洩）は「高」リスクとして評価されてい�
 
 ### 決定
 
-**Slack API Existence Check を verification-lambda に実装し、動的エンティティ検証を追加**
+**Slack API Existence Check を SlackEventHandler に実装し、動的エンティティ検証を追加**
 
 **アプローチ**:
 

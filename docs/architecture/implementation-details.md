@@ -2,7 +2,7 @@
 
 ## 7.実装例（Bedrock 統合 + response_url 非同期処理）
 
-## 7.1 verification-lambda（検証層 Verification Layer） - 非同期呼び出し版
+## 7.1 SlackEventHandler（検証層 Verification Layer） - API Gateway呼び出し版
 
 | ID         | 要件                                 | 目標値                       | 測定方法                           |
 | ---------- | ------------------------------------ | ---------------------------- | ---------------------------------- |
@@ -23,7 +23,7 @@
 
 # 8. アーキテクチャ詳細
 
-## 8.1 execution-lambda（実行層 Execution Layer）
+## 8.1 BedrockProcessor（実行層 Execution Layer）
 
 **目的**: Bedrock API を呼び出して AI 機能を提供（会話、画像生成、コード生成、データ分析など）
 
@@ -98,18 +98,18 @@
 
 ---
 
-### verification-lambda（検証層 Verification Layer） - Python 実装
+### SlackEventHandler（検証層 Verification Layer） - Python 実装
 
-**ファイル**: `src/adapters/slack/verification_handler.py`
+**ファイル**: `lambda/slack-event-handler/handler.py`
 
-verification-lambda は署名検証と認可を行い、即座に応答を返してから execution-lambda を非同期で呼び出します:
+SlackEventHandler は署名検証と認可を行い、即座に応答を返してから ExecutionApi (API Gateway) を呼び出します:
 
 ```python
 """
 Verification Layer (検証層) - 信頼境界の強制 + 非同期Lambda呼び出し。
 
 このモジュールはSlack署名を検証し、リクエストを認可し、
-即座に応答を返してからexecution-lambdaを非同期で呼び出します。
+即座に応答を返してからExecutionApi (API Gateway) を呼び出します。
 """
 
 import hashlib
@@ -266,9 +266,9 @@ def detect_prompt_injection(text: str) -> bool:
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
-    verification-lambdaエントリーポイント - Verification Layer (検証層)。
+    SlackEventHandlerエントリーポイント - Verification Layer (検証層)。
 
-    即座に200を返し、execution-lambdaを非同期で呼び出す。
+    即座に200を返し、ExecutionApi (API Gateway) を呼び出す。
 
     Args:
         event: API Gatewayイベント
@@ -337,7 +337,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 })
             }
 
-        # execution-lambdaを非同期で呼び出し（Event型）
+        # ExecutionApi (API Gateway) を呼び出し
         lambda_payload = {
             "team_id": team_id,
             "user_id": user_id,
@@ -348,7 +348,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         }
 
         lambda_client.invoke(
-            FunctionName="execution-lambda",  # execution-lambdaの関数名
+            api_url=execution_api_url,  # ExecutionApi (API Gateway) のURL
             InvocationType="Event",  # 非同期呼び出し
             Payload=json.dumps(lambda_payload).encode("utf-8")
         )
@@ -409,7 +409,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 ---
 
-## 7.2 execution-lambda（実行層 Execution Layer） - Python
+## 7.2 BedrockProcessor（実行層 Execution Layer） - Python
 
 **ファイル**: `src/application/execution_handler.py`
 
@@ -417,7 +417,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 """
 Execution Layer (実行層) - AWS Bedrock AI処理 + response_url投稿版。
 
-このモジュールは、verification-lambdaで認可が検証された後、AWS Bedrockを呼び出し、
+このモジュールは、SlackEventHandlerで認可が検証された後、AWS Bedrockを呼び出し、
 結果をSlackのresponse_urlにHTTP POSTで投稿します。
 会話、画像生成、コード生成、データ分析など多様なAI機能に対応します。
 
@@ -713,14 +713,14 @@ def invoke_bedrock_with_guardrails(
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
-    execution-lambdaエントリーポイント - Execution Layer (実行層)（非同期処理版）。
+    BedrockProcessorエントリーポイント - Execution Layer (実行層)。
 
-    verification-lambdaから非同期呼び出しされ、Bedrockを呼び出した後、
+    SlackEventHandlerからAPI Gateway経由で呼び出しされ、Bedrockを呼び出した後、
     response_urlにHTTP POSTでレスポンスを投稿します。
     会話、画像生成、コード生成、データ分析など多様なAI機能に対応します。
 
     Args:
-        event: verification-lambdaからのペイロード
+        event: SlackEventHandlerからのペイロード
             - user_id: SlackユーザーID
             - channel_id: SlackチャネルID
             - user_message: ユーザーのリクエスト
@@ -737,7 +737,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     ai_function_type = event.get("ai_function_type", "conversation")
 
     try:
-        # 検証済みパラメータを抽出（verification-lambdaで既に検証済み）
+        # 検証済みパラメータを抽出（SlackEventHandlerで既に検証済み）
         user_id = event["user_id"]
         channel_id = event["channel_id"]
         user_message = event["user_message"]  # キー名を修正

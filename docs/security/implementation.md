@@ -5,14 +5,14 @@
 セキュリティは機能実現のための重要な要素として、以下の多層防御を実装します：
 
 - **レイヤー 1（Slack）**: SSO + MFA による認証
-- **レイヤー 2（verification-api）**: WAF レート制限
-- **レイヤー 3（verification-lambda）**:
+- **レイヤー 2（SlackEventHandler Function URL）**: Function URL (認証なし、署名検証はLambda内で実施)
+- **レイヤー 3（SlackEventHandler）**:
   - 3a. HMAC SHA256 署名検証
   - **3b. Slack API Existence Check（NEW）**
   - 3c. 認可（ホワイトリスト）
   - 3d. 基本的プロンプト検証
-- **レイヤー 4（execution-api）**: IAM 認証による内部 API 保護
-- **レイヤー 5（execution-lambda）**: Bedrock Guardrails、PII 検出
+- **レイヤー 4（ExecutionApi）**: IAM 認証による内部 API 保護
+- **レイヤー 5（BedrockProcessor）**: Bedrock Guardrails、PII 検出
 - **レイヤー 6（Bedrock）**: Automated Reasoning（99%精度）によるプロンプトインジェクション検出
 
 ### レイヤー 3b: Slack API Existence Check 実装詳細
@@ -50,7 +50,7 @@
 
 ## 6.2 Slack API Existence Check 実装コード
 
-### Python 実装例（verification-lambda）
+### Python 実装例（SlackEventHandler）
 
 ```python
 """Slack API Existence Check - 動的エンティティ検証"""
@@ -157,7 +157,7 @@ const existenceCheckCacheTable = new dynamodb.Table(
   }
 );
 
-// verification-lambda に DynamoDB アクセス権限を付与
+// SlackEventHandler に DynamoDB アクセス権限を付与
 existenceCheckCacheTable.grantReadWriteData(slackEventHandlerLambda);
 
 // CloudWatch アラーム: Existence Check 失敗

@@ -15,13 +15,15 @@
 ┌─────────────────────────────────────────────────────────────┐
 │ Verification Zone (検証層)                                   │
 │ ┌─────────────────────────────────────────────────────────┐ │
-│ │ verification-api (パブリックリージョナルエンドポイント)       │ │
-│ │ - WAFルール: レート制限、IPフィルタリング（オプション）   │ │
+│ │ SlackEventHandler Function URL                          │ │
+│ │ (パブリックリージョナルエンドポイント)                     │ │
+│ │ - 認証なし（署名検証はLambda内で実施）                   │ │
 │ │ - CloudWatch Logs: 完全なリクエスト/レスポンスログ        │ │
 │ └──────────────────────┬──────────────────────────────────┘ │
 │                        │                                     │
 │ ┌─────────────────────▼──────────────────────────────────┐ │
-│ │ verification-lambda (検証層 Verification Layer) - タイムアウト: 10秒     │ │
+│ │ SlackEventHandler (検証層 Verification Layer)          │ │
+│ │ タイムアウト: 10秒                                       │ │
 │ │ 責任範囲:                                              │ │
 │ │ - Slack署名検証 (HMAC SHA256)                          │ │
 │ │ - タイムスタンプ検証 (±5分)                           │ │
@@ -30,32 +32,35 @@
 │ │ - プロンプトインジェクション検出（基本）               │ │
 │ │ - ユーザー単位レート制限（10リクエスト/分）            │ │
 │ │ - 構造化JSONログ（相関ID、PIIなし）                   │ │
+│ │ - イベント重複排除（DynamoDB: slack-event-dedupe）    │ │
 │ │ [2] → Slackに即座に応答 "考え中です..."（3秒以内）    │ │
-│ │ [3] → execution-lambdaを非同期呼び出し（Event型）              │ │
+│ │ [3] → ExecutionApi (API Gateway) を呼び出し           │ │
 │ └──────────────────────┬──────────────────────────────────┘ │
 └────────────────────────┼────────────────────────────────────┘
-                         │ [3] Lambda非同期呼び出し
-                         │ InvocationType: Event
-                         │ Payload: {user_message, response_url, ...}
+                         │ [3] API Gateway呼び出し (IAM認証)
+                         │ POST /execute
+                         │ Payload: {channel, text, bot_token}
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ Execution Zone (実行層)                                      │
 │ ┌─────────────────────────────────────────────────────────┐ │
-│ │ execution-api (プライベート / IAM認証)                   │ │
+│ │ ExecutionApi (Execution Layer API)                      │ │
+│ │ API Gateway REST API (プライベート / IAM認証)             │ │
 │ │ - IAM認証のみ                                           │ │
-│ │ - リソースポリシー: verification-lambdaロールのみ                   │ │
-│ │ - VPCエンドポイント（完全分離のためのオプション）        │ │
+│ │ - リソースポリシー: SlackEventHandlerロールのみ         │ │
+│ │ - Lambda Proxy統合                                      │ │
 │ └──────────────────────┬──────────────────────────────────┘ │
 │                        │                                     │
 │ ┌─────────────────────▼──────────────────────────────────┐ │
-│ │ execution-lambda (実行層 Execution Layer) - タイムアウト: 300秒        │ │
+│ │ BedrockProcessor (実行層 Execution Layer)              │ │
+│ │ タイムアウト: 30秒                                      │ │
 │ │ 責任範囲:                                              │ │
 │ │ - AWS Bedrock APIの呼び出し（Foundation Model選択可能）│ │
 │ │ - Bedrock Guardrails適用（60言語、99%精度検証）       │ │
 │ │ - コンテキスト履歴管理（DynamoDB）                     │ │
 │ │ - AIレスポンスのPIIフィルタリング（正規表現ベース）   │ │
 │ │ - トークン数制限の強制（4000トークン/リクエスト）      │ │
-│ │ [4] → response_urlにHTTP POSTでレスポンス投稿         │ │
+│ │ [4] → Slack APIにHTTP POSTでレスポンス投稿             │ │
 │ │ - CloudTrail監査（すべてのBedrock呼び出し）           │ │
 │ │ - 会話、画像生成、コード生成、データ分析など対応      │ │
 │ └────────────────────┬───────────────────────────────────┘ │
@@ -73,31 +78,31 @@
                        ↓
 ┌──────────────────────────────────────────────────────────────┐
 │ Slackワークスペース                                           │
-│ [5] execution-lambdaからresponse_urlへのPOSTを受信                   │
+│ [5] BedrockProcessorからSlack APIへのPOSTを受信                     │
 │ → チャネルにAIレスポンスを表示                                │
 └──────────────────────────────────────────────────────────────┘
 
 フロー:
 [1] ユーザーが /ask "リクエスト" を実行
-[2] verification-lambdaが即座に "処理中です..." を返す（3秒以内）
-[3] verification-lambdaがexecution-lambdaを非同期呼び出し（Event型）
-[4] execution-lambdaがBedrockを呼び出し、response_urlにPOST
+[2] SlackEventHandlerが即座に "処理中です..." を返す（3秒以内）
+[3] SlackEventHandlerがExecutionApi (API Gateway) を呼び出し（IAM認証）
+[4] BedrockProcessorがBedrockを呼び出し、Slack APIにPOST
 [5] Slackに最終レスポンスが表示される（5〜30秒後）
 ```
 
 ## 2.2 システムコンポーネント
 
-| レイヤー            | 主な機能                 | 技術スタック           | 責任範囲                                                                     |
-| ------------------- | ------------------------ | ---------------------- | ---------------------------------------------------------------------------- |
-| Slack               | ユーザーインターフェース | Slack API              | コマンド受付、メッセージ表示                                                 |
-| verification-api    | パブリックエンドポイント | API Gateway            | リクエスト受付、ルーティング                                                 |
-| verification-lambda | 検証層処理               | Python 3.11            | 署名検証、認可、非同期呼び出し、即座応答                                     |
-| execution-api       | 内部 API                 | API Gateway (IAM 認証) | 内部通信の保護                                                               |
-| execution-lambda    | AI 処理                  | Python 3.11            | Bedrock 呼び出し、コンテキスト履歴管理、response_url 投稿                    |
-| Bedrock             | AI モデル                | Foundation Model       | 多様な AI 機能（会話、画像生成、コード生成、データ分析など、モデル選択可能） |
-| DynamoDB            | データストア             | DynamoDB               | コンテキスト履歴の永続化                                                     |
+| レイヤー          | 主な機能                 | 技術スタック           | 責任範囲                                                                           |
+| ----------------- | ------------------------ | ---------------------- | ---------------------------------------------------------------------------------- |
+| Slack             | ユーザーインターフェース | Slack API              | コマンド受付、メッセージ表示                                                       |
+| SlackEventHandler | 検証層処理               | Python 3.11            | 署名検証、認可、API Gateway 呼び出し、即座応答                                     |
+| Function URL      | パブリックエンドポイント | Lambda Function URL    | リクエスト受付、SlackEventHandler へのルーティング                                 |
+| ExecutionApi      | 内部 API                 | API Gateway (IAM 認証) | 内部通信の保護（IAM 認証による）                                                   |
+| BedrockProcessor  | AI 処理                  | Python 3.11            | Bedrock 呼び出し、コンテキスト履歴管理、Slack API 投稿                             |
+| Bedrock           | AI モデル                | Foundation Model       | 多様な AI 機能（会話、画像生成、コード生成、データ分析など、モデル選択可能）       |
+| DynamoDB          | データストア             | DynamoDB               | トークンストレージ (slack-workspace-tokens)、イベント重複排除 (slack-event-dedupe) |
 
-**データフロー**: Slack → verification-api → verification-lambda（即座応答）→ execution-lambda（非同期）→ Bedrock → response_url → Slack
+**データフロー**: Slack → SlackEventHandler Function URL → SlackEventHandler（即座応答）→ ExecutionApi (API Gateway, IAM 認証) → BedrockProcessor → Bedrock → Slack API → Slack
 
 **非同期処理の利点**: Slack の 3 秒タイムアウト制約を回避し、ユーザーに即座のフィードバックを提供しながら、バックグラウンドで AI 処理を実行できます。
 
@@ -131,9 +136,9 @@
 
 各レイヤーが特定の脅威に対応：
 
-- **レイヤー 1-2 (Slack/WAF)**: T-02 (アカウント乗っ取り)、T-07 (DDoS)
-- **レイヤー 3 (verification-lambda)**: T-01 (シークレット漏洩)、T-03 (リプレイ)、T-08 (権限昇格)
-- **レイヤー 4 (IAM 認証)**: T-05 (IAM 侵害)、内部 API 保護
+- **レイヤー 1-2 (Slack/Function URL)**: T-02 (アカウント乗っ取り)、T-07 (DDoS)
+- **レイヤー 3 (SlackEventHandler)**: T-01 (シークレット漏洩)、T-03 (リプレイ)、T-08 (権限昇格)
+- **レイヤー 4 (ExecutionApi IAM 認証)**: T-05 (IAM 侵害)、内部 API 保護
 - **レイヤー 5-6 (Guardrails/Bedrock)**: T-09 (プロンプトインジェクション)、T-10 (PII 漏洩)、T-11 (モデル乱用)
 
 詳細は [セキュリティ要件](../security/requirements.md) を参照してください。
@@ -143,8 +148,8 @@
 ## 関連ドキュメント
 
 - [機能要件](../requirements/functional-requirements.md) - ビジネス要件と機能仕様
-- [ユーザー体験](./user-experience.md) - エンドユーザーフローとUX
-- [実装詳細](./implementation-details.md) - Lambda構成とデータフロー
+- [ユーザー体験](./user-experience.md) - エンドユーザーフローと UX
+- [実装詳細](./implementation-details.md) - Lambda 構成とデータフロー
 - [セキュリティ要件](../security/requirements.md) - 機能的・非機能的セキュリティ要件
 - [脅威モデル](../security/threat-model.md) - リスク分析とアクター
 - [セキュリティ実装](../security/implementation.md) - 多層防御の実装詳細

@@ -46,7 +46,7 @@
 3. **中期対応（T+24 時間）**:
 
    - プロンプトインジェクション検出ルールを更新
-   - verification-lambda と execution-lambda のコードをデプロイ
+   - SlackEventHandler と BedrockProcessor のコードをデプロイ
    - 攻撃パターンをドキュメント化
    - 脅威モデルを更新
 
@@ -129,7 +129,7 @@
 
 **次のステップ**:
 
-- 提供されたコード例を使用して verification-lambda と execution-lambda を実装
+- 提供されたコード例を使用して SlackEventHandler と BedrockProcessor を実装
 - セキュリティ設計を実装
 - 要件に応じて適切な Bedrock Foundation Model を選択
 - Bedrock Guardrails を設定（Automated Reasoning、プロンプトインジェクション、有害コンテンツ）

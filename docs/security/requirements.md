@@ -45,10 +45,10 @@
 │ 1. Slack User Request                                       │
 │    ↓ SSO + MFA (Slack レイヤー)                            │
 ├─────────────────────────────────────────────────────────────┤
-│ 2. verification-api                                            │
-│    ↓ WAF レート制限                                         │
+│ 2. SlackEventHandler Function URL                            │
+│    ↓ Function URL (認証なし、署名検証はLambda内で実施)      │
 ├─────────────────────────────────────────────────────────────┤
-│ 3. verification-lambda (検証層)                                │
+│ 3. SlackEventHandler (検証層)                                │
 │    ├─ 3a. 署名検証 (Signing Secret) ← 鍵1                  │
 │    ├─ 3b. Existence Check (Bot Token) ← 鍵2                │
 │    │   └─ Slack API (team.info, users.info, conversations) │
@@ -56,10 +56,10 @@
 │    └─ 3d. プロンプト検証                                    │
 │    ↓ すべて成功時のみ次へ                                   │
 ├─────────────────────────────────────────────────────────────┤
-│ 4. execution-api (IAM 認証)                                 │
+│ 4. ExecutionApi (IAM 認証)                                   │
 │    ↓                                                         │
 ├─────────────────────────────────────────────────────────────┤
-│ 5. execution-lambda → Bedrock                                       │
+│ 5. BedrockProcessor → Bedrock                                │
 │    ├─ Guardrails (プロンプトインジェクション検出)          │
 │    └─ PII 検出                                              │
 └─────────────────────────────────────────────────────────────┘
@@ -79,7 +79,7 @@
 ### SR-03: プロンプトインジェクション防止（AI 特有）
 
 - すべてのユーザー入力は、Bedrock Guardrails で検証され、プロンプトインジェクション攻撃を防がなければなりません
-- verification-lambda での基本的なパターン検出と、execution-lambda での Guardrails 適用による多層防御
+- SlackEventHandler での基本的なパターン検出と、BedrockProcessor での Guardrails 適用による多層防御
 
 ### SR-04: PII 保護（AI 特有）
 
@@ -100,7 +100,7 @@
 - Bot Token (xoxb-...) を使用した API 呼び出し
 - 2 鍵防御モデル: Signing Secret と Bot Token の両方が必要
 
-**実装レイヤー**: verification-lambda（検証層）
+**実装レイヤー**: SlackEventHandler（検証層）
 
 **キャッシュ戦略**:
 

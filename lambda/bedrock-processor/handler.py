@@ -190,7 +190,9 @@ def lambda_handler(event, context):
                 "channel": channel,
                 "response_length": len(ai_response)
             }, context)
-            return {"statusCode": 200, "body": "Success"}
+            # Return 202 Accepted for async operations (when invoked via API Gateway)
+            # API Gateway Lambda proxy integration will return this status code to client
+            return {"statusCode": 202, "body": "Accepted"}
 
         except Exception as e:
             # Error posting to Slack

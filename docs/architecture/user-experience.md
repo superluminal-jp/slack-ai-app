@@ -20,7 +20,7 @@
 [Bot] 処理中です... 少々お待ちください
 ```
 
-- verification-lambda が 3 秒以内にこの応答を返す
+- SlackEventHandler が 3 秒以内にこの応答を返す
 - ユーザーには「処理が受け付けられた」という視覚的フィードバックが表示される
 - この時点で Slack の 3 秒タイムアウト制約はクリアされている
 - **体験ポイント**: ユーザーは即座に応答があるため、システムが動作していることを確認できる
@@ -28,7 +28,7 @@
 **ステップ 3: バックグラウンド処理（5〜30 秒間）**
 
 - ユーザー側では何も表示されないが、バックグラウンドで以下が実行されている:
-  - execution-lambda が verification-lambda から非同期で起動
+  - BedrockProcessor が SlackEventHandler から API Gateway 経由で起動
   - Bedrock Foundation Model がリクエストを処理（会話、画像生成、コード生成など）
   - Bedrock Guardrails（Automated Reasoning、99%精度）がプロンプトインジェクションをチェック
   - 正規表現ベース PII 検出がレスポンスをフィルタリング
@@ -114,7 +114,7 @@ AWS Bedrockの主な特徴は以下の通りです：
 
 ```
 ユーザー: /ask こんにちは
-[何も表示されない - リクエストがverification-lambdaで拒否される]
+[何も表示されない - リクエストがSlackEventHandlerで拒否される]
 ```
 
 - **頻度**: 極稀（Slack API の問題）
