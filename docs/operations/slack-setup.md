@@ -1,4 +1,4 @@
-# Slack側設定作業ガイド
+# Slack 側設定作業ガイド
 
 **ドキュメントタイプ**: セットアップガイド  
 **ステータス**: 推奨  
@@ -8,18 +8,18 @@
 
 ## 概要
 
-本ドキュメントは、Slack AI App を動作させるために必要な **Slack側での設定作業**をまとめたガイドです。AWS側のインフラストラクチャのデプロイが完了した後、Slack App の作成と設定を行います。
+本ドキュメントは、Slack AI App を動作させるために必要な **Slack 側での設定作業**をまとめたガイドです。AWS 側のインフラストラクチャのデプロイが完了した後、Slack App の作成と設定を行います。
 
 ### 前提条件
 
-- AWS側のインフラストラクチャがデプロイ済み（CDK deploy 完了）
+- AWS 側のインフラストラクチャがデプロイ済み（CDK deploy 完了）
 - Lambda Function URL が取得済み
 - Slack ワークスペースの管理者権限があること
 - [Slack API](https://api.slack.com/apps) へのアクセス権限があること
 
 ### 作業の流れ
 
-1. **Slack App の作成** - 新しいSlackアプリを作成
+1. **Slack App の作成** - 新しい Slack アプリを作成
 2. **OAuth & Permissions の設定** - Bot Token Scopes を設定
 3. **Signing Secret の取得** - 認証に必要なシークレットを取得
 4. **ワークスペースへのインストール** - Bot User OAuth Token を取得
@@ -98,11 +98,11 @@ settings:
 2. **"Scopes"** セクションまでスクロール
 3. **"Bot Token Scopes"** に以下のスコープを追加：
 
-| スコープ | 説明 | 用途 |
-|---------|------|------|
-| `chat:write` | メッセージを送信 | Slack に AI レスポンスを投稿 |
-| `im:history` | ダイレクトメッセージの履歴を読み取り | ダイレクトメッセージイベントを受信 |
-| `app_mentions:read` | メンションを読み取り | チャンネルでの @bot メンションを受信 |
+| スコープ            | 説明                                 | 用途                                 |
+| ------------------- | ------------------------------------ | ------------------------------------ |
+| `chat:write`        | メッセージを送信                     | Slack に AI レスポンスを投稿         |
+| `im:history`        | ダイレクトメッセージの履歴を読み取り | ダイレクトメッセージイベントを受信   |
+| `app_mentions:read` | メンションを読み取り                 | チャンネルでの @bot メンションを受信 |
 
 4. 各スコープを追加後、**"Save Changes"** をクリック
 
@@ -136,6 +136,7 @@ Signing Secret の値を安全に保存してください。この値は：
 - **機密情報のため、Git にコミットしないでください**
 
 **保存方法**:
+
 ```bash
 # 環境変数として一時的に保存（初回デプロイ時のみ）
 export SLACK_SIGNING_SECRET=a1b2c3d4e5f6...
@@ -168,6 +169,7 @@ Bot User OAuth Token の値を安全に保存してください。この値は�
 - **機密情報のため、Git にコミットしないでください**
 
 **保存方法**:
+
 ```bash
 # 環境変数として一時的に保存（初回デプロイ時のみ）
 # 実際のBot Tokenに置き換えてください（例: xoxb-xxxxxxxxxxxx-xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxx）
@@ -183,6 +185,7 @@ export SLACK_BOT_TOKEN=xoxb-xxxxxxxxxxxx-xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxx
 - ワークスペースの権限が変更された場合
 
 **再インストール手順**:
+
 1. **"OAuth & Permissions"** ページで **"Reinstall to Workspace"** をクリック
 2. **"Allow"** をクリック
 3. 新しい Bot User OAuth Token が生成される場合は、AWS Secrets Manager を更新してください
@@ -201,6 +204,7 @@ export SLACK_BOT_TOKEN=xoxb-xxxxxxxxxxxx-xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxx
 1. **"Request URL"** フィールドに、AWS CDK デプロイ時に取得した **Lambda Function URL** を貼り付け
 
    **例**:
+
    ```
    https://abc123def456.lambda-url.ap-northeast-1.on.aws/
    ```
@@ -209,6 +213,7 @@ export SLACK_BOT_TOKEN=xoxb-xxxxxxxxxxxx-xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxx
 3. 数秒以内に **"Verified ✓"** のステータスが表示されることを確認
 
 **検証の仕組み**:
+
 - Slack が `url_verification` イベントを送信
 - Lambda 関数が `challenge` パラメータをそのまま返す
 - Slack が検証に成功すると "Verified ✓" が表示される
@@ -218,7 +223,7 @@ export SLACK_BOT_TOKEN=xoxb-xxxxxxxxxxxx-xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxx
 - Lambda Function URL が正しいか確認
 - Lambda 関数が正常に動作しているか CloudWatch Logs で確認
 - Signing Secret が AWS Secrets Manager に正しく保存されているか確認
-- Lambda 関数のタイムアウト設定（10秒以上推奨）を確認
+- Lambda 関数のタイムアウト設定（10 秒以上推奨）を確認
 
 ### 5.3 Bot Events の購読
 
@@ -226,10 +231,10 @@ export SLACK_BOT_TOKEN=xoxb-xxxxxxxxxxxx-xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxx
 2. **"Add Bot User Event"** をクリック
 3. 以下のイベントを追加：
 
-| イベント | 説明 | 用途 |
-|---------|------|------|
-| `message.im` | ダイレクトメッセージ | Bot へのダイレクトメッセージを受信 |
-| `app_mentions` | アプリメンション | チャンネルでの @bot メンションを受信 |
+| イベント       | 説明                 | 用途                                 |
+| -------------- | -------------------- | ------------------------------------ |
+| `message.im`   | ダイレクトメッセージ | Bot へのダイレクトメッセージを受信   |
+| `app_mentions` | アプリメンション     | チャンネルでの @bot メンションを受信 |
 
 4. 各イベントを追加後、**"Save Changes"** をクリック
 
@@ -257,8 +262,8 @@ Event Subscriptions が正しく設定されているか確認：
    Hello! Can you help me?
    ```
 4. **期待される動作**:
-   - Bot が即座に "考え中です..." のような応答を返す（3秒以内）
-   - 5〜30秒後に AI が生成したレスポンスが表示される
+   - Bot が即座に "考え中です..." のような応答を返す（3 秒以内）
+   - 5〜30 秒後に AI が生成したレスポンスが表示される
 
 **トラブルシューティング**: Bot が応答しない場合
 
@@ -279,8 +284,8 @@ Event Subscriptions が正しく設定されているか確認：
    @Bedrock AI Assistant What is the capital of France?
    ```
 4. **期待される動作**:
-   - Bot がチャンネル内で即座に応答を開始（3秒以内）
-   - 5〜30秒後に AI が生成したレスポンスがチャンネルに表示される
+   - Bot がチャンネル内で即座に応答を開始（3 秒以内）
+   - 5〜30 秒後に AI が生成したレスポンスがチャンネルに表示される
 
 **トラブルシューティング**: メンションに応答しない場合
 
@@ -293,10 +298,11 @@ Event Subscriptions が正しく設定されているか確認：
 以下のエラーケースをテストして、適切なエラーメッセージが表示されることを確認：
 
 1. **空のメッセージ**: 空のメッセージを送信
-2. **長すぎるメッセージ**: 4000文字を超えるメッセージを送信
+2. **長すぎるメッセージ**: 4000 文字を超えるメッセージを送信
 3. **Bedrock API エラー**: Bedrock へのアクセス権限がない場合のエラー
 
 **期待される動作**:
+
 - ユーザーフレンドリーなエラーメッセージが表示される
 - エラーの詳細が CloudWatch Logs に記録される
 
@@ -351,12 +357,14 @@ Event Subscriptions が正しく設定されているか確認：
 **原因と解決方法**:
 
 1. **Lambda Function URL が正しくない**
+
    - CDK デプロイ時の出力を再確認
    - AWS Console → Lambda → Function URL で確認
 
 2. **Lambda 関数が正常に動作していない**
+
    - CloudWatch Logs でエラーを確認
-   - Lambda 関数のタイムアウト設定を確認（10秒以上推奨）
+   - Lambda 関数のタイムアウト設定を確認（10 秒以上推奨）
 
 3. **Signing Secret が正しく設定されていない**
    - AWS Secrets Manager で `SlackBedrockStack/slack/signing-secret` の値を確認
@@ -369,13 +377,16 @@ Event Subscriptions が正しく設定されているか確認：
 **原因と解決方法**:
 
 1. **Event Subscriptions が有効になっていない**
+
    - Event Subscriptions ページで "Enable Events" が ON になっているか確認
 
 2. **Bot Events が購読されていない**
+
    - `message.im` と `app_mentions` が購読されているか確認
    - イベントを追加した後、アプリを再インストールしたか確認
 
 3. **Bot がワークスペースにインストールされていない**
+
    - Slack → Apps → Manage Apps で確認
    - 必要に応じて再インストール
 
@@ -390,10 +401,12 @@ Event Subscriptions が正しく設定されているか確認：
 **原因と解決方法**:
 
 1. **`chat:write` スコープが設定されていない**
+
    - OAuth & Permissions でスコープを確認
    - スコープを追加した後、アプリを再インストール
 
 2. **Bot User OAuth Token が無効**
+
    - Bot Token を再取得（再インストール）
    - AWS Secrets Manager で Bot Token を更新
 
@@ -407,11 +420,12 @@ Event Subscriptions が正しく設定されているか確認：
 **原因と解決方法**:
 
 1. **Signing Secret が間違っている**
+
    - Slack App の Signing Secret を再確認
    - AWS Secrets Manager の値を更新
 
 2. **タイムスタンプが古い**
-   - Slack のリクエストタイムスタンプ検証（±5分）を確認
+   - Slack のリクエストタイムスタンプ検証（±5 分）を確認
    - システム時刻が正しいか確認
 
 ---
@@ -423,7 +437,7 @@ Event Subscriptions が正しく設定されているか確認：
 - **Signing Secret と Bot Token は機密情報**です
 - Git リポジトリにコミットしないでください
 - AWS Secrets Manager に安全に保存されています
-- 定期的にローテーションを検討してください（90日ごと推奨）
+- 定期的にローテーションを検討してください（90 日ごと推奨）
 
 ### 9.2 最小権限の原則
 
@@ -457,13 +471,12 @@ Event Subscriptions が正しく設定されているか確認：
 
 ## 11. 更新履歴
 
-| 日付 | バージョン | 変更内容 |
-|------|-----------|---------|
-| 2025-12-05 | 1.0 | 初版作成 |
+| 日付       | バージョン | 変更内容 |
+| ---------- | ---------- | -------- |
+| 2025-12-05 | 1.0        | 初版作成 |
 
 ---
 
 **ドキュメントステータス**: ✅ 最新  
 **最終確認日**: 2025-12-05  
 **次回レビュー予定**: 機能追加時または設定変更時
-
