@@ -116,6 +116,7 @@ Slack ワークスペース上で AI 機能を提供し、Slack ユーザーの�
 
 ### IV. 検証と運用（Verification & Operations）
 
+- [**Slack 側設定作業ガイド**](./operations/slack-setup.md) - Slack App の作成と設定手順
 - [**テストと検証**](./operations/testing.md) - BDD シナリオ、品質ゲート
 - [**モニタリング & インシデントレスポンス**](./operations/monitoring.md) - CloudWatch、プレイブック
 
@@ -141,7 +142,7 @@ Slack ワークスペース上で AI 機能を提供し、Slack ユーザーの�
 
 **実装担当者**: [アーキテクチャ詳細](./architecture/implementation-details.md) → [実装ロードマップ](./implementation/roadmap.md)
 
-**運用担当者**: [テストと検証](./operations/testing.md) → [モニタリング](./operations/monitoring.md)
+**運用担当者**: [Slack 側設定作業ガイド](./operations/slack-setup.md) → [テストと検証](./operations/testing.md) → [モニタリング](./operations/monitoring.md)
 
 **意思決定者**: [ADR インデックス](./adr/README.md) で技術選択の理由を確認
 

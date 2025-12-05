@@ -217,6 +217,7 @@ The project includes comprehensive architecture documentation organized by topic
   - [Threat Model](docs/security/threat-model.md) - Threat analysis and risk assessment
   - [Implementation](docs/security/implementation.md) - Security implementation code
 - **[Operations](docs/operations/)**:
+  - [Slack Setup Guide](docs/operations/slack-setup.md) - Slack App creation and configuration guide
   - [Testing](docs/operations/testing.md) - Test scenarios, BDD, validation
   - [Monitoring](docs/operations/monitoring.md) - Monitoring, alerts, incident response
 - **[Implementation Roadmap](docs/implementation/roadmap.md)**: Phased implementation plan
