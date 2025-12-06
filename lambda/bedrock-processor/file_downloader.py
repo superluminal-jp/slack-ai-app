@@ -15,7 +15,12 @@ import requests
 import time
 import random
 from typing import Optional, Tuple
-import json
+from logger import (
+    log_info,
+    log_warn,
+    log_error,
+    log_exception,
+)
 
 
 # Retry configuration
@@ -85,13 +90,14 @@ def get_file_download_url(
             # Handle rate limiting (429)
             if response.status_code == 429:
                 retry_after = int(response.headers.get("Retry-After", _calculate_backoff_delay(attempt)))
-                print(json.dumps({
-                    "level": "WARN",
-                    "event": "files_info_rate_limited",
-                    "file_id": file_id,
-                    "retry_after": retry_after,
-                    "attempt": attempt + 1,
-                }))
+                log_warn(
+                    "files_info_rate_limited",
+                    {
+                        "file_id": file_id,
+                        "retry_after": retry_after,
+                        "attempt": attempt + 1,
+                    },
+                )
                 time.sleep(retry_after)
                 continue
             
@@ -104,23 +110,25 @@ def get_file_download_url(
                 # Some errors are not retryable
                 non_retryable_errors = ["file_not_found", "file_deleted", "invalid_auth"]
                 if error in non_retryable_errors:
-                    print(json.dumps({
-                        "level": "ERROR",
-                        "event": "files_info_api_error",
-                        "file_id": file_id,
-                        "error": error,
-                        "retryable": False,
-                    }))
+                    log_error(
+                        "files_info_api_error",
+                        {
+                            "file_id": file_id,
+                            "error": error,
+                            "retryable": False,
+                        },
+                    )
                     return None
                 
                 # Retryable error - log and continue
-                print(json.dumps({
-                    "level": "WARN",
-                    "event": "files_info_api_error_retrying",
-                    "file_id": file_id,
-                    "error": error,
-                    "attempt": attempt + 1,
-                }))
+                log_warn(
+                    "files_info_api_error_retrying",
+                    {
+                        "file_id": file_id,
+                        "error": error,
+                        "attempt": attempt + 1,
+                    },
+                )
                 last_error = error
                 time.sleep(_calculate_backoff_delay(attempt))
                 continue
@@ -129,51 +137,54 @@ def get_file_download_url(
             download_url = file_info.get("url_private_download") or file_info.get("url_private")
             
             if download_url:
-                print(json.dumps({
-                    "level": "INFO",
-                    "event": "files_info_url_retrieved",
-                    "file_id": file_id,
-                    "has_url": True,
-                    "attempts": attempt + 1,
-                }))
+                log_info(
+                    "files_info_url_retrieved",
+                    {
+                        "file_id": file_id,
+                        "has_url": True,
+                        "attempts": attempt + 1,
+                    },
+                )
                 return download_url
             else:
-                print(json.dumps({
-                    "level": "WARN",
-                    "event": "files_info_no_download_url",
-                    "file_id": file_id,
-                }))
+                log_warn(
+                    "files_info_no_download_url",
+                    {"file_id": file_id},
+                )
                 return None
             
         except requests.exceptions.Timeout:
-            print(json.dumps({
-                "level": "WARN",
-                "event": "files_info_timeout",
-                "file_id": file_id,
-                "attempt": attempt + 1,
-            }))
+            log_warn(
+                "files_info_timeout",
+                {
+                    "file_id": file_id,
+                    "attempt": attempt + 1,
+                },
+            )
             last_error = "timeout"
             time.sleep(_calculate_backoff_delay(attempt))
             
         except requests.exceptions.RequestException as e:
-            print(json.dumps({
-                "level": "WARN",
-                "event": "files_info_request_error",
-                "file_id": file_id,
-                "error": str(e),
-                "attempt": attempt + 1,
-            }))
+            log_exception(
+                "files_info_request_error",
+                {
+                    "file_id": file_id,
+                    "attempt": attempt + 1,
+                },
+                e,
+            )
             last_error = str(e)
             time.sleep(_calculate_backoff_delay(attempt))
     
     # All retries exhausted
-    print(json.dumps({
-        "level": "ERROR",
-        "event": "files_info_api_failed_after_retries",
-        "file_id": file_id,
-        "last_error": last_error,
-        "max_retries": max_retries,
-    }))
+    log_error(
+        "files_info_api_failed_after_retries",
+        {
+            "file_id": file_id,
+            "last_error": last_error,
+            "max_retries": max_retries,
+        },
+    )
     return None
 
 
@@ -286,35 +297,38 @@ def download_file(
             # Handle rate limiting (429) - respect Retry-After header
             if response.status_code == 429:
                 retry_after = int(response.headers.get("Retry-After", _calculate_backoff_delay(attempt)))
-                print(json.dumps({
-                    "level": "WARN",
-                    "event": "file_download_rate_limited",
-                    "retry_after": retry_after,
-                    "attempt": attempt + 1,
-                }))
+                log_warn(
+                    "file_download_rate_limited",
+                    {
+                        "retry_after": retry_after,
+                        "attempt": attempt + 1,
+                    },
+                )
                 time.sleep(retry_after)
                 continue
             
             # Handle server errors (5xx) with retry
             if response.status_code >= 500:
-                print(json.dumps({
-                    "level": "WARN",
-                    "event": "file_download_server_error",
-                    "status_code": response.status_code,
-                    "attempt": attempt + 1,
-                }))
+                log_warn(
+                    "file_download_server_error",
+                    {
+                        "status_code": response.status_code,
+                        "attempt": attempt + 1,
+                    },
+                )
                 last_error = f"Server error: {response.status_code}"
                 time.sleep(_calculate_backoff_delay(attempt))
                 continue
             
             # Handle client errors (4xx except 429) - not retryable
             if response.status_code >= 400:
-                print(json.dumps({
-                    "level": "ERROR",
-                    "event": "file_download_client_error",
-                    "status_code": response.status_code,
-                    "retryable": False,
-                }))
+                log_error(
+                    "file_download_client_error",
+                    {
+                        "status_code": response.status_code,
+                        "retryable": False,
+                    },
+                )
                 return None
             
             response.raise_for_status()
@@ -325,13 +339,14 @@ def download_file(
             # If we expect an image but get HTML, it's likely an error page
             if expected_mimetype and expected_mimetype.startswith('image/'):
                 if 'text/html' in content_type.lower():
-                    print(json.dumps({
-                        "level": "ERROR",
-                        "event": "file_download_wrong_content_type",
-                        "expected_mimetype": expected_mimetype,
-                        "actual_content_type": content_type,
-                        "message": "Received HTML instead of image - likely error page or permission issue",
-                    }))
+                    log_error(
+                        "file_download_wrong_content_type",
+                        {
+                            "expected_mimetype": expected_mimetype,
+                            "actual_content_type": content_type,
+                            "message": "Received HTML instead of image - likely error page or permission issue",
+                        },
+                    )
                     return None
             
             # Read content
@@ -341,67 +356,73 @@ def download_file(
             if expected_size and expected_size > 0:
                 size_ratio = len(content) / expected_size
                 if size_ratio < 0.5:  # Downloaded less than 50% of expected
-                    print(json.dumps({
-                        "level": "WARN",
-                        "event": "file_download_size_mismatch",
-                        "expected_size": expected_size,
-                        "actual_size": len(content),
-                        "ratio": round(size_ratio, 4),
-                        "message": "Downloaded significantly less than expected size",
-                    }))
+                    log_warn(
+                        "file_download_size_mismatch",
+                        {
+                            "expected_size": expected_size,
+                            "actual_size": len(content),
+                            "ratio": round(size_ratio, 4),
+                            "message": "Downloaded significantly less than expected size",
+                        },
+                    )
             
             # Validate image content if expected
             if expected_mimetype and expected_mimetype.startswith('image/'):
                 is_valid, error_msg = validate_image_content(content, expected_mimetype)
                 if not is_valid:
-                    print(json.dumps({
-                        "level": "ERROR",
-                        "event": "file_download_content_validation_failed",
-                        "expected_mimetype": expected_mimetype,
-                        "error": error_msg,
-                        "content_size": len(content),
-                        "content_preview": content[:50].hex() if content else None,
-                    }))
+                    log_error(
+                        "file_download_content_validation_failed",
+                        {
+                            "expected_mimetype": expected_mimetype,
+                            "error": error_msg,
+                            "content_size": len(content),
+                            "content_preview": content[:50].hex() if content else None,
+                        },
+                    )
                     return None
             
             # Success - log and return
             if attempt > 0:
-                print(json.dumps({
-                    "level": "INFO",
-                    "event": "file_download_success_after_retry",
-                    "attempts": attempt + 1,
-                    "content_size": len(content),
-                }))
+                log_info(
+                    "file_download_success_after_retry",
+                    {
+                        "attempts": attempt + 1,
+                        "content_size": len(content),
+                    },
+                )
             
             return content
             
         except requests.exceptions.Timeout:
-            print(json.dumps({
-                "level": "WARN",
-                "event": "file_download_timeout",
-                "timeout": timeout,
-                "attempt": attempt + 1,
-            }))
+            log_warn(
+                "file_download_timeout",
+                {
+                    "timeout": timeout,
+                    "attempt": attempt + 1,
+                },
+            )
             last_error = "timeout"
             time.sleep(_calculate_backoff_delay(attempt))
             
         except requests.exceptions.RequestException as e:
-            print(json.dumps({
-                "level": "WARN",
-                "event": "file_download_request_error",
-                "error": str(e),
-                "attempt": attempt + 1,
-            }))
+            log_exception(
+                "file_download_request_error",
+                {
+                    "attempt": attempt + 1,
+                },
+                e,
+            )
             last_error = str(e)
             time.sleep(_calculate_backoff_delay(attempt))
     
     # All retries exhausted
-    print(json.dumps({
-        "level": "ERROR",
-        "event": "file_download_failed_after_retries",
-        "last_error": last_error,
-        "max_retries": max_retries,
-        "download_url": download_url[:100] if download_url else None,
-    }))
+    log_error(
+        "file_download_failed_after_retries",
+        {
+            "last_error": last_error,
+            "max_retries": max_retries,
+            "download_url": download_url[:100] if download_url else None,
+        },
+    )
     return None
 

@@ -17,13 +17,18 @@ import csv
 import subprocess
 import tempfile
 import os
-import json
 import shutil
 import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from io import BytesIO, StringIO
 from typing import List, Optional
+from logger import (
+    log_info,
+    log_warn,
+    log_error,
+    log_exception,
+)
 
 try:
     import PyPDF2
@@ -33,34 +38,35 @@ except ImportError:
 try:
     import docx
 except ImportError as e:
-    print(json.dumps({
-        "level": "WARN",
-        "event": "docx_import_failed",
-        "error": str(e),
-        "message": "python-docx module not available - DOCX extraction will fail",
-    }))
+    # Import logger here to avoid circular dependency
+    from logger import log_warn
+    log_warn(
+        "docx_import_failed",
+        {"message": "python-docx module not available - DOCX extraction will use XML parsing fallback"},
+        e,
+    )
     docx = None
 
 try:
     import openpyxl
 except ImportError as e:
-    print(json.dumps({
-        "level": "WARN",
-        "event": "openpyxl_import_failed",
-        "error": str(e),
-        "message": "openpyxl module not available - XLSX extraction will fail",
-    }))
+    from logger import log_warn
+    log_warn(
+        "openpyxl_import_failed",
+        {"message": "openpyxl module not available - XLSX extraction will fail"},
+        e,
+    )
     openpyxl = None
 
 try:
     from pptx import Presentation
 except ImportError as e:
-    print(json.dumps({
-        "level": "WARN",
-        "event": "pptx_import_failed",
-        "error": str(e),
-        "message": "python-pptx module not available - PPTX extraction will fail",
-    }))
+    from logger import log_warn
+    log_warn(
+        "pptx_import_failed",
+        {"message": "python-pptx module not available - PPTX extraction will use XML parsing fallback"},
+        e,
+    )
     Presentation = None
 
 
@@ -89,12 +95,11 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> Optional[str]:
         
         return "\n\n".join(text_parts) if text_parts else None
     except Exception as e:
-        print(json.dumps({
-            "level": "ERROR",
-            "event": "pdf_extraction_failed",
-            "error": str(e),
-            "error_type": type(e).__name__,
-        }))
+        log_exception(
+            "pdf_extraction_failed",
+            {},
+            e,
+        )
         return None
 
 
@@ -133,12 +138,11 @@ def _extract_text_from_docx_xml(docx_bytes: bytes) -> Optional[str]:
         
         return "\n".join(text_parts) if text_parts else None
     except Exception as e:
-        print(json.dumps({
-            "level": "WARN",
-            "event": "docx_xml_extraction_failed",
-            "error": str(e),
-            "error_type": type(e).__name__,
-        }))
+        log_warn(
+            "docx_xml_extraction_failed",
+            {},
+            e,
+        )
         return None
 
 
@@ -195,13 +199,11 @@ def extract_text_from_docx(docx_bytes: bytes) -> Optional[str]:
             if result:
                 return result
         except Exception as e:
-            print(json.dumps({
-                "level": "WARN",
-                "event": "docx_library_extraction_failed",
-                "error": str(e),
-                "error_type": type(e).__name__,
-                "falling_back": "xml_parsing",
-            }))
+            log_warn(
+                "docx_library_extraction_failed",
+                {"falling_back": "xml_parsing"},
+                e,
+            )
     
     # Fallback to XML parsing (no lxml dependency)
     return _extract_text_from_docx_xml(docx_bytes)
@@ -228,12 +230,11 @@ def extract_text_from_csv(csv_bytes: bytes) -> Optional[str]:
         
         return "\n".join(rows) if rows else None
     except Exception as e:
-        print(json.dumps({
-            "level": "ERROR",
-            "event": "csv_extraction_failed",
-            "error": str(e),
-            "error_type": type(e).__name__,
-        }))
+        log_exception(
+            "csv_extraction_failed",
+            {},
+            e,
+        )
         return None
 
 
@@ -268,12 +269,11 @@ def extract_text_from_xlsx(xlsx_bytes: bytes) -> Optional[str]:
         
         return "\n".join(text_parts) if text_parts else None
     except Exception as e:
-        print(json.dumps({
-            "level": "ERROR",
-            "event": "xlsx_extraction_failed",
-            "error": str(e),
-            "error_type": type(e).__name__,
-        }))
+        log_exception(
+            "xlsx_extraction_failed",
+            {},
+            e,
+        )
         return None
 
 
@@ -325,12 +325,11 @@ def _extract_text_from_pptx_xml(pptx_bytes: bytes) -> Optional[str]:
         
         return "\n".join(text_parts) if text_parts else None
     except Exception as e:
-        print(json.dumps({
-            "level": "WARN",
-            "event": "pptx_xml_extraction_failed",
-            "error": str(e),
-            "error_type": type(e).__name__,
-        }))
+        log_warn(
+            "pptx_xml_extraction_failed",
+            {},
+            e,
+        )
         return None
 
 
@@ -388,13 +387,11 @@ def extract_text_from_pptx(pptx_bytes: bytes) -> Optional[str]:
             if result:
                 return result
         except Exception as e:
-            print(json.dumps({
-                "level": "WARN",
-                "event": "pptx_library_extraction_failed",
-                "error": str(e),
-                "error_type": type(e).__name__,
-                "falling_back": "xml_parsing",
-            }))
+            log_warn(
+                "pptx_library_extraction_failed",
+                {"falling_back": "xml_parsing"},
+                e,
+            )
     
     # Fallback to XML parsing (no lxml dependency)
     return _extract_text_from_pptx_xml(pptx_bytes)
@@ -430,19 +427,19 @@ def convert_pptx_slides_to_images(pptx_bytes: bytes) -> Optional[List[bytes]]:
         if not os.path.exists(libreoffice_path):
             # Fallback to system LibreOffice (for local testing)
             libreoffice_path = "libreoffice"
-            print(json.dumps({
-                "level": "WARN",
-                "event": "libreoffice_fallback_to_system",
-                "message": "LibreOffice Lambda Layer not found, using system LibreOffice",
-            }))
+            log_warn(
+                "libreoffice_fallback_to_system",
+                {"message": "LibreOffice Lambda Layer not found, using system LibreOffice"},
+            )
         
         # Convert PPTX to PNG images (one per slide) with 60 second timeout
-        print(json.dumps({
-            "level": "INFO",
-            "event": "pptx_conversion_started",
-            "pptx_size": len(pptx_bytes),
-            "timeout_seconds": 60,
-        }))
+        log_info(
+            "pptx_conversion_started",
+            {
+                "pptx_size": len(pptx_bytes),
+                "timeout_seconds": 60,
+            },
+        )
         
         result = subprocess.run([
             libreoffice_path,
@@ -459,39 +456,39 @@ def convert_pptx_slides_to_images(pptx_bytes: bytes) -> Optional[List[bytes]]:
             with open(img_file, 'rb') as f:
                 images.append(f.read())
         
-        print(json.dumps({
-            "level": "INFO",
-            "event": "pptx_conversion_success",
-            "slide_count": len(images),
-        }))
+        log_info(
+            "pptx_conversion_success",
+            {"slide_count": len(images)},
+        )
         
         return images if images else None
     except subprocess.TimeoutExpired:
-        print(json.dumps({
-            "level": "ERROR",
-            "event": "pptx_conversion_timeout",
-            "timeout_seconds": 60,
-            "message": "LibreOffice conversion exceeded 60 second timeout",
-        }))
+        log_error(
+            "pptx_conversion_timeout",
+            {
+                "timeout_seconds": 60,
+                "message": "LibreOffice conversion exceeded 60 second timeout",
+            },
+        )
         return None
     except subprocess.CalledProcessError as e:
-        print(json.dumps({
-            "level": "ERROR",
-            "event": "pptx_conversion_failed",
-            "error": str(e),
-            "returncode": e.returncode,
-            "stdout": e.stdout[:500] if e.stdout else None,
-            "stderr": e.stderr[:500] if e.stderr else None,
-            "message": "LibreOffice conversion process failed",
-        }))
+        log_exception(
+            "pptx_conversion_failed",
+            {
+                "returncode": e.returncode,
+                "stdout": e.stdout[:500] if e.stdout else None,
+                "stderr": e.stderr[:500] if e.stderr else None,
+                "message": "LibreOffice conversion process failed",
+            },
+            e,
+        )
         return None
     except Exception as e:
-        print(json.dumps({
-            "level": "ERROR",
-            "event": "pptx_conversion_unexpected_error",
-            "error": str(e),
-            "error_type": type(e).__name__,
-        }))
+        log_exception(
+            "pptx_conversion_unexpected_error",
+            {},
+            e,
+        )
         return None
     finally:
         # Cleanup temporary files (always executed)
@@ -499,22 +496,20 @@ def convert_pptx_slides_to_images(pptx_bytes: bytes) -> Optional[List[bytes]]:
             try:
                 os.unlink(tmp_pptx_path)
             except Exception as cleanup_error:
-                print(json.dumps({
-                    "level": "WARN",
-                    "event": "pptx_cleanup_failed",
-                    "file": tmp_pptx_path,
-                    "error": str(cleanup_error),
-                }))
+                log_warn(
+                    "pptx_cleanup_failed",
+                    {"file": tmp_pptx_path},
+                    cleanup_error,
+                )
         if output_dir and os.path.exists(output_dir):
             try:
                 shutil.rmtree(output_dir, ignore_errors=True)
             except Exception as cleanup_error:
-                print(json.dumps({
-                    "level": "WARN",
-                    "event": "pptx_output_cleanup_failed",
-                    "directory": output_dir,
-                    "error": str(cleanup_error),
-                }))
+                log_warn(
+                    "pptx_output_cleanup_failed",
+                    {"directory": output_dir},
+                    cleanup_error,
+                )
 
 
 def extract_text_from_txt(txt_bytes: bytes) -> Optional[str]:
@@ -530,11 +525,10 @@ def extract_text_from_txt(txt_bytes: bytes) -> Optional[str]:
     try:
         return txt_bytes.decode('utf-8', errors='replace')
     except Exception as e:
-        print(json.dumps({
-            "level": "ERROR",
-            "event": "txt_extraction_failed",
-            "error": str(e),
-            "error_type": type(e).__name__,
-        }))
+        log_exception(
+            "txt_extraction_failed",
+            {},
+            e,
+        )
         return None
 

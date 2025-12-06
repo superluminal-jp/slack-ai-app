@@ -11,6 +11,7 @@ Phase 6: Async processing to meet Slack's 3-second timeout requirement.
 
 import json
 import os
+import time
 from botocore.exceptions import ClientError, ReadTimeoutError
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
@@ -19,24 +20,15 @@ from bedrock_client_converse import invoke_bedrock
 from slack_poster import post_to_slack
 from thread_history import get_thread_history, build_conversation_context
 from attachment_processor import process_attachments
-
-
-def log_event(level: str, event_type: str, data: dict, context=None):
-    """
-    Structured logging helper for CloudWatch-friendly JSON logs.
-
-    Args:
-        level: Log level (INFO, WARN, ERROR)
-        event_type: Event type identifier (e.g., "bedrock_request", "slack_post_success")
-        data: Event-specific data dictionary
-        context: Lambda context object (optional, for request_id)
-    """
-    log_entry = {"level": level, "event": event_type, **data}
-
-    if context and hasattr(context, "request_id"):
-        log_entry["request_id"] = context.request_id
-
-    print(json.dumps(log_entry))
+from logger import (
+    set_correlation_id,
+    set_lambda_context,
+    log_info,
+    log_warn,
+    log_error,
+    log_exception,
+    log_performance,
+)
 
 
 # Error message catalog - user-friendly messages for various error scenarios
@@ -94,7 +86,8 @@ def lambda_handler(event, context):
     {
         "channel": "C01234567",
         "text": "User message text",
-        "bot_token": "xoxb-..."
+        "bot_token": "xoxb-...",
+        "correlation_id": "req-abc123" (optional)
     }
 
     Args:
@@ -104,6 +97,9 @@ def lambda_handler(event, context):
     Returns:
         dict: Lambda response (not used for async invocations)
     """
+    # Set up logging context
+    set_lambda_context(context)
+
     try:
         # Parse event payload
         # Slack Event Handler sends JSON string in event body for async invocations
@@ -113,6 +109,12 @@ def lambda_handler(event, context):
             payload = json.loads(event["body"])
         else:
             payload = event
+
+        # Set correlation ID for all subsequent logs
+        correlation_id = payload.get("correlation_id") or (
+            context.request_id if context else None
+        )
+        set_correlation_id(correlation_id)
 
         channel = payload.get("channel")
         text = payload.get("text", "")  # May be empty if attachments only
@@ -124,35 +126,31 @@ def lambda_handler(event, context):
 
         # Validate required fields
         if not channel:
-            log_event(
-                "ERROR",
+            log_error(
                 "payload_validation_failed",
-                {"reason": "missing_channel"},
-                context,
+                {"reason": "missing_channel", "payload_keys": list(payload.keys())},
             )
             return {"statusCode": 400, "body": "Missing channel"}
 
         # Text is optional if attachments are present (per FR-014)
         if not text and not attachments_metadata:
-            log_event(
-                "ERROR",
+            log_error(
                 "payload_validation_failed",
-                {"reason": "missing_text_and_attachments"},
-                context,
+                {
+                    "reason": "missing_text_and_attachments",
+                    "payload_keys": list(payload.keys()),
+                },
             )
             return {"statusCode": 400, "body": "Missing text and attachments"}
 
         if not bot_token:
-            log_event(
-                "ERROR",
+            log_error(
                 "payload_validation_failed",
-                {"reason": "missing_bot_token"},
-                context,
+                {"reason": "missing_bot_token", "payload_keys": list(payload.keys())},
             )
             return {"statusCode": 400, "body": "Missing bot_token"}
 
-        log_event(
-            "INFO",
+        log_info(
             "bedrock_request_received",
             {
                 "channel": channel,
@@ -161,26 +159,18 @@ def lambda_handler(event, context):
                 "thread_ts": thread_ts,
                 "model_id": os.environ.get("BEDROCK_MODEL_ID", "amazon.nova-pro-v1:0"),
             },
-            context,
         )
 
         # Process attachments if present
         processed_attachments = []
         if attachments_metadata:
             try:
-                correlation_id = (
-                    context.request_id
-                    if context and hasattr(context, "request_id")
-                    else None
-                )
-                log_event(
-                    "INFO",
+                log_info(
                     "attachment_processing_started",
                     {
                         "channel": channel,
                         "attachment_count": len(attachments_metadata),
                     },
-                    context,
                 )
                 processed_attachments = process_attachments(
                     attachments_metadata, bot_token, correlation_id
@@ -209,8 +199,7 @@ def lambda_handler(event, context):
                     ]
                 )
 
-                log_event(
-                    "INFO",
+                log_info(
                     "attachments_processed",
                     {
                         "channel": channel,
@@ -219,7 +208,6 @@ def lambda_handler(event, context):
                         "failed_count": failed_count,
                         "skipped_count": skipped_count,
                     },
-                    context,
                 )
 
                 # If ALL attachments failed or were skipped and no text provided,
@@ -236,15 +224,13 @@ def lambda_handler(event, context):
                         # All attachments are unsupported file types
                         error_message = ERROR_MESSAGES["unsupported_file_type"]
                         post_to_slack(channel, error_message, bot_token, thread_ts)
-                        log_event(
-                            "INFO",
+                        log_info(
                             "error_message_posted",
                             {
                                 "channel": channel,
                                 "error_type": "unsupported_file_type",
                                 "skipped_count": len(skipped_attachments),
                             },
-                            context,
                         )
                         return {
                             "statusCode": 200,
@@ -273,8 +259,7 @@ def lambda_handler(event, context):
                             a.get("error_message", "unknown") for a in failed_images
                         ]
 
-                        log_event(
-                            "WARN",
+                        log_warn(
                             "all_image_attachments_failed",
                             {
                                 "channel": channel,
@@ -282,7 +267,6 @@ def lambda_handler(event, context):
                                 "error_codes": error_codes,
                                 "error_messages": error_messages,
                             },
-                            context,
                         )
 
                         # Select most specific error message based on error codes
@@ -295,8 +279,7 @@ def lambda_handler(event, context):
                             error_message = ERROR_MESSAGES["image_download_failed"]
 
                         post_to_slack(channel, error_message, bot_token, thread_ts)
-                        log_event(
-                            "INFO",
+                        log_info(
                             "error_message_posted",
                             {
                                 "channel": channel,
@@ -305,7 +288,6 @@ def lambda_handler(event, context):
                                     error_codes[0] if error_codes else "unknown"
                                 ),
                             },
-                            context,
                         )
                         return {
                             "statusCode": 200,
@@ -328,15 +310,13 @@ def lambda_handler(event, context):
                                 primary_error_code
                             )
                             post_to_slack(channel, error_message, bot_token, thread_ts)
-                            log_event(
-                                "INFO",
+                            log_info(
                                 "error_message_posted",
                                 {
                                     "channel": channel,
                                     "error_type": "attachment_failed",
                                     "primary_error_code": primary_error_code,
                                 },
-                                context,
                             )
                             return {
                                 "statusCode": 200,
@@ -345,15 +325,15 @@ def lambda_handler(event, context):
 
             except Exception as e:
                 # Log error but continue processing (graceful degradation per FR-008)
-                log_event(
-                    "ERROR",
+                log_exception(
                     "attachment_processing_failed",
                     {
                         "channel": channel,
-                        "error": str(e),
-                        "error_type": type(e).__name__,
+                        "attachment_count": (
+                            len(attachments_metadata) if attachments_metadata else 0
+                        ),
                     },
-                    context,
+                    e,
                 )
                 # Continue without attachments - process text only
                 processed_attachments = []
@@ -369,8 +349,7 @@ def lambda_handler(event, context):
                     # Use thread history directly (without adding current message)
                     # Current message will be added by invoke_bedrock with attachments
                     conversation_history = thread_messages
-                    log_event(
-                        "INFO",
+                    log_info(
                         "thread_history_retrieved",
                         {
                             "channel": channel,
@@ -378,22 +357,18 @@ def lambda_handler(event, context):
                             "history_length": len(thread_messages),
                             "conversation_length": len(thread_messages),
                         },
-                        context,
                     )
                 else:
-                    log_event(
-                        "INFO",
+                    log_info(
                         "thread_history_empty",
                         {"channel": channel, "thread_ts": thread_ts},
-                        context,
                     )
             except SlackApiError as e:
                 # Log error but continue without history (graceful degradation)
-                log_event(
-                    "WARN",
+                log_warn(
                     "thread_history_retrieval_failed",
-                    {"channel": channel, "thread_ts": thread_ts, "error": str(e)},
-                    context,
+                    {"channel": channel, "thread_ts": thread_ts},
+                    e,
                 )
                 # Continue without conversation history
 
@@ -425,22 +400,19 @@ def lambda_handler(event, context):
 
                     # Validate image data
                     if not isinstance(content, bytes):
-                        log_event(
-                            "ERROR",
+                        log_error(
                             "image_content_invalid_type",
                             {
                                 "channel": channel,
                                 "file_id": attachment.get("file_id"),
-                                "error": f"Image content is not bytes: {type(content)}",
+                                "content_type": str(type(content)),
                             },
-                            context,
                         )
                         continue
 
                     images.append(content)  # Binary data
                     image_formats.append(image_format)
-                    log_event(
-                        "INFO",
+                    log_info(
                         "image_content_prepared",
                         {
                             "channel": channel,
@@ -449,7 +421,6 @@ def lambda_handler(event, context):
                             "format": image_format,
                             "data_size": len(content),
                         },
-                        context,
                     )
                 elif content_type == "document" and content:
                     # Add document text
@@ -457,6 +428,7 @@ def lambda_handler(event, context):
 
         # Invoke Bedrock for AI response (using Converse API)
         try:
+            start_time = time.time()
             ai_response = invoke_bedrock(
                 text or "",  # Empty string if no text (attachments only)
                 conversation_history,
@@ -464,9 +436,11 @@ def lambda_handler(event, context):
                 image_formats=image_formats if image_formats else None,
                 document_texts=document_texts if document_texts else None,
             )
-            log_event(
-                "INFO",
+            duration_ms = (time.time() - start_time) * 1000
+            log_performance(
                 "bedrock_response_received",
+                "bedrock_invoke",
+                duration_ms,
                 {
                     "channel": channel,
                     "response_length": len(ai_response),
@@ -475,37 +449,32 @@ def lambda_handler(event, context):
                     "document_count": len(document_texts) if document_texts else 0,
                     "api_type": "converse",
                 },
-                context,
             )
         except ReadTimeoutError as e:
             # HTTP connection timeout (botocore ReadTimeoutError)
-            log_event(
-                "ERROR",
+            log_exception(
                 "bedrock_timeout",
-                {"channel": channel, "error": str(e), "error_type": "ReadTimeoutError"},
-                context,
+                {"channel": channel},
+                e,
             )
             error_message = ERROR_MESSAGES["bedrock_timeout"]
             post_to_slack(channel, error_message, bot_token, thread_ts)
-            log_event(
-                "INFO",
+            log_info(
                 "error_message_posted",
                 {"channel": channel, "error_type": "timeout"},
-                context,
             )
             return {"statusCode": 200, "body": "Timeout error handled"}
         except ClientError as e:
             # Bedrock API errors (throttling, access denied, timeout)
             error_code = e.response["Error"]["Code"]
-            log_event(
-                "ERROR",
+            log_exception(
                 "bedrock_api_error",
                 {
                     "channel": channel,
                     "error_code": error_code,
                     "error_message": e.response["Error"].get("Message", ""),
                 },
-                context,
+                e,
             )
 
             # Select appropriate error message
@@ -526,58 +495,48 @@ def lambda_handler(event, context):
 
             # Post error message to Slack
             post_to_slack(channel, error_message, bot_token, thread_ts)
-            log_event(
-                "INFO",
+            log_info(
                 "error_message_posted",
                 {"channel": channel, "error_code": error_code},
-                context,
             )
             return {"statusCode": 200, "body": "Error handled"}
 
         except ValueError as e:
             # Invalid Bedrock response
-            log_event(
-                "ERROR",
+            log_exception(
                 "bedrock_response_validation_failed",
-                {"channel": channel, "error": str(e)},
-                context,
+                {"channel": channel},
+                e,
             )
             error_message = ERROR_MESSAGES["invalid_response"]
             post_to_slack(channel, error_message, bot_token, thread_ts)
-            log_event(
-                "INFO",
+            log_info(
                 "error_message_posted",
                 {"channel": channel, "error_type": "validation"},
-                context,
             )
             return {"statusCode": 200, "body": "Validation error handled"}
 
         except Exception as e:
             # Unexpected errors
-            log_event(
-                "ERROR",
+            log_exception(
                 "bedrock_unexpected_error",
-                {"channel": channel, "error": str(e), "error_type": type(e).__name__},
-                context,
+                {"channel": channel},
+                e,
             )
             error_message = ERROR_MESSAGES["generic"]
             post_to_slack(channel, error_message, bot_token, thread_ts)
-            log_event(
-                "INFO",
+            log_info(
                 "error_message_posted",
                 {"channel": channel, "error_type": "generic"},
-                context,
             )
             return {"statusCode": 200, "body": "Error handled"}
 
         # Post AI response to Slack
         try:
             post_to_slack(channel, ai_response, bot_token, thread_ts)
-            log_event(
-                "INFO",
+            log_info(
                 "slack_post_success",
                 {"channel": channel, "response_length": len(ai_response)},
-                context,
             )
             # Return 202 Accepted for async operations (when invoked via API Gateway)
             # API Gateway Lambda proxy integration will return this status code to client
@@ -585,29 +544,20 @@ def lambda_handler(event, context):
 
         except Exception as e:
             # Error posting to Slack
-            log_event(
-                "ERROR",
+            log_exception(
                 "slack_post_failed",
-                {"channel": channel, "error": str(e), "error_type": type(e).__name__},
-                context,
+                {"channel": channel},
+                e,
             )
             # Log error but don't retry (async invocation)
             return {"statusCode": 500, "body": "Slack posting failed"}
 
     except Exception as e:
         # Top-level error handler - log full traceback for debugging
-        import traceback
-
-        error_traceback = traceback.format_exc()
-        log_event(
-            "ERROR",
+        log_exception(
             "unhandled_exception",
-            {
-                "error": str(e),
-                "error_type": type(e).__name__,
-                "traceback": error_traceback,
-            },
-            context,
+            {},
+            e,
         )
         # Log error to CloudWatch
         # Note: Cannot post to Slack here because we don't have channel/token

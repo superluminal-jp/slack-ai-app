@@ -13,9 +13,15 @@ Reference:
 - AWS Bedrock Converse: https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference.html
 """
 
-import json
 from typing import List, Dict, Optional, Any
 from file_downloader import download_file, get_file_download_url
+from logger import (
+    get_correlation_id,
+    log_info,
+    log_warn,
+    log_error,
+    log_exception,
+)
 
 
 # Supported image MIME types (Bedrock Converse API supported formats)
@@ -71,11 +77,13 @@ try:
     )
 except ImportError as e:
     # If document extractor modules are not available, use None functions
-    print(json.dumps({
-        "level": "WARN",
-        "event": "document_extractor_import_failed",
-        "error": str(e),
-    }))
+    # Import logger here to avoid circular dependency
+    from logger import log_warn
+    log_warn(
+        "document_extractor_import_failed",
+        {},
+        e,
+    )
     # Define stub functions that return None
     def extract_text_from_pdf(*args, **kwargs):
         return None
@@ -141,17 +149,19 @@ def process_attachments(
             "mimetype": mime_type,
             "size": file_size,
         }
+        correlation_id = correlation_id or get_correlation_id()
         if correlation_id:
             log_data["correlation_id"] = correlation_id
         
         # Check if image type is supported by Bedrock
         if is_image_attachment(mime_type) and not is_supported_image_type(mime_type):
-            print(json.dumps({
-                "level": "WARN",
-                "event": "attachment_unsupported_image_type",
-                **log_data,
-                "supported_types": SUPPORTED_IMAGE_TYPES,
-            }))
+            log_warn(
+                "attachment_unsupported_image_type",
+                {
+                    **log_data,
+                    "supported_types": SUPPORTED_IMAGE_TYPES,
+                },
+            )
             processed.append({
                 "file_id": file_id,
                 "file_name": file_name,
@@ -166,12 +176,13 @@ def process_attachments(
         # Validate file size
         if is_image_attachment(mime_type):
             if not validate_attachment_size(file_size, MAX_IMAGE_SIZE):
-                print(json.dumps({
-                    "level": "WARN",
-                    "event": "attachment_size_exceeded",
-                    **log_data,
-                    "max_size": MAX_IMAGE_SIZE,
-                }))
+                log_warn(
+                    "attachment_size_exceeded",
+                    {
+                        **log_data,
+                        "max_size": MAX_IMAGE_SIZE,
+                    },
+                )
                 processed.append({
                     "file_id": file_id,
                     "file_name": file_name,
@@ -184,12 +195,13 @@ def process_attachments(
                 continue
         elif is_document_attachment(mime_type):
             if not validate_attachment_size(file_size, MAX_DOCUMENT_SIZE):
-                print(json.dumps({
-                    "level": "WARN",
-                    "event": "attachment_size_exceeded",
-                    **log_data,
-                    "max_size": MAX_DOCUMENT_SIZE,
-                }))
+                log_warn(
+                    "attachment_size_exceeded",
+                    {
+                        **log_data,
+                        "max_size": MAX_DOCUMENT_SIZE,
+                    },
+                )
                 processed.append({
                     "file_id": file_id,
                     "file_name": file_name,
@@ -210,13 +222,14 @@ def process_attachments(
         url_source = "files_info" if fresh_download_url else "event_payload"
         
         if not effective_download_url:
-            print(json.dumps({
-                "level": "ERROR",
-                "event": "attachment_download_url_missing",
-                **log_data,
-                "files_info_failed": fresh_download_url is None,
-                "event_url_missing": download_url is None,
-            }))
+            log_error(
+                "attachment_download_url_missing",
+                {
+                    **log_data,
+                    "files_info_failed": fresh_download_url is None,
+                    "event_url_missing": download_url is None,
+                },
+            )
             processed.append({
                 "file_id": file_id,
                 "file_name": file_name,
@@ -228,12 +241,13 @@ def process_attachments(
             })
             continue
         
-        print(json.dumps({
-            "level": "INFO",
-            "event": "attachment_download_started",
-            **log_data,
-            "url_source": url_source,
-        }))
+        log_info(
+            "attachment_download_started",
+            {
+                **log_data,
+                "url_source": url_source,
+            },
+        )
         
         # Step 2: Download file with validation
         # - Retries with exponential backoff
@@ -247,12 +261,13 @@ def process_attachments(
         )
         
         if not file_bytes:
-            print(json.dumps({
-                "level": "ERROR",
-                "event": "attachment_download_failed",
-                **log_data,
-                "url_source": url_source,
-            }))
+            log_error(
+                "attachment_download_failed",
+                {
+                    **log_data,
+                    "url_source": url_source,
+                },
+            )
             processed.append({
                 "file_id": file_id,
                 "file_name": file_name,
@@ -264,13 +279,14 @@ def process_attachments(
             })
             continue
         
-        print(json.dumps({
-            "level": "INFO",
-            "event": "attachment_download_success",
-            **log_data,
-            "downloaded_size": len(file_bytes),
-            "url_source": url_source,
-        }))
+        log_info(
+            "attachment_download_success",
+            {
+                **log_data,
+                "downloaded_size": len(file_bytes),
+                "url_source": url_source,
+            },
+        )
         
         # Step 3: Process based on file type
         if is_image_attachment(mime_type):
@@ -288,11 +304,10 @@ def process_attachments(
             text_content = None
             slide_images = None
             
-            print(json.dumps({
-                "level": "INFO",
-                "event": "document_extraction_started",
-                **log_data,
-            }))
+            log_info(
+                "document_extraction_started",
+                log_data,
+            )
             
             if mime_type == "application/pdf":
                 text_content = extract_text_from_pdf(file_bytes)
@@ -311,19 +326,21 @@ def process_attachments(
             
             # Log extraction result
             if text_content:
-                print(json.dumps({
-                    "level": "INFO",
-                    "event": "document_extraction_success",
-                    **log_data,
-                    "extracted_length": len(text_content),
-                }))
+                log_info(
+                    "document_extraction_success",
+                    {
+                        **log_data,
+                        "extracted_length": len(text_content),
+                    },
+                )
             else:
-                print(json.dumps({
-                    "level": "WARN",
-                    "event": "document_extraction_no_content",
-                    **log_data,
-                    "message": "Text extraction returned None or empty string",
-                }))
+                log_warn(
+                    "document_extraction_no_content",
+                    {
+                        **log_data,
+                        "message": "Text extraction returned None or empty string",
+                    },
+                )
             
             # Process PPTX slide images
             if slide_images:
@@ -361,11 +378,10 @@ def process_attachments(
                 })
         else:
             # Unsupported file type
-            print(json.dumps({
-                "level": "INFO",
-                "event": "attachment_unsupported_type",
-                **log_data,
-            }))
+            log_info(
+                "attachment_unsupported_type",
+                log_data,
+            )
             processed.append({
                 "file_id": file_id,
                 "file_name": file_name,

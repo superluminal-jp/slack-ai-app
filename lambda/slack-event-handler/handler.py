@@ -11,6 +11,13 @@ from botocore.exceptions import ClientError
 from typing import Optional
 from api_gateway_client import invoke_execution_api
 from attachment_extractor import extract_attachment_metadata
+from logger import (
+    set_lambda_context,
+    log_info,
+    log_warn,
+    log_error,
+    log_exception,
+)
 
 
 def _is_valid_timestamp(ts: Optional[str]) -> bool:
@@ -77,16 +84,28 @@ def get_secret_from_secrets_manager(secret_name: str) -> Optional[str]:
         _secrets_cache[secret_name] = secret_value
         return secret_value
     except ClientError as e:
-        print(f"Error retrieving secret {secret_name}: {str(e)}")
+        log_exception(
+            "secret_retrieval_client_error",
+            {"secret_name": secret_name},
+            e,
+        )
         return None
     except Exception as e:
-        print(f"Unexpected error retrieving secret {secret_name}: {str(e)}")
+        log_exception(
+            "secret_retrieval_failed",
+            {"secret_name": secret_name},
+            e,
+        )
         return None
 
 
+# Keep log_event for backward compatibility (deprecated - use logger functions directly)
 def log_event(level: str, event_type: str, data: dict, context=None):
     """
     Structured logging helper for CloudWatch-friendly JSON logs.
+    
+    DEPRECATED: Use logger.log_info(), logger.log_warn(), logger.log_error() directly.
+    This function is kept for backward compatibility and internally uses the new logger.
 
     Args:
         level: Log level (INFO, WARN, ERROR)
@@ -94,12 +113,12 @@ def log_event(level: str, event_type: str, data: dict, context=None):
         data: Event-specific data dictionary
         context: Lambda context object (optional, for request_id)
     """
-    log_entry = {"level": level, "event": event_type, **data}
-
-    if context and hasattr(context, "request_id"):
-        log_entry["request_id"] = context.request_id
-
-    print(json.dumps(log_entry))
+    from logger import log, set_lambda_context as set_ctx
+    
+    if context:
+        set_ctx(context)
+    
+    log(level, event_type, data)
 
 
 def lambda_handler(event, context):
@@ -172,7 +191,7 @@ def lambda_handler(event, context):
                     "headers": {"Content-Type": "application/json"},
                     "body": json.dumps({"error": "Invalid signature"}),
                 }
-            log_event("INFO", "signature_verification_success", {}, context)
+            log_info("signature_verification_success", {})
         else:
             log_event(
                 "INFO",
@@ -243,11 +262,10 @@ def lambda_handler(event, context):
                             )
                 except Exception as e:
                     # If deduplication fails, log but continue processing (fail open)
-                    log_event(
-                        "WARN",
+                    log_warn(
                         "event_deduplication_failed",
-                        {"event_id": event_id, "error": str(e)},
-                        context,
+                        {"event_id": event_id},
+                        e,
                     )
                     # Try to mark anyway (may fail, but we'll continue)
                     try:
@@ -426,11 +444,10 @@ def lambda_handler(event, context):
                                     context,
                                 )
                             except Exception as e:
-                                log_event(
-                                    "ERROR",
+                                log_exception(
                                     "token_storage_failed",
-                                    {"team_id": team_id, "error": str(e)},
-                                    context,
+                                    {"team_id": team_id},
+                                    e,
                                 )
                 else:
                     # Fallback to Secrets Manager or environment variable if no team_id
@@ -519,14 +536,10 @@ def lambda_handler(event, context):
                         # Execution Layer error handling will post error message to Slack
                 except Exception as e:
                     # Error invoking Execution Layer via API Gateway
-                    log_event(
-                        "ERROR",
+                    log_exception(
                         "execution_api_invocation_failed",
-                        {
-                            "api_url": execution_api_url,
-                            "error": str(e),
-                        },
-                        context,
+                        {"api_url": execution_api_url},
+                        e,
                     )
                     # Log error but still return 200 OK to Slack (prevent retries)
                     # Execution Layer error handling will post error message to Slack
@@ -540,11 +553,10 @@ def lambda_handler(event, context):
         }
 
     except Exception as e:
-        log_event(
-            "ERROR",
+        log_exception(
             "unhandled_exception",
-            {"error": str(e), "error_type": type(e).__name__},
-            context,
+            {},
+            e,
         )
         return {
             "statusCode": 500,
