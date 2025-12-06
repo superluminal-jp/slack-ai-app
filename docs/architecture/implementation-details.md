@@ -850,6 +850,346 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 ---
 
+## 8.3 添付ファイル処理の実装
+
+### 概要
+
+システムは Slack メッセージに添付された画像とドキュメントを処理し、AI 分析に含めることができます。処理は以下の 3 段階で実行されます：
+
+1. **メタデータ抽出** (SlackEventHandler): Slack イベントから添付ファイル情報を抽出
+2. **ダウンロードと処理** (BedrockProcessor): Slack CDN からファイルをダウンロードし、内容を抽出
+3. **AI 統合** (BedrockProcessor): 抽出した内容を Bedrock API に送信
+
+### 8.3.1 添付ファイルメタデータ抽出 (SlackEventHandler)
+
+`lambda/slack-event-handler/attachment_extractor.py` モジュールは、Slack イベントから添付ファイル情報を抽出します：
+
+```python
+def extract_attachment_metadata(event: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Extract attachment metadata from Slack event payload.
+    
+    Args:
+        event: Slack event dictionary containing 'files' array
+        
+    Returns:
+        List of attachment metadata dictionaries, each containing:
+        - id: Slack file ID
+        - name: File name
+        - mimetype: MIME type
+        - size: File size in bytes
+        - url_private_download: Download URL (may be None)
+    """
+    files = event.get("files", [])
+    if not files or not isinstance(files, list):
+        return []
+    
+    attachments = []
+    for file_info in files:
+        file_id = file_info.get("id")
+        file_name = file_info.get("name")
+        mime_type = file_info.get("mimetype")
+        file_size = file_info.get("size")
+        download_url = file_info.get("url_private_download")
+        
+        # Validate required fields
+        if not file_id or not file_name or not mime_type or file_size is None:
+            continue
+        
+        attachment = {
+            "id": file_id,
+            "name": file_name,
+            "mimetype": mime_type,
+            "size": file_size,
+            "url_private_download": download_url,
+        }
+        attachments.append(attachment)
+    
+    return attachments
+```
+
+**SlackEventHandler の統合**:
+
+```python
+# lambda/slack-event-handler/handler.py
+from attachment_extractor import extract_attachment_metadata
+
+def lambda_handler(event, context):
+    # ... 署名検証、認可 ...
+    
+    # Extract attachment metadata
+    attachments = extract_attachment_metadata(slack_event)
+    
+    # Include attachments in payload to BedrockProcessor
+    payload = {
+        "user_id": user_id,
+        "channel_id": channel_id,
+        "text": user_message,
+        "attachments": attachments,  # 添付ファイルメタデータ
+        "response_url": response_url,
+        "correlation_id": correlation_id,
+    }
+    
+    # Invoke BedrockProcessor asynchronously
+    # ...
+```
+
+### 8.3.2 添付ファイル処理 (BedrockProcessor)
+
+`lambda/bedrock-processor/attachment_processor.py` モジュールは、添付ファイルのダウンロードと処理を実行します：
+
+**主要関数**:
+
+```python
+def process_attachments(
+    attachments: List[Dict[str, Any]], 
+    bot_token: str, 
+    correlation_id: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """
+    Process all attachments: download, extract content, and prepare for AI processing.
+    
+    Returns:
+        List of processed attachment dictionaries, each containing:
+        - file_id: Original Slack file ID
+        - file_name: File name
+        - mimetype: MIME type
+        - content_type: "image", "document", or "unknown"
+        - processing_status: "success", "failed", or "skipped"
+        - content: Binary data (images) or text (documents) if successful
+        - error_message: Description of failure if not successful
+        - error_code: Machine-readable error code for categorization
+    """
+    processed = []
+    
+    for attachment in attachments:
+        file_id = attachment.get("id")
+        file_name = attachment.get("name")
+        mime_type = attachment.get("mimetype")
+        file_size = attachment.get("size")
+        
+        # Validate file size
+        if is_image_attachment(mime_type):
+            if file_size > MAX_IMAGE_SIZE:  # 10MB
+                processed.append({
+                    "processing_status": "failed",
+                    "error_code": "file_too_large",
+                    "error_message": f"Image exceeds {MAX_IMAGE_SIZE} bytes",
+                })
+                continue
+        elif is_document_attachment(mime_type):
+            if file_size > MAX_DOCUMENT_SIZE:  # 5MB
+                processed.append({
+                    "processing_status": "failed",
+                    "error_code": "file_too_large",
+                    "error_message": f"Document exceeds {MAX_DOCUMENT_SIZE} bytes",
+                })
+                continue
+        
+        # Get fresh download URL from files.info API
+        fresh_download_url = get_file_download_url(file_id, bot_token)
+        effective_url = fresh_download_url or attachment.get("url_private_download")
+        
+        if not effective_url:
+            processed.append({
+                "processing_status": "failed",
+                "error_code": "url_not_available",
+            })
+            continue
+        
+        # Download file
+        file_bytes = download_file(effective_url, bot_token)
+        
+        if not file_bytes:
+            processed.append({
+                "processing_status": "failed",
+                "error_code": "download_failed",
+            })
+            continue
+        
+        # Process based on file type
+        if is_image_attachment(mime_type):
+            # Store image as binary data (Converse API uses binary, not Base64)
+            processed.append({
+                "file_id": file_id,
+                "file_name": file_name,
+                "mimetype": mime_type,
+                "content_type": "image",
+                "processing_status": "success",
+                "content": file_bytes,  # Binary image data
+            })
+        elif is_document_attachment(mime_type):
+            # Extract text from document
+            text_content = extract_document_text(file_bytes, mime_type)
+            if text_content:
+                processed.append({
+                    "file_id": file_id,
+                    "file_name": file_name,
+                    "mimetype": mime_type,
+                    "content_type": "document",
+                    "processing_status": "success",
+                    "content": text_content,  # Extracted text
+                })
+            else:
+                processed.append({
+                    "processing_status": "failed",
+                    "error_code": "extraction_failed",
+                })
+        else:
+            # Unsupported file type
+            processed.append({
+                "processing_status": "skipped",
+                "error_code": "unsupported_type",
+            })
+    
+    return processed
+```
+
+### 8.3.3 ドキュメントテキスト抽出
+
+`lambda/bedrock-processor/document_extractor.py` モジュールは、各種ドキュメント形式からテキストを抽出します：
+
+**対応形式**:
+
+- **PDF**: PyPDF2 を使用
+- **DOCX**: python-docx または XML パース（フォールバック）
+- **CSV**: 標準ライブラリ
+- **XLSX**: openpyxl を使用
+- **PPTX**: python-pptx または XML パース（フォールバック）、LibreOffice による画像変換（オプション）
+- **TXT**: 標準ライブラリ
+
+**実装例**:
+
+```python
+def extract_text_from_pdf(file_bytes: bytes) -> Optional[str]:
+    """Extract text from PDF file."""
+    try:
+        from PyPDF2 import PdfReader
+        import io
+        
+        pdf_file = io.BytesIO(file_bytes)
+        reader = PdfReader(pdf_file)
+        
+        text_parts = []
+        for page in reader.pages:
+            text_parts.append(page.extract_text())
+        
+        return "\n".join(text_parts)
+    except Exception as e:
+        print(f"PDF extraction failed: {e}")
+        return None
+
+def extract_text_from_docx(file_bytes: bytes) -> Optional[str]:
+    """Extract text from DOCX file."""
+    try:
+        from docx import Document
+        import io
+        
+        docx_file = io.BytesIO(file_bytes)
+        doc = Document(docx_file)
+        
+        text_parts = []
+        for paragraph in doc.paragraphs:
+            text_parts.append(paragraph.text)
+        
+        # Extract from tables
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    text_parts.append(cell.text)
+        
+        return "\n".join(text_parts)
+    except ImportError:
+        # Fallback to XML parsing if python-docx is not available
+        return _extract_text_from_docx_xml(file_bytes)
+    except Exception as e:
+        print(f"DOCX extraction failed: {e}")
+        return None
+```
+
+### 8.3.4 BedrockProcessor での統合
+
+`lambda/bedrock-processor/handler.py` は、処理された添付ファイルを Bedrock API に送信します：
+
+```python
+def lambda_handler(event, context):
+    # ... 既存の処理 ...
+    
+    attachments_metadata = event.get("attachments", [])
+    processed_attachments = []
+    
+    if attachments_metadata:
+        try:
+            # Process attachments
+            processed_attachments = process_attachments(
+                attachments_metadata,
+                bot_token,
+                correlation_id=correlation_id
+            )
+            
+            # Separate images and documents
+            images = [
+                a for a in processed_attachments
+                if a.get("content_type") == "image" 
+                and a.get("processing_status") == "success"
+            ]
+            document_texts = [
+                a.get("content") for a in processed_attachments
+                if a.get("content_type") == "document"
+                and a.get("processing_status") == "success"
+            ]
+            
+            # Combine document texts
+            combined_document_text = "\n\n".join(document_texts)
+            
+            # Prepare Bedrock request with images and document text
+            bedrock_response = invoke_bedrock(
+                user_message=text,
+                conversation_history=conversation_history,
+                images=images,  # Binary image data
+                document_text=combined_document_text,  # Extracted text
+                model_id=model_id
+            )
+            
+        except Exception as e:
+            # Graceful degradation: continue with text-only if attachment processing fails
+            log_event("ERROR", "attachment_processing_failed", {...}, context)
+            processed_attachments = []
+    
+    # ... 既存の処理 ...
+```
+
+### 8.3.5 エラーハンドリング
+
+すべての添付ファイル処理エラーは、ユーザーフレンドリーなメッセージにマッピングされます：
+
+```python
+ERROR_MESSAGES = {
+    "unsupported_file_type": "このファイル形式には対応していません。画像（PNG, JPEG, GIF, WebP）またはドキュメント（PDF, DOCX, CSV, XLSX, PPTX, TXT）を送信してください。",
+    "file_too_large": "ファイルが大きすぎます（画像: 最大 10MB、ドキュメント: 最大 5MB）。",
+    "download_failed": "ファイルのダウンロードに失敗しました。ファイルが共有されているチャンネルにボットが追加されているか確認してください。",
+    "extraction_failed": "ドキュメントの内容を読み取れませんでした。別のファイルを試してください。",
+}
+
+def _get_error_message_for_attachment_failure(error_code: str) -> str:
+    """Map attachment processor error codes to user-friendly messages."""
+    error_code_mapping = {
+        "unsupported_type": "unsupported_file_type",
+        "file_too_large": "file_too_large",
+        "download_failed": "download_failed",
+        "extraction_failed": "extraction_failed",
+    }
+    message_key = error_code_mapping.get(error_code, "generic")
+    return ERROR_MESSAGES.get(message_key, ERROR_MESSAGES["generic"])
+```
+
+### 8.3.6 パフォーマンス考慮事項
+
+- **ファイルサイズ制限**: 画像 10MB、ドキュメント 5MB（処理時間とメモリ使用量を考慮）
+- **タイムアウト**: 添付ファイル処理は 30 秒以内に完了する必要がある
+- **部分成功**: 複数添付ファイルがある場合、一部が失敗しても成功したファイルは処理を継続
+- **並列処理**: 現在は順次処理（将来の最適化で並列処理を検討）
+
 ---
 
 ## 関連ドキュメント

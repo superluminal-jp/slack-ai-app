@@ -20,6 +20,7 @@ oauth_config:
       - app_mentions:read
       - channels:history
       - groups:history
+      - files:read  # Required for downloading attachments
 
 event_subscriptions:
   bot_events:

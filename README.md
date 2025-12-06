@@ -78,6 +78,10 @@ This project implements a serverless Slack bot that:
   - Multi-model support (Claude, Nova)
   - Error handling and user-friendly messages
   - Response posting via Slack Webhooks
+  - **Attachment processing**: Downloads and processes images and documents from Slack
+  - **Image analysis**: Supports vision models for image content analysis
+  - **Document extraction**: Extracts text from PDF, DOCX, CSV, XLSX, PPTX, TXT files
+  - **PPTX conversion**: Converts PowerPoint slides to images using LibreOffice
 
 - **Infrastructure** (`cdk/`): AWS CDK (TypeScript) for provisioning Lambda functions, DynamoDB tables, and IAM roles
   - Lambda function URLs for public access
@@ -96,6 +100,10 @@ For complete architecture details, see [docs/architecture/overview.md](docs/arch
 - ✅ Error handling with user-friendly messages
 - ✅ DynamoDB token storage for workspace installations
 - ✅ Multi-model support (Claude and Nova models)
+- ✅ **Image attachment processing** - Analyze images using AWS Bedrock vision capabilities (PNG, JPEG, GIF, WebP)
+- ✅ **Document attachment processing** - Extract text from PDF, DOCX, CSV, XLSX, PPTX, TXT files
+- ✅ **PPTX slide-to-image conversion** - Convert PowerPoint slides to images for visual analysis
+- ✅ **Multiple attachments support** - Process multiple attachments in a single message
 
 ## Quick Start
 
@@ -262,7 +270,7 @@ This MVP prioritizes basic functionality over production-grade features. The fol
 - ❌ Conversation history storage
 - ❌ Advanced prompt engineering or custom prompt templates
 - ❌ Rate limiting per user or workspace
-- ❌ File/image processing
+- ✅ File/image processing (images and documents supported)
 - ❌ Custom slash commands
 - ❌ Interactive Slack components (buttons, modals, etc.)
 
@@ -392,4 +400,4 @@ For issues or questions:
 ---
 
 **Documentation Status**: ✅ Up-to-date with comprehensive architecture docs in `docs/`
-**Last Updated**: 2025-12-05
+**Last Updated**: 2025-12-06 (Added attachment processing documentation)

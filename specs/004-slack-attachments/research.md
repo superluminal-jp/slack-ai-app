@@ -74,7 +74,11 @@ for file_info in files:
 
 - **`event.file`**: Single file object, but Slack supports multiple attachments per message
 - **`event.attachments`**: Different field used for rich message formatting, not file attachments
-- **Slack Files API**: Requires separate API call (`files.info`), rejected as unnecessary overhead when metadata in event
+
+**Important Note (Updated 2025-01)**:
+- **Slack Files API (`files.info`)**: Initially rejected as "unnecessary overhead", but this was incorrect.
+- **Slack Official Best Practice**: `url_private_download` from event payloads may be stale or expired. Always fetch fresh download URL via `files.info` API for reliable downloads.
+- **Implementation**: Call `files.info` API to get the latest `url_private_download` before downloading files.
 
 ---
 
@@ -82,59 +86,86 @@ for file_info in files:
 
 **Question**: How to download files from Slack using bot token authentication?
 
-**Decision**: Use `url_private_download` URL with bot token in Authorization header
+**Decision**: Use `files.info` API to get fresh `url_private_download`, then download with bot token
 
-**Rationale**:
+**Rationale** (Updated 2025-01 based on production issues):
 
-- **Slack API Documentation**: `url_private_download` URLs require authentication via Bearer token
+- **Slack Official Best Practice**: Event payload URLs may be stale/expired; always use `files.info` API
 - **Bot token**: Use `bot_token` (xoxb-\*) from DynamoDB workspace tokens
-- **HTTP method**: Standard GET request with Authorization header
-- **Rate limits**: Tier 2 rate limit (20 requests/minute per method) applies to file downloads
+- **Two-step process**: 1) Call `files.info` to get fresh URL, 2) Download file
+- **Rate limits**: Tier 2 rate limit applies; implement exponential backoff for 429 errors
 
 **Implementation**:
 
 ```python
 # In bedrock-processor/file_downloader.py
 import requests
+import time
 
-def download_file(download_url: str, bot_token: str) -> bytes:
+def get_file_download_url(file_id: str, bot_token: str) -> Optional[str]:
     """
-    Download file from Slack CDN using bot token authentication.
-
-    Args:
-        download_url: URL from file_info["url_private_download"]
-        bot_token: Slack bot OAuth token (xoxb-*)
-
-    Returns:
-        bytes: File content
+    Get fresh download URL via Slack files.info API.
+    
+    Slack official best practice: Event payload URLs may be stale.
+    Always fetch fresh URL from files.info API.
     """
-    headers = {
-        "Authorization": f"Bearer {bot_token}"
-    }
+    response = requests.get(
+        "https://slack.com/api/files.info",
+        headers={"Authorization": f"Bearer {bot_token}"},
+        params={"file": file_id},
+        timeout=10,
+    )
+    data = response.json()
+    if data.get("ok"):
+        return data.get("file", {}).get("url_private_download")
+    return None
 
-    response = requests.get(download_url, headers=headers, timeout=30)
-    response.raise_for_status()
-    return response.content
+def download_file(download_url: str, bot_token: str, max_retries: int = 3) -> bytes:
+    """
+    Download file from Slack CDN with retry logic and rate limit handling.
+    """
+    headers = {"Authorization": f"Bearer {bot_token}"}
+    
+    for attempt in range(max_retries):
+        response = requests.get(download_url, headers=headers, timeout=30)
+        
+        if response.status_code == 429:  # Rate limited
+            retry_after = int(response.headers.get("Retry-After", 2 ** attempt))
+            time.sleep(retry_after)
+            continue
+            
+        response.raise_for_status()
+        return response.content
+    
+    raise Exception("Max retries exceeded")
 ```
 
 **Error Handling**:
 
 - **401 Unauthorized**: Bot token invalid or expired → log error, skip file
+- **403 Forbidden**: No access to file → log error, notify user about permission
 - **404 Not Found**: File deleted or inaccessible → log warning, skip file
-- **429 Too Many Requests**: Rate limit exceeded → implement exponential backoff
+- **429 Too Many Requests**: Rate limit exceeded → exponential backoff with Retry-After header
 - **Timeout**: Large file download exceeds timeout → log error, skip file
+- **HTML Response**: Error page returned instead of file → validate Content-Type header
 
 **Rate Limiting**:
 
-- **Tier 2 limit**: 20 requests/minute per method (`files.sharedPublicURL` or direct download)
-- **Mitigation**: Process attachments sequentially, not in parallel
-- **Monitoring**: Track download rate and implement backoff if approaching limits
+- **Tier 2 limit**: 20 requests/minute per method
+- **Mitigation**: Exponential backoff with jitter for 429 errors
+- **Retry-After**: Respect Retry-After header from Slack response
+
+**Validation** (Added 2025-01):
+
+- **Content-Type check**: Verify response is not HTML error page
+- **Size validation**: Compare downloaded size with expected size
+- **Magic bytes check**: Validate image headers (PNG/JPEG/GIF/WebP)
 
 **Alternatives Considered**:
 
-- **`files.sharedPublicURL`**: Creates public URL, but requires additional API call and security risk
-- \*\*`files.info` + `files.download`: Two-step process, rejected as unnecessary when download URL in event
-- **S3 presigned URLs**: Would require uploading to S3 first, rejected as over-engineered
+- **`files.sharedPublicURL`**: Creates public URL, but security risk
+- **Direct event URL**: Rejected - URLs may be stale (production issue confirmed)
+- **S3 presigned URLs**: Would require uploading to S3 first, over-engineered
 
 ---
 

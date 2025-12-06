@@ -10,21 +10,22 @@ from event_dedupe import is_duplicate_event, mark_event_processed
 from botocore.exceptions import ClientError
 from typing import Optional
 from api_gateway_client import invoke_execution_api
+from attachment_extractor import extract_attachment_metadata
 
 
 def _is_valid_timestamp(ts: Optional[str]) -> bool:
     """
     Validate Slack timestamp format.
-    
+
     Slack timestamps are in format: "1234567890.123456" (Unix timestamp with microseconds).
     This function validates that the timestamp matches the expected format.
-    
+
     Args:
         ts: Timestamp string to validate (can be None)
-        
+
     Returns:
         True if timestamp is valid format, False otherwise
-        
+
     Examples:
         >>> _is_valid_timestamp("1234567890.123456")
         True
@@ -37,10 +38,11 @@ def _is_valid_timestamp(ts: Optional[str]) -> bool:
     """
     if not ts or not isinstance(ts, str):
         return False
-    
+
     # Slack timestamp format: digits, dot, digits (e.g., "1234567890.123456")
     pattern = r"^\d+\.\d+$"
     return bool(re.match(pattern, ts))
+
 
 # Cache for secrets (to avoid repeated API calls)
 _secrets_cache: dict[str, str] = {}
@@ -265,11 +267,11 @@ def lambda_handler(event, context):
             slack_event = body.get("event", {})
             event_type = slack_event.get("type")
             team_id = body.get("team_id")
-            
+
             # Extract message timestamp for thread replies
             # Use event.thread_ts if present (reply in existing thread), otherwise use event.ts (new message)
             message_timestamp = slack_event.get("thread_ts") or slack_event.get("ts")
-            
+
             # Validate timestamp format (log warning if invalid, but continue processing)
             if message_timestamp and not _is_valid_timestamp(message_timestamp):
                 log_event(
@@ -335,7 +337,20 @@ def lambda_handler(event, context):
                 # Extract channel and text from event
                 channel = slack_event.get("channel")
                 user_text = slack_event.get("text", "")
-                
+
+                # Extract attachment metadata from event
+                attachments = extract_attachment_metadata(slack_event)
+                if attachments:
+                    log_event(
+                        "INFO",
+                        "attachments_detected",
+                        {
+                            "attachment_count": len(attachments),
+                            "file_ids": [att["id"] for att in attachments],
+                        },
+                        context,
+                    )
+
                 # Extract message timestamp for thread replies (already extracted above)
                 # message_timestamp is None if missing (backward compatibility)
 
@@ -343,9 +358,9 @@ def lambda_handler(event, context):
                 # For app_mention events, Slack includes the bot mention in the text
                 user_text = re.sub(r"<@[A-Z0-9]+>", "", user_text).strip()
 
-                # Validate message text
+                # Validate message text (skip validation if attachments are present - FR-014)
                 is_valid, error_message = validate_prompt(user_text)
-                if not is_valid:
+                if not is_valid and not attachments:
                     log_event(
                         "WARN",
                         "message_validation_failed",
@@ -452,6 +467,10 @@ def lambda_handler(event, context):
                     "bot_token": bot_token,
                     "thread_ts": message_timestamp,  # Include thread timestamp for thread replies
                 }
+
+                # Include attachment metadata if attachments are present
+                if attachments:
+                    payload["attachments"] = attachments
 
                 try:
                     # Use API Gateway with IAM authentication

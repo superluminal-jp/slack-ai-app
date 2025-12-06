@@ -37,6 +37,51 @@
 
 ---
 
+## フェーズ 1.5: 添付ファイル処理機能（Week 2-3）
+
+**目標**: Slack メッセージの添付ファイル（画像・ドキュメント）を処理し、AI 分析に含める
+
+### 優先度: 高（P1-P2）
+
+1. **添付ファイルメタデータ抽出** (SlackEventHandler)
+
+   - タスク: `event.files` から添付ファイル情報を抽出
+   - 成果物: `lambda/slack-event-handler/attachment_extractor.py`
+   - 検証: 各種ファイル形式のメタデータ抽出テスト
+   - 所要時間: 1 日
+
+2. **ファイルダウンロード機能** (BedrockProcessor)
+
+   - タスク: Slack CDN からファイルをダウンロード（ボットトークン認証）
+   - 成果物: `lambda/bedrock-processor/file_downloader.py`
+   - 検証: ダウンロード成功/失敗のテスト
+   - 所要時間: 2 日
+
+3. **ドキュメントテキスト抽出** (BedrockProcessor)
+
+   - タスク: PDF, DOCX, CSV, XLSX, PPTX, TXT からテキスト抽出
+   - 成果物: `lambda/bedrock-processor/document_extractor.py`
+   - 検証: 各形式のテキスト抽出テスト
+   - 所要時間: 3 日
+
+4. **画像処理統合** (BedrockProcessor)
+
+   - タスク: 画像を Bedrock 視覚機能に送信
+   - 成果物: `lambda/bedrock-processor/bedrock_client.py` の更新
+   - 検証: 画像分析のテスト
+   - 所要時間: 2 日
+
+5. **添付ファイル処理オーケストレーション** (BedrockProcessor)
+
+   - タスク: 複数添付ファイルの処理、エラーハンドリング
+   - 成果物: `lambda/bedrock-processor/attachment_processor.py`
+   - 検証: 複数ファイル、部分成功、エラーケースのテスト
+   - 所要時間: 2 日
+
+**マイルストーン**: 画像とドキュメントの添付ファイルが AI 分析に含まれる
+
+---
+
 ## フェーズ 2: セキュリティ強化（Week 3）
 
 **目標**: AI 特有の脅威に対する保護を実装

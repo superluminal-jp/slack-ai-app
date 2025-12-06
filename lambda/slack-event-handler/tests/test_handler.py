@@ -163,3 +163,97 @@ class TestTimestampExtraction:
                                 payload = call_args[1]['payload']
                                 assert payload['thread_ts'] is None
 
+
+class TestAttachmentExtraction:
+    """Test attachment extraction from Slack events."""
+    
+    def test_extract_attachments_from_event(self):
+        """Test extraction of attachments from Slack event."""
+        event = {
+            "body": json.dumps({
+                "type": "event_callback",
+                "event": {
+                    "type": "app_mention",
+                    "ts": "1234567890.123456",
+                    "channel": "C01234567",
+                    "text": "<@U12345> check this image",
+                    "user": "U12345",
+                    "files": [
+                        {
+                            "id": "F01234567",
+                            "name": "test.png",
+                            "mimetype": "image/png",
+                            "size": 1024,
+                            "url_private_download": "https://files.slack.com/...",
+                        }
+                    ]
+                },
+                "team_id": "T12345"
+            }),
+            "headers": {
+                "x-slack-signature": "v0=test",
+                "x-slack-request-timestamp": "1234567890"
+            }
+        }
+        
+        with patch('handler.verify_signature', return_value=True):
+            with patch('handler.is_duplicate_event', return_value=False):
+                with patch('handler.mark_event_processed', return_value=True):
+                    with patch('handler.validate_prompt', return_value=(True, None)):
+                        with patch('handler.get_token', return_value="xoxb-test"):
+                            with patch('handler.invoke_execution_api') as mock_invoke:
+                                mock_invoke.return_value = Mock(status_code=202)
+                                
+                                context = Mock()
+                                context.request_id = "test-request-id"
+                                
+                                result = lambda_handler(event, context)
+                                
+                                # Verify payload includes attachments
+                                call_args = mock_invoke.call_args
+                                payload = call_args[1]['payload']
+                                assert 'attachments' in payload
+                                assert len(payload['attachments']) == 1
+                                assert payload['attachments'][0]['id'] == "F01234567"
+                                assert payload['attachments'][0]['mimetype'] == "image/png"
+    
+    def test_event_without_attachments(self):
+        """Test event without attachments (backward compatibility)."""
+        event = {
+            "body": json.dumps({
+                "type": "event_callback",
+                "event": {
+                    "type": "app_mention",
+                    "ts": "1234567890.123456",
+                    "channel": "C01234567",
+                    "text": "<@U12345> hello",
+                    "user": "U12345"
+                    # No files array
+                },
+                "team_id": "T12345"
+            }),
+            "headers": {
+                "x-slack-signature": "v0=test",
+                "x-slack-request-timestamp": "1234567890"
+            }
+        }
+        
+        with patch('handler.verify_signature', return_value=True):
+            with patch('handler.is_duplicate_event', return_value=False):
+                with patch('handler.mark_event_processed', return_value=True):
+                    with patch('handler.validate_prompt', return_value=(True, None)):
+                        with patch('handler.get_token', return_value="xoxb-test"):
+                            with patch('handler.invoke_execution_api') as mock_invoke:
+                                mock_invoke.return_value = Mock(status_code=202)
+                                
+                                context = Mock()
+                                context.request_id = "test-request-id"
+                                
+                                result = lambda_handler(event, context)
+                                
+                                # Verify payload includes empty attachments array
+                                call_args = mock_invoke.call_args
+                                payload = call_args[1]['payload']
+                                assert 'attachments' in payload
+                                assert payload['attachments'] == []
+
