@@ -12,7 +12,7 @@ import os
 # Import handler module to test
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from handler import lambda_handler
+from handler import lambda_handler, _fallback_to_regular_message
 
 
 class TestAttachmentProcessing:
@@ -313,3 +313,172 @@ class TestBackwardCompatibility:
         # Verify response was posted
         mock_post.assert_called_once()
 
+
+class TestCanvasFallback:
+    """Test Canvas creation fallback to regular messages."""
+
+    @patch('handler.post_to_slack')
+    @patch('handler.share_canvas')
+    @patch('handler.create_canvas')
+    @patch('handler.invoke_bedrock')
+    @patch('handler.get_thread_history')
+    def test_fallback_on_canvas_creation_failure(self, mock_thread_history, mock_bedrock, mock_create, mock_share, mock_post):
+        """Test fallback to regular message when Canvas creation fails."""
+        # Mock thread history (no history)
+        mock_thread_history.return_value = []
+        
+        # Mock Bedrock response (long reply >800 chars)
+        long_reply = "A" * 801
+        mock_bedrock.return_value = long_reply
+        
+        # Mock Canvas creation failure
+        mock_create.return_value = {
+            "success": False,
+            "error_code": "permission_error",
+            "error_message": "Bot token missing canvas:write permission"
+        }
+        
+        event = {
+            "channel": "C01234567",
+            "text": "Generate a long response",
+            "bot_token": "xoxb-token",
+        }
+        
+        context = Mock()
+        context.request_id = "test-request-id"
+        
+        result = lambda_handler(event, context)
+        
+        # Verify Canvas creation was attempted
+        mock_create.assert_called_once()
+        
+        # Verify Canvas sharing was NOT called (creation failed)
+        mock_share.assert_not_called()
+        
+        # Verify fallback to regular message was used
+        mock_post.assert_called_once()
+        call_args = mock_post.call_args
+        assert call_args[0][1] == long_reply  # Full reply posted
+
+    @patch('handler.post_to_slack')
+    @patch('handler.share_canvas')
+    @patch('handler.create_canvas')
+    @patch('handler.invoke_bedrock')
+    @patch('handler.get_thread_history')
+    def test_fallback_on_canvas_sharing_failure(self, mock_thread_history, mock_bedrock, mock_create, mock_share, mock_post):
+        """Test fallback to regular message when Canvas sharing fails."""
+        # Mock thread history (no history)
+        mock_thread_history.return_value = []
+        
+        # Mock Bedrock response (long reply >800 chars)
+        long_reply = "A" * 801
+        mock_bedrock.return_value = long_reply
+        
+        # Mock Canvas creation success but sharing failure
+        mock_create.return_value = {
+            "success": True,
+            "canvas_id": "C01234567"
+        }
+        mock_share.return_value = {
+            "success": False,
+            "error_code": "api_error",
+            "error_message": "Canvas sharing failed"
+        }
+        
+        event = {
+            "channel": "C01234567",
+            "text": "Generate a long response",
+            "bot_token": "xoxb-token",
+        }
+        
+        context = Mock()
+        context.request_id = "test-request-id"
+        
+        result = lambda_handler(event, context)
+        
+        # Verify Canvas creation succeeded
+        mock_create.assert_called_once()
+        
+        # Verify Canvas sharing was attempted
+        mock_share.assert_called_once()
+        
+        # Verify fallback to regular message was used
+        mock_post.assert_called_once()
+        call_args = mock_post.call_args
+        assert call_args[0][1] == long_reply  # Full reply posted
+
+    @patch('handler._fallback_to_regular_message')
+    @patch('handler.share_canvas')
+    @patch('handler.create_canvas')
+    @patch('handler.invoke_bedrock')
+    @patch('handler.get_thread_history')
+    def test_message_truncation_on_fallback(self, mock_thread_history, mock_bedrock, mock_create, mock_share, mock_fallback):
+        """Test message truncation when fallback message exceeds 4000 chars."""
+        # Mock thread history (no history)
+        mock_thread_history.return_value = []
+        
+        # Mock Bedrock response (very long reply >4000 chars)
+        very_long_reply = "A" * 5000
+        mock_bedrock.return_value = very_long_reply
+        
+        # Mock Canvas creation failure
+        mock_create.return_value = {
+            "success": False,
+            "error_code": "api_error",
+            "error_message": "Canvas creation failed"
+        }
+        
+        event = {
+            "channel": "C01234567",
+            "text": "Generate a very long response",
+            "bot_token": "xoxb-token",
+        }
+        
+        context = Mock()
+        context.request_id = "test-request-id"
+        
+        result = lambda_handler(event, context)
+        
+        # Verify fallback function was called (which handles truncation)
+        mock_fallback.assert_called_once()
+        
+        # Verify fallback was called with correct parameters
+        call_args = mock_fallback.call_args
+        assert call_args[0][0] == very_long_reply
+        assert len(call_args[0][0]) > 4000  # Original message is long
+
+    @patch('handler.post_to_slack')
+    @patch('handler.share_canvas')
+    @patch('handler.create_canvas')
+    @patch('handler.invoke_bedrock')
+    @patch('handler.get_thread_history')
+    def test_regular_message_for_short_reply(self, mock_thread_history, mock_bedrock, mock_create, mock_share, mock_post):
+        """Test that short replies use regular messages (no Canvas)."""
+        # Mock thread history (no history)
+        mock_thread_history.return_value = []
+        
+        # Mock Bedrock response (short reply <800 chars)
+        short_reply = "This is a short reply."
+        mock_bedrock.return_value = short_reply
+        
+        event = {
+            "channel": "C01234567",
+            "text": "Hello",
+            "bot_token": "xoxb-token",
+        }
+        
+        context = Mock()
+        context.request_id = "test-request-id"
+        
+        result = lambda_handler(event, context)
+        
+        # Verify Canvas creation was NOT attempted (short reply)
+        mock_create.assert_not_called()
+        
+        # Verify Canvas sharing was NOT attempted
+        mock_share.assert_not_called()
+        
+        # Verify regular message was posted
+        mock_post.assert_called_once()
+        call_args = mock_post.call_args
+        assert call_args[0][1] == short_reply

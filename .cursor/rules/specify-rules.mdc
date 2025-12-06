@@ -5,6 +5,7 @@ Auto-generated from all feature plans. Last updated: 2025-12-06
 ## Active Technologies
 - Python 3.11+ for Lambda functions, TypeScript for AWS CDK infrastructure + AWS CDK, boto3 (Bedrock SDK), slack-sdk (Python), AWS Lambda runtime, requests for file downloads, PyPDF2 for PDF extraction, python-docx for DOCX extraction, openpyxl for XLSX extraction, python-pptx for PPTX extraction, LibreOffice (Lambda Layer) for PPTX to image conversion, csv (built-in) for CSV extraction (004-slack-attachments)
 - N/A (attachments downloaded temporarily in Lambda memory; no persistent storage required per spec Out of Scope) (004-slack-attachments)
+- N/A (Canvas content created and shared via Slack API; no persistent storage required per spec Out of Scope) (005-canvas-long-reply)
 
 - Python 3.11+ for Lambda functions, TypeScript for AWS CDK infrastructure + AWS CDK, boto3 (Bedrock SDK), slack-sdk (Python), AWS Lambda runtime, requests/httpx for file downloads, PyPDF2/pdfplumber for PDF extraction, python-docx for DOCX extraction (004-slack-attachments)
 
@@ -24,6 +25,7 @@ cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLO
 Python 3.11+ for Lambda functions, TypeScript for AWS CDK infrastructure: Follow standard conventions
 
 ## Recent Changes
+- 005-canvas-long-reply: Added Python 3.11+ for Lambda functions, TypeScript for AWS CDK infrastructure + AWS CDK, boto3 (Bedrock SDK), slack-sdk (Python), AWS Lambda runtime
 - 004-slack-attachments: Added Python 3.11+ for Lambda functions, TypeScript for AWS CDK infrastructure + AWS CDK, boto3 (Bedrock SDK), slack-sdk (Python), AWS Lambda runtime, requests for file downloads, PyPDF2 for PDF extraction, python-docx for DOCX extraction, openpyxl for XLSX extraction, python-pptx for PPTX extraction, LibreOffice (Lambda Layer) for PPTX to image conversion, csv (built-in) for CSV extraction
 
 - 004-slack-attachments: Added Python 3.11+ for Lambda functions, TypeScript for AWS CDK infrastructure + AWS CDK, boto3 (Bedrock SDK), slack-sdk (Python), AWS Lambda runtime, requests/httpx for file downloads, PyPDF2/pdfplumber for PDF extraction, python-docx for DOCX extraction

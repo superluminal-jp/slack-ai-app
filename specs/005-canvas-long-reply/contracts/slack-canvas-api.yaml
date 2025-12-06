@@ -1,0 +1,298 @@
+openapi: 3.0.3
+info:
+  title: Slack Canvas API Integration
+  description: |
+    API contract for Canvas creation and sharing functionality.
+    This contract defines the assumed Slack Canvas API methods and payload structures
+    for creating and sharing Canvas in threads and channels.
+    
+    **Note**: This contract is based on assumed API patterns. Actual Canvas API
+    methods and structures may differ and require validation through testing.
+  version: 1.0.0
+  contact:
+    name: Slack API Documentation
+    url: https://api.slack.com
+
+servers:
+  - url: https://slack.com/api
+    description: Slack API server
+
+paths:
+  /canvas.create:
+    post:
+      summary: Create a new Canvas
+      description: |
+        Creates a new Canvas with the specified title and content.
+        Returns Canvas ID on success.
+      operationId: createCanvas
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CanvasCreateRequest'
+            example:
+              title: "AI Response"
+              content:
+                blocks:
+                  - type: "header"
+                    text: "AI Response"
+                  - type: "section"
+                    text: "This is the formatted reply content..."
+      responses:
+        '200':
+          description: Canvas created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CanvasCreateResponse'
+              example:
+                ok: true
+                canvas:
+                  id: "C01234567"
+                  title: "AI Response"
+                  created: 1234567890
+        '400':
+          description: Bad request (invalid content format or size)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                ok: false
+                error: "invalid_content"
+                error_message: "Canvas content exceeds size limit"
+        '403':
+          description: Forbidden (missing canvas:write permission)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                ok: false
+                error: "missing_scope"
+                error_message: "Bot token missing canvas:write permission"
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                ok: false
+                error: "rate_limited"
+                error_message: "Rate limit exceeded. Retry after 60 seconds"
+
+  /canvas.share:
+    post:
+      summary: Share Canvas in channel or thread
+      description: |
+        Shares an existing Canvas in the specified channel or thread.
+        If thread_ts is provided, Canvas is associated with the thread.
+      operationId: shareCanvas
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CanvasShareRequest'
+            example:
+              canvas_id: "C01234567"
+              channel: "C01234567"
+              thread_ts: "1234567890.123456"
+      responses:
+        '200':
+          description: Canvas shared successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CanvasShareResponse'
+              example:
+                ok: true
+                canvas_id: "C01234567"
+                channel: "C01234567"
+                thread_ts: "1234567890.123456"
+        '400':
+          description: Bad request (invalid canvas_id or channel)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                ok: false
+                error: "invalid_canvas_id"
+                error_message: "Canvas ID not found"
+        '403':
+          description: Forbidden (missing permissions or Canvas not accessible)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                ok: false
+                error: "not_authorized"
+                error_message: "Bot does not have permission to share this Canvas"
+        '404':
+          description: Canvas not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                ok: false
+                error: "canvas_not_found"
+                error_message: "Canvas with specified ID does not exist"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Bot OAuth token (xoxb-...) with canvas:write scope.
+        Token must be included in Authorization header.
+
+  schemas:
+    CanvasCreateRequest:
+      type: object
+      required:
+        - title
+        - content
+      properties:
+        title:
+          type: string
+          description: Canvas title
+          maxLength: 100
+          example: "AI Response"
+        content:
+          oneOf:
+            - type: string
+              description: Plain text or markdown content
+            - $ref: '#/components/schemas/CanvasContentBlocks'
+          description: Canvas content (formatted text or structured blocks)
+        workspace_id:
+          type: string
+          description: Slack workspace ID (optional)
+          pattern: '^T[A-Z0-9]{8,}$'
+          example: "T01234567"
+
+    CanvasContentBlocks:
+      type: object
+      properties:
+        blocks:
+          type: array
+          description: Array of content blocks (similar to Slack Block Kit)
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+                enum: [header, section, divider, list]
+                description: Block type
+              text:
+                type: string
+                description: Block text content
+              items:
+                type: array
+                description: List items (for list type)
+                items:
+                  type: string
+
+    CanvasCreateResponse:
+      type: object
+      required:
+        - ok
+      properties:
+        ok:
+          type: boolean
+          description: Whether the API call succeeded
+        canvas:
+          type: object
+          properties:
+            id:
+              type: string
+              description: Canvas ID
+              pattern: '^C[A-Z0-9]+$'
+              example: "C01234567"
+            title:
+              type: string
+              description: Canvas title
+            created:
+              type: integer
+              description: Unix timestamp of creation
+        error:
+          type: string
+          description: Error code (if ok is false)
+        error_message:
+          type: string
+          description: Human-readable error message (if ok is false)
+
+    CanvasShareRequest:
+      type: object
+      required:
+        - canvas_id
+        - channel
+      properties:
+        canvas_id:
+          type: string
+          description: Canvas ID to share
+          pattern: '^C[A-Z0-9]+$'
+          example: "C01234567"
+        channel:
+          type: string
+          description: Channel ID where to share Canvas
+          pattern: '^(C|D)[A-Z0-9]{8,}$'
+          example: "C01234567"
+        thread_ts:
+          type: string
+          description: Thread timestamp (if sharing in thread)
+          pattern: '^\d+\.\d+$'
+          example: "1234567890.123456"
+
+    CanvasShareResponse:
+      type: object
+      required:
+        - ok
+      properties:
+        ok:
+          type: boolean
+          description: Whether the API call succeeded
+        canvas_id:
+          type: string
+          description: Canvas ID that was shared
+        channel:
+          type: string
+          description: Channel where Canvas was shared
+        thread_ts:
+          type: string
+          description: Thread timestamp (if shared in thread)
+        error:
+          type: string
+          description: Error code (if ok is false)
+        error_message:
+          type: string
+          description: Human-readable error message (if ok is false)
+
+    ErrorResponse:
+      type: object
+      required:
+        - ok
+        - error
+      properties:
+        ok:
+          type: boolean
+          example: false
+        error:
+          type: string
+          description: Error code
+          example: "invalid_request"
+        error_message:
+          type: string
+          description: Human-readable error message
+          example: "Invalid request parameters"
+

@@ -82,6 +82,7 @@ This project implements a serverless Slack bot that:
   - **Image analysis**: Supports vision models for image content analysis
   - **Document extraction**: Extracts text from PDF, DOCX, CSV, XLSX, PPTX, TXT files
   - **PPTX conversion**: Converts PowerPoint slides to images using LibreOffice
+  - **Canvas for long replies**: Automatically uses Slack Canvas for long replies (>800 chars) or structured content (headings, lists, code blocks, tables)
 
 - **Infrastructure** (`cdk/`): AWS CDK (TypeScript) for provisioning Lambda functions, DynamoDB tables, and IAM roles
   - Lambda function URLs for public access
@@ -104,6 +105,7 @@ For complete architecture details, see [docs/architecture/overview.md](docs/arch
 - ✅ **Document attachment processing** - Extract text from PDF, DOCX, CSV, XLSX, PPTX, TXT files
 - ✅ **PPTX slide-to-image conversion** - Convert PowerPoint slides to images for visual analysis
 - ✅ **Multiple attachments support** - Process multiple attachments in a single message
+- ✅ **Canvas for long replies** - Automatically uses Slack Canvas for replies exceeding 800 characters or containing structured formatting (headings, lists, code blocks, tables) for better readability
 
 ## Quick Start
 
@@ -171,11 +173,16 @@ slack-ai-app/
 │   ├── adr/                      # Architecture Decision Records
 │   ├── appendix.md               # Glossary and references
 │   └── slack-app-manifest.yaml   # Slack App manifest template
-├── specs/001-slack-bedrock-mvp/  # Feature specification and docs
-│   ├── spec.md                   # Feature specification
-│   ├── plan.md                   # Implementation plan
-│   ├── quickstart.md             # Deployment guide
-│   └── tasks.md                  # Task breakdown
+├── specs/
+│   ├── 001-slack-bedrock-mvp/    # MVP feature specification and docs
+│   │   ├── spec.md               # Feature specification
+│   │   ├── plan.md               # Implementation plan
+│   │   ├── quickstart.md         # Deployment guide
+│   │   └── tasks.md               # Task breakdown
+│   └── 005-canvas-long-reply/    # Canvas feature specification and docs
+│       ├── spec.md                # Canvas feature specification
+│       ├── plan.md                # Implementation plan
+│       └── tasks.md               # Task breakdown
 └── CLAUDE.md                     # Development guidelines and policies
 ```
 
