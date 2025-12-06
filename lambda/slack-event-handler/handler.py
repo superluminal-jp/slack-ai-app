@@ -10,21 +10,29 @@ from event_dedupe import is_duplicate_event, mark_event_processed
 from botocore.exceptions import ClientError
 from typing import Optional
 from api_gateway_client import invoke_execution_api
+from attachment_extractor import extract_attachment_metadata
+from logger import (
+    set_lambda_context,
+    log_info,
+    log_warn,
+    log_error,
+    log_exception,
+)
 
 
 def _is_valid_timestamp(ts: Optional[str]) -> bool:
     """
     Validate Slack timestamp format.
-    
+
     Slack timestamps are in format: "1234567890.123456" (Unix timestamp with microseconds).
     This function validates that the timestamp matches the expected format.
-    
+
     Args:
         ts: Timestamp string to validate (can be None)
-        
+
     Returns:
         True if timestamp is valid format, False otherwise
-        
+
     Examples:
         >>> _is_valid_timestamp("1234567890.123456")
         True
@@ -37,10 +45,11 @@ def _is_valid_timestamp(ts: Optional[str]) -> bool:
     """
     if not ts or not isinstance(ts, str):
         return False
-    
+
     # Slack timestamp format: digits, dot, digits (e.g., "1234567890.123456")
     pattern = r"^\d+\.\d+$"
     return bool(re.match(pattern, ts))
+
 
 # Cache for secrets (to avoid repeated API calls)
 _secrets_cache: dict[str, str] = {}
@@ -75,16 +84,28 @@ def get_secret_from_secrets_manager(secret_name: str) -> Optional[str]:
         _secrets_cache[secret_name] = secret_value
         return secret_value
     except ClientError as e:
-        print(f"Error retrieving secret {secret_name}: {str(e)}")
+        log_exception(
+            "secret_retrieval_client_error",
+            {"secret_name": secret_name},
+            e,
+        )
         return None
     except Exception as e:
-        print(f"Unexpected error retrieving secret {secret_name}: {str(e)}")
+        log_exception(
+            "secret_retrieval_failed",
+            {"secret_name": secret_name},
+            e,
+        )
         return None
 
 
+# Keep log_event for backward compatibility (deprecated - use logger functions directly)
 def log_event(level: str, event_type: str, data: dict, context=None):
     """
     Structured logging helper for CloudWatch-friendly JSON logs.
+    
+    DEPRECATED: Use logger.log_info(), logger.log_warn(), logger.log_error() directly.
+    This function is kept for backward compatibility and internally uses the new logger.
 
     Args:
         level: Log level (INFO, WARN, ERROR)
@@ -92,12 +113,12 @@ def log_event(level: str, event_type: str, data: dict, context=None):
         data: Event-specific data dictionary
         context: Lambda context object (optional, for request_id)
     """
-    log_entry = {"level": level, "event": event_type, **data}
-
-    if context and hasattr(context, "request_id"):
-        log_entry["request_id"] = context.request_id
-
-    print(json.dumps(log_entry))
+    from logger import log, set_lambda_context as set_ctx
+    
+    if context:
+        set_ctx(context)
+    
+    log(level, event_type, data)
 
 
 def lambda_handler(event, context):
@@ -170,7 +191,7 @@ def lambda_handler(event, context):
                     "headers": {"Content-Type": "application/json"},
                     "body": json.dumps({"error": "Invalid signature"}),
                 }
-            log_event("INFO", "signature_verification_success", {}, context)
+            log_info("signature_verification_success", {})
         else:
             log_event(
                 "INFO",
@@ -241,11 +262,10 @@ def lambda_handler(event, context):
                             )
                 except Exception as e:
                     # If deduplication fails, log but continue processing (fail open)
-                    log_event(
-                        "WARN",
+                    log_warn(
                         "event_deduplication_failed",
-                        {"event_id": event_id, "error": str(e)},
-                        context,
+                        {"event_id": event_id},
+                        e,
                     )
                     # Try to mark anyway (may fail, but we'll continue)
                     try:
@@ -265,11 +285,11 @@ def lambda_handler(event, context):
             slack_event = body.get("event", {})
             event_type = slack_event.get("type")
             team_id = body.get("team_id")
-            
+
             # Extract message timestamp for thread replies
             # Use event.thread_ts if present (reply in existing thread), otherwise use event.ts (new message)
             message_timestamp = slack_event.get("thread_ts") or slack_event.get("ts")
-            
+
             # Validate timestamp format (log warning if invalid, but continue processing)
             if message_timestamp and not _is_valid_timestamp(message_timestamp):
                 log_event(
@@ -335,7 +355,20 @@ def lambda_handler(event, context):
                 # Extract channel and text from event
                 channel = slack_event.get("channel")
                 user_text = slack_event.get("text", "")
-                
+
+                # Extract attachment metadata from event
+                attachments = extract_attachment_metadata(slack_event)
+                if attachments:
+                    log_event(
+                        "INFO",
+                        "attachments_detected",
+                        {
+                            "attachment_count": len(attachments),
+                            "file_ids": [att["id"] for att in attachments],
+                        },
+                        context,
+                    )
+
                 # Extract message timestamp for thread replies (already extracted above)
                 # message_timestamp is None if missing (backward compatibility)
 
@@ -343,9 +376,9 @@ def lambda_handler(event, context):
                 # For app_mention events, Slack includes the bot mention in the text
                 user_text = re.sub(r"<@[A-Z0-9]+>", "", user_text).strip()
 
-                # Validate message text
+                # Validate message text (skip validation if attachments are present - FR-014)
                 is_valid, error_message = validate_prompt(user_text)
-                if not is_valid:
+                if not is_valid and not attachments:
                     log_event(
                         "WARN",
                         "message_validation_failed",
@@ -411,11 +444,10 @@ def lambda_handler(event, context):
                                     context,
                                 )
                             except Exception as e:
-                                log_event(
-                                    "ERROR",
+                                log_exception(
                                     "token_storage_failed",
-                                    {"team_id": team_id, "error": str(e)},
-                                    context,
+                                    {"team_id": team_id},
+                                    e,
                                 )
                 else:
                     # Fallback to Secrets Manager or environment variable if no team_id
@@ -452,6 +484,10 @@ def lambda_handler(event, context):
                     "bot_token": bot_token,
                     "thread_ts": message_timestamp,  # Include thread timestamp for thread replies
                 }
+
+                # Include attachment metadata if attachments are present
+                if attachments:
+                    payload["attachments"] = attachments
 
                 try:
                     # Use API Gateway with IAM authentication
@@ -500,14 +536,10 @@ def lambda_handler(event, context):
                         # Execution Layer error handling will post error message to Slack
                 except Exception as e:
                     # Error invoking Execution Layer via API Gateway
-                    log_event(
-                        "ERROR",
+                    log_exception(
                         "execution_api_invocation_failed",
-                        {
-                            "api_url": execution_api_url,
-                            "error": str(e),
-                        },
-                        context,
+                        {"api_url": execution_api_url},
+                        e,
                     )
                     # Log error but still return 200 OK to Slack (prevent retries)
                     # Execution Layer error handling will post error message to Slack
@@ -521,11 +553,10 @@ def lambda_handler(event, context):
         }
 
     except Exception as e:
-        log_event(
-            "ERROR",
+        log_exception(
             "unhandled_exception",
-            {"error": str(e), "error_type": type(e).__name__},
-            context,
+            {},
+            e,
         )
         return {
             "statusCode": 500,

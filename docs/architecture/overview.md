@@ -60,6 +60,11 @@
 │ │ - コンテキスト履歴管理（DynamoDB）                     │ │
 │ │ - AIレスポンスのPIIフィルタリング（正規表現ベース）   │ │
 │ │ - トークン数制限の強制（4000トークン/リクエスト）      │ │
+│ │ - **添付ファイル処理**: 画像とドキュメントのダウンロード│ │
+│ │ - **画像分析**: Bedrock視覚機能を使用した画像分析     │ │
+│ │ - **ドキュメント抽出**: PDF, DOCX, CSV, XLSX, PPTX, TXT│ │
+│ │ - **PPTX変換**: LibreOfficeを使用したスライド画像変換 │ │
+│ │ - **複数添付ファイル**: 複数ファイルの順次処理         │ │
 │ │ [4] → Slack APIにHTTP POSTでレスポンス投稿             │ │
 │ │ - CloudTrail監査（すべてのBedrock呼び出し）           │ │
 │ │ - 会話、画像生成、コード生成、データ分析など対応      │ │
@@ -95,14 +100,17 @@
 | レイヤー          | 主な機能                 | 技術スタック           | 責任範囲                                                                           |
 | ----------------- | ------------------------ | ---------------------- | ---------------------------------------------------------------------------------- |
 | Slack             | ユーザーインターフェース | Slack API              | コマンド受付、メッセージ表示                                                       |
-| SlackEventHandler | 検証層処理               | Python 3.11            | 署名検証、認可、API Gateway 呼び出し、即座応答                                     |
+| SlackEventHandler | 検証層処理               | Python 3.11            | 署名検証、認可、API Gateway 呼び出し、即座応答、添付ファイルメタデータ抽出       |
 | Function URL      | パブリックエンドポイント | Lambda Function URL    | リクエスト受付、SlackEventHandler へのルーティング                                 |
 | ExecutionApi      | 内部 API                 | API Gateway (IAM 認証) | 内部通信の保護（IAM 認証による）                                                   |
-| BedrockProcessor  | AI 処理                  | Python 3.11            | Bedrock 呼び出し、コンテキスト履歴管理、Slack API 投稿                             |
-| Bedrock           | AI モデル                | Foundation Model       | 多様な AI 機能（会話、画像生成、コード生成、データ分析など、モデル選択可能）       |
+| BedrockProcessor  | AI 処理                  | Python 3.11            | Bedrock 呼び出し、コンテキスト履歴管理、Slack API 投稿、添付ファイル処理          |
+| Bedrock           | AI モデル                | Foundation Model       | 多様な AI 機能（会話、画像生成、コード生成、データ分析など、モデル選択可能）、視覚分析 |
 | DynamoDB          | データストア             | DynamoDB               | トークンストレージ (slack-workspace-tokens)、イベント重複排除 (slack-event-dedupe) |
+| LibreOffice Layer | PPTX変換                 | Lambda Layer           | PowerPoint スライドを画像に変換（オプション）                                      |
 
-**データフロー**: Slack → SlackEventHandler Function URL → SlackEventHandler（即座応答）→ ExecutionApi (API Gateway, IAM 認証) → BedrockProcessor → Bedrock → Slack API → Slack
+**データフロー**: Slack → SlackEventHandler Function URL → SlackEventHandler（即座応答、添付ファイルメタデータ抽出）→ ExecutionApi (API Gateway, IAM 認証) → BedrockProcessor（添付ファイルダウンロード・処理）→ Bedrock（テキスト+画像分析）→ Slack API → Slack
+
+**添付ファイル処理フロー**: Slack Event (`event.files`) → SlackEventHandler（メタデータ抽出）→ BedrockProcessor（Slack CDN からダウンロード、画像/ドキュメント処理）→ Bedrock（視覚分析/テキスト抽出）→ 統合された AI 応答
 
 **非同期処理の利点**: Slack の 3 秒タイムアウト制約を回避し、ユーザーに即座のフィードバックを提供しながら、バックグラウンドで AI 処理を実行できます。
 
