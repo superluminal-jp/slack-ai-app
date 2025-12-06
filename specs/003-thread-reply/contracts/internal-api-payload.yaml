@@ -1,0 +1,140 @@
+openapi: 3.0.3
+info:
+  title: Internal API Payload - Thread Reply
+  description: |
+    Payload structure for communication between Slack Event Handler and Bedrock Processor Lambda functions.
+    Modified to include thread_ts parameter for thread reply functionality.
+  version: 1.0.0
+  contact:
+    name: Slack AI App Team
+
+servers:
+  - url: https://api-gateway.execute-api.{region}.amazonaws.com
+    description: API Gateway endpoint (internal, IAM authenticated)
+
+paths:
+  /execution:
+    post:
+      summary: Invoke Bedrock Processor
+      description: |
+        Internal API endpoint (API Gateway) that triggers Bedrock Processor Lambda.
+        Payload includes thread_ts for thread reply functionality.
+      operationId: invokeBedrockProcessor
+      security:
+        - IAMAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BedrockProcessorPayload'
+            examples:
+              channelMention:
+                summary: Channel mention with thread reply
+                value:
+                  channel: "C01234567"
+                  text: "What is the weather today?"
+                  bot_token: "xoxb-..."
+                  thread_ts: "1234567890.123456"
+              directMessage:
+                summary: Direct message with thread reply
+                value:
+                  channel: "D01234567"
+                  text: "Hello, can you help me?"
+                  bot_token: "xoxb-..."
+                  thread_ts: "1234567890.123456"
+              backwardCompatible:
+                summary: Backward compatible (no thread_ts)
+                value:
+                  channel: "C01234567"
+                  text: "User message"
+                  bot_token: "xoxb-..."
+      responses:
+        '202':
+          description: Request accepted for async processing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  statusCode:
+                    type: integer
+                    example: 202
+                  body:
+                    type: string
+                    example: "Accepted"
+        '400':
+          description: Invalid payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Missing required field: channel"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    IAMAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: AWS IAM signature for API Gateway authentication
+
+  schemas:
+    BedrockProcessorPayload:
+      type: object
+      required:
+        - channel
+        - text
+        - bot_token
+      properties:
+        channel:
+          type: string
+          pattern: '^(C|D)[A-Z0-9]{8,}$'
+          description: Slack channel ID (C* for channels, D* for DMs)
+          example: "C01234567"
+        text:
+          type: string
+          minLength: 1
+          maxLength: 40000
+          description: User message text (after mention stripping)
+          example: "What is the weather today?"
+        bot_token:
+          type: string
+          pattern: '^xoxb-[a-zA-Z0-9-]+$'
+          description: Slack bot OAuth token
+          example: "xoxb-..."
+        thread_ts:
+          type: string
+          pattern: '^\d+\.\d+$'
+          description: |
+            Optional message timestamp for thread reply.
+            If provided, bot response will be posted as thread reply.
+            If missing or invalid, bot response will be posted as channel message (backward compatible).
+          example: "1234567890.123456"
+          nullable: true
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Error message
+          example: "Missing required field: channel"
+        statusCode:
+          type: integer
+          description: HTTP status code
+          example: 400
+
+tags:
+  - name: Internal API
+    description: Internal Lambda-to-Lambda communication
+
