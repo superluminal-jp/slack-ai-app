@@ -18,6 +18,8 @@ oauth_config:
       - chat:write
       - im:history
       - app_mentions:read
+      - channels:history
+      - groups:history
 
 event_subscriptions:
   bot_events:
@@ -32,4 +34,3 @@ settings:
   org_deploy_enabled: false
   socket_mode_enabled: false
   token_rotation_enabled: false
-

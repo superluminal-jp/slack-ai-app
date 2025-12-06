@@ -11,6 +11,37 @@ from botocore.exceptions import ClientError
 from typing import Optional
 from api_gateway_client import invoke_execution_api
 
+
+def _is_valid_timestamp(ts: Optional[str]) -> bool:
+    """
+    Validate Slack timestamp format.
+    
+    Slack timestamps are in format: "1234567890.123456" (Unix timestamp with microseconds).
+    This function validates that the timestamp matches the expected format.
+    
+    Args:
+        ts: Timestamp string to validate (can be None)
+        
+    Returns:
+        True if timestamp is valid format, False otherwise
+        
+    Examples:
+        >>> _is_valid_timestamp("1234567890.123456")
+        True
+        >>> _is_valid_timestamp("invalid")
+        False
+        >>> _is_valid_timestamp(None)
+        False
+        >>> _is_valid_timestamp("")
+        False
+    """
+    if not ts or not isinstance(ts, str):
+        return False
+    
+    # Slack timestamp format: digits, dot, digits (e.g., "1234567890.123456")
+    pattern = r"^\d+\.\d+$"
+    return bool(re.match(pattern, ts))
+
 # Cache for secrets (to avoid repeated API calls)
 _secrets_cache: dict[str, str] = {}
 
@@ -234,6 +265,35 @@ def lambda_handler(event, context):
             slack_event = body.get("event", {})
             event_type = slack_event.get("type")
             team_id = body.get("team_id")
+            
+            # Extract message timestamp for thread replies
+            # Use event.thread_ts if present (reply in existing thread), otherwise use event.ts (new message)
+            message_timestamp = slack_event.get("thread_ts") or slack_event.get("ts")
+            
+            # Validate timestamp format (log warning if invalid, but continue processing)
+            if message_timestamp and not _is_valid_timestamp(message_timestamp):
+                log_event(
+                    "WARN",
+                    "invalid_timestamp_format",
+                    {
+                        "timestamp": message_timestamp,
+                        "event_type": event_type,
+                        "channel": slack_event.get("channel"),
+                    },
+                    context,
+                )
+                message_timestamp = None  # Fall back to None for backward compatibility
+            elif message_timestamp:
+                log_event(
+                    "INFO",
+                    "timestamp_extracted",
+                    {
+                        "timestamp": message_timestamp,
+                        "source": "thread_ts" if slack_event.get("thread_ts") else "ts",
+                        "event_type": event_type,
+                    },
+                    context,
+                )
 
             # Log event details
             log_event(
@@ -275,6 +335,9 @@ def lambda_handler(event, context):
                 # Extract channel and text from event
                 channel = slack_event.get("channel")
                 user_text = slack_event.get("text", "")
+                
+                # Extract message timestamp for thread replies (already extracted above)
+                # message_timestamp is None if missing (backward compatibility)
 
                 # Strip bot mention from text (e.g., "<@U12345> hello" -> "hello")
                 # For app_mention events, Slack includes the bot mention in the text
@@ -387,6 +450,7 @@ def lambda_handler(event, context):
                     "channel": channel,
                     "text": user_text,
                     "bot_token": bot_token,
+                    "thread_ts": message_timestamp,  # Include thread timestamp for thread replies
                 }
 
                 try:
