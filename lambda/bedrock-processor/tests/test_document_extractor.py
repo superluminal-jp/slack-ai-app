@@ -227,70 +227,15 @@ class TestPPTXExtraction:
 
 
 class TestPPTXImageConversion:
-    """Test PPTX slide-to-image conversion."""
+    """Test PPTX slide-to-image conversion (disabled)."""
     
-    @patch('document_extractor.subprocess.run')
-    @patch('document_extractor.Path')
-    @patch('builtins.open', create=True)
-    def test_convert_pptx_slides_to_images_success(self, mock_open, mock_path, mock_subprocess):
-        """Test successful PPTX to image conversion."""
-        # Mock subprocess (LibreOffice conversion)
-        mock_subprocess.return_value = Mock()
-        
-        # Mock Path.glob to return image files
-        mock_image_file = Mock()
-        mock_image_file.__str__ = Mock(return_value="slide1.png")
-        mock_path_instance = Mock()
-        mock_path_instance.glob.return_value = [mock_image_file]
-        mock_path.return_value = mock_path_instance
-        
-        # Mock file reading
-        mock_file = MagicMock()
-        mock_file.read.return_value = b'PNG image data'
-        mock_open.return_value.__enter__.return_value = mock_file
-        
+    def test_convert_pptx_slides_to_images_disabled(self):
+        """Test that PPTX slide-to-image conversion is disabled (returns None)."""
         pptx_bytes = b'fake pptx content'
         result = convert_pptx_slides_to_images(pptx_bytes)
         
-        # Should return list of image bytes
-        assert result is not None
-        assert isinstance(result, list)
-        mock_subprocess.assert_called_once()
-    
-    @patch('document_extractor.subprocess.run')
-    def test_convert_pptx_slides_to_images_timeout(self, mock_subprocess):
-        """Test PPTX conversion timeout handling."""
-        from subprocess import TimeoutExpired
-        mock_subprocess.side_effect = TimeoutExpired("libreoffice", 60)
-        
-        pptx_bytes = b'fake pptx content'
-        result = convert_pptx_slides_to_images(pptx_bytes)
-        
+        # Function is disabled and always returns None
         assert result is None
-    
-    @patch('document_extractor.subprocess.run')
-    def test_convert_pptx_slides_to_images_error(self, mock_subprocess):
-        """Test PPTX conversion error handling."""
-        from subprocess import CalledProcessError
-        mock_subprocess.side_effect = CalledProcessError(1, "libreoffice")
-        
-        pptx_bytes = b'fake pptx content'
-        result = convert_pptx_slides_to_images(pptx_bytes)
-        
-        assert result is None
-    
-    @patch('document_extractor.os.path.exists')
-    @patch('document_extractor.subprocess.run')
-    def test_convert_pptx_fallback_to_system_libreoffice(self, mock_subprocess, mock_exists):
-        """Test fallback to system LibreOffice when Lambda Layer not found."""
-        mock_exists.return_value = False  # Lambda Layer not found
-        mock_subprocess.return_value = Mock()
-        
-        pptx_bytes = b'fake pptx content'
-        result = convert_pptx_slides_to_images(pptx_bytes)
-        
-        # Should still attempt conversion with system LibreOffice
-        mock_subprocess.assert_called_once()
 
 
 class TestTXTExtraction:

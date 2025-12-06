@@ -3,6 +3,7 @@ boto3>=1.34.0
 requests>=2.31.0
 PyPDF2>=3.0.0
 openpyxl>=3.1.0
-# Note: python-docx and python-pptx removed - using XML parsing fallback instead
-# lxml dependency removed - using standard library xml.etree.ElementTree
+# Note: python-docx and python-pptx removed - they require lxml which has build complexity
+# DOCX and PPTX extraction uses XML parsing (standard library xml.etree.ElementTree)
+# This avoids lxml dependency and works reliably in Lambda environment
 
