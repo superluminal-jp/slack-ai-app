@@ -28,7 +28,7 @@ event_subscriptions:
 
 settings:
   event_subscriptions:
-    request_url: "REPLACE_WITH_LAMBDA_FUNCTION_URL"
+    request_url: https://xnurenw36wlmeqmvt7gyyqb6my0kirje.lambda-url.ap-northeast-1.on.aws/
   interactivity:
     is_enabled: false
   org_deploy_enabled: false

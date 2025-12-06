@@ -1,0 +1,205 @@
+openapi: 3.0.3
+info:
+  title: Slack Attachments Processing API
+  description: |
+    Internal API contract for processing Slack message attachments.
+    This defines the payload structure between Slack Event Handler and Bedrock Processor
+    for attachment processing functionality.
+  version: 1.0.0
+  contact:
+    name: Slack AI App Team
+
+servers:
+  - url: lambda://bedrock-processor
+    description: Bedrock Processor Lambda function (internal invocation)
+
+paths:
+  /process:
+    post:
+      summary: Process Slack message with attachments
+      description: |
+        Internal Lambda invocation endpoint for processing Slack messages that may contain
+        file attachments. Bedrock Processor receives attachment metadata, downloads files,
+        extracts content, and includes in AI processing.
+      operationId: processMessageWithAttachments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcessingRequest'
+            examples:
+              textOnly:
+                summary: Text-only message (backward compatible)
+                value:
+                  channel: "C01234567"
+                  text: "Hello, can you help me?"
+                  bot_token: "xoxb-..."
+                  thread_ts: "1234567890.123456"
+                  attachments: []
+              withImage:
+                summary: Message with image attachment
+                value:
+                  channel: "C01234567"
+                  text: "What's in this image?"
+                  bot_token: "xoxb-..."
+                  thread_ts: "1234567890.123456"
+                  attachments:
+                    - id: "F01234567"
+                      name: "screenshot.png"
+                      mimetype: "image/png"
+                      size: 1024000
+                      url_private_download: "https://files.slack.com/files-pri/.../download"
+              withDocument:
+                summary: Message with document attachment
+                value:
+                  channel: "C01234567"
+                  text: "Summarize this document"
+                  bot_token: "xoxb-..."
+                  thread_ts: "1234567890.123456"
+                  attachments:
+                    - id: "F01234568"
+                      name: "report.pdf"
+                      mimetype: "application/pdf"
+                      size: 2048000
+                      url_private_download: "https://files.slack.com/files-pri/.../download"
+              multipleAttachments:
+                summary: Message with multiple attachments
+                value:
+                  channel: "C01234567"
+                  text: "Analyze these files"
+                  bot_token: "xoxb-..."
+                  thread_ts: "1234567890.123456"
+                  attachments:
+                    - id: "F01234567"
+                      name: "image1.png"
+                      mimetype: "image/png"
+                      size: 1024000
+                      url_private_download: "https://files.slack.com/files-pri/.../download"
+                    - id: "F01234568"
+                      name: "document.pdf"
+                      mimetype: "application/pdf"
+                      size: 2048000
+                      url_private_download: "https://files.slack.com/files-pri/.../download"
+              attachmentsOnly:
+                summary: Message with attachments but no text
+                value:
+                  channel: "C01234567"
+                  text: ""
+                  bot_token: "xoxb-..."
+                  thread_ts: "1234567890.123456"
+                  attachments:
+                    - id: "F01234567"
+                      name: "screenshot.png"
+                      mimetype: "image/png"
+                      size: 1024000
+                      url_private_download: "https://files.slack.com/files-pri/.../download"
+      responses:
+        '200':
+          description: Message processed successfully (async invocation, no response body)
+        '400':
+          description: Invalid request payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    ProcessingRequest:
+      type: object
+      description: Request payload for processing Slack message with attachments
+      required:
+        - channel
+        - text
+        - bot_token
+        - attachments
+      properties:
+        channel:
+          type: string
+          pattern: '^[CD][A-Z0-9]{8,}$'
+          description: Slack channel ID (C* for channels, D* for DMs)
+          example: "C01234567"
+        text:
+          type: string
+          description: User message text (may be empty if attachments only)
+          example: "What's in this image?"
+        bot_token:
+          type: string
+          pattern: '^xoxb-[a-zA-Z0-9-]+$'
+          description: Slack bot OAuth token for authentication
+          example: "xoxb-..."
+        thread_ts:
+          type: string
+          pattern: '^\d+\.\d+$'
+          description: Optional thread timestamp for thread replies
+          example: "1234567890.123456"
+        attachments:
+          type: array
+          description: Array of attachment metadata (empty if no attachments)
+          items:
+            $ref: '#/components/schemas/AttachmentMetadata'
+
+    AttachmentMetadata:
+      type: object
+      description: Metadata for a file attachment from Slack event
+      required:
+        - id
+        - name
+        - mimetype
+        - size
+      properties:
+        id:
+          type: string
+          pattern: '^F[A-Z0-9]{8,}$'
+          description: Slack file ID
+          example: "F01234567"
+        name:
+          type: string
+          minLength: 1
+          description: File name
+          example: "screenshot.png"
+        mimetype:
+          type: string
+          pattern: '^[a-z]+/[a-z0-9.+-]+$'
+          description: MIME type of the file
+          examples:
+            - "image/png"
+            - "image/jpeg"
+            - "application/pdf"
+            - "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            - "text/plain"
+            - "text/csv"
+            - "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            - "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        size:
+          type: integer
+          minimum: 1
+          description: File size in bytes
+          example: 1024000
+        url_private_download:
+          type: string
+          format: uri
+          description: Download URL for the file (may be absent for some file types)
+          example: "https://files.slack.com/files-pri/.../download"
+
+    ErrorResponse:
+      type: object
+      description: Error response for invalid requests
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error code
+          examples:
+            - "invalid_payload"
+            - "missing_channel"
+            - "missing_bot_token"
+            - "invalid_attachment_metadata"
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Missing required field: channel"
+
