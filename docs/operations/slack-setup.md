@@ -103,6 +103,8 @@ settings:
 | `chat:write`        | メッセージを送信                     | Slack に AI レスポンスを投稿         |
 | `im:history`        | ダイレクトメッセージの履歴を読み取り | ダイレクトメッセージイベントを受信   |
 | `app_mentions:read` | メンションを読み取り                 | チャンネルでの @bot メンションを受信 |
+| `channels:history`  | パブリックチャンネルの履歴を読み取り | スレッド履歴取得（conversations.replies） |
+| `groups:history`    | プライベートチャンネルの履歴を読み取り | プライベートチャンネルのスレッド履歴取得 |
 
 4. 各スコープを追加後、**"Save Changes"** をクリック
 

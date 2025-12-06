@@ -9,7 +9,7 @@ Note: This is Phase 6 implementation (async processing in Bedrock Processor).
 
 import json
 import os
-from typing import Optional
+from typing import Optional, List, Dict
 
 import boto3
 from botocore.exceptions import ClientError
@@ -21,7 +21,7 @@ MAX_TOKENS = 1024
 TEMPERATURE = 1.0
 
 
-def invoke_bedrock(prompt: str) -> str:
+def invoke_bedrock(prompt: str, conversation_history: Optional[List[Dict[str, str]]] = None) -> str:
     """
     Invoke Amazon Bedrock model for AI inference.
 
@@ -31,6 +31,9 @@ def invoke_bedrock(prompt: str) -> str:
 
     Args:
         prompt: User message text (cleaned, without bot mentions)
+        conversation_history: Optional list of previous messages in format:
+            [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]
+            If provided, these messages are included as conversation context.
 
     Returns:
         str: AI-generated response text
@@ -68,22 +71,49 @@ def invoke_bedrock(prompt: str) -> str:
         service_name="bedrock-runtime", region_name=aws_region
     )
 
+    # Build messages array with conversation history
+    # If conversation_history is provided, include it; otherwise use just the current prompt
+    if conversation_history:
+        # Include conversation history + current message
+        messages = conversation_history.copy()
+        # Add current user message
+        messages.append({"role": "user", "content": prompt.strip()})
+    else:
+        # No history - just current message
+        messages = [{"role": "user", "content": prompt.strip()}]
+    
     # Construct request payload based on model type
     # Different models have different API formats
     if "anthropic.claude" in model_id or "jp.anthropic.claude" in model_id:
         # Claude models (Anthropic format)
         # Reference: https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-anthropic-claude-messages.html
+        # Convert messages to Claude format (content is string, not array)
+        claude_messages = []
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            # Claude format: content is string for text messages
+            claude_messages.append({"role": role, "content": content})
+        
         request_body = {
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": MAX_TOKENS,
             "temperature": TEMPERATURE,
-            "messages": [{"role": "user", "content": prompt.strip()}],
+            "messages": claude_messages,
         }
     elif "amazon.nova" in model_id:
         # Amazon Nova models (AWS native format)
         # Reference: https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-nova.html
+        # Convert messages to Nova format (content is array with text object)
+        nova_messages = []
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            # Nova format: content is array with text object
+            nova_messages.append({"role": role, "content": [{"text": content}]})
+        
         request_body = {
-            "messages": [{"role": "user", "content": [{"text": prompt.strip()}]}],
+            "messages": nova_messages,
             "inferenceConfig": {
                 "max_new_tokens": MAX_TOKENS,
                 "temperature": TEMPERATURE,
@@ -91,8 +121,14 @@ def invoke_bedrock(prompt: str) -> str:
         }
     else:
         # Default to Nova format for unknown models
+        nova_messages = []
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            nova_messages.append({"role": role, "content": [{"text": content}]})
+        
         request_body = {
-            "messages": [{"role": "user", "content": [{"text": prompt.strip()}]}],
+            "messages": nova_messages,
             "inferenceConfig": {
                 "max_new_tokens": MAX_TOKENS,
                 "temperature": TEMPERATURE,

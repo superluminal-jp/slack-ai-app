@@ -12,9 +12,12 @@ Phase 6: Async processing to meet Slack's 3-second timeout requirement.
 import json
 import os
 from botocore.exceptions import ClientError, ReadTimeoutError
+from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
 
 from bedrock_client import invoke_bedrock
 from slack_poster import post_to_slack
+from thread_history import get_thread_history, build_conversation_context
 
 
 def log_event(level: str, event_type: str, data: dict, context=None):
@@ -79,6 +82,7 @@ def lambda_handler(event, context):
         channel = payload.get("channel")
         text = payload.get("text")
         bot_token = payload.get("bot_token")
+        thread_ts = payload.get("thread_ts")  # Optional: timestamp for thread replies
 
         # Validate required fields
         if not channel:
@@ -102,12 +106,43 @@ def lambda_handler(event, context):
         log_event("INFO", "bedrock_request_received", {
             "channel": channel,
             "text_length": len(text),
+            "thread_ts": thread_ts,
             "model_id": os.environ.get("BEDROCK_MODEL_ID", "amazon.nova-pro-v1:0")
         }, context)
 
+        # Get thread history if thread_ts is provided
+        conversation_history = None
+        if thread_ts:
+            try:
+                client = WebClient(token=bot_token)
+                thread_messages = get_thread_history(client, channel, thread_ts)
+                
+                if thread_messages:
+                    # Build conversation context from thread history + current message
+                    conversation_history = build_conversation_context(thread_messages, text)
+                    log_event("INFO", "thread_history_retrieved", {
+                        "channel": channel,
+                        "thread_ts": thread_ts,
+                        "history_length": len(thread_messages),
+                        "conversation_length": len(conversation_history)
+                    }, context)
+                else:
+                    log_event("INFO", "thread_history_empty", {
+                        "channel": channel,
+                        "thread_ts": thread_ts
+                    }, context)
+            except SlackApiError as e:
+                # Log error but continue without history (graceful degradation)
+                log_event("WARN", "thread_history_retrieval_failed", {
+                    "channel": channel,
+                    "thread_ts": thread_ts,
+                    "error": str(e)
+                }, context)
+                # Continue without conversation history
+
         # Invoke Bedrock for AI response
         try:
-            ai_response = invoke_bedrock(text)
+            ai_response = invoke_bedrock(text, conversation_history)
             log_event("INFO", "bedrock_response_received", {
                 "channel": channel,
                 "response_length": len(ai_response),
@@ -121,7 +156,7 @@ def lambda_handler(event, context):
                 "error_type": "ReadTimeoutError"
             }, context)
             error_message = ERROR_MESSAGES["bedrock_timeout"]
-            post_to_slack(channel, error_message, bot_token)
+            post_to_slack(channel, error_message, bot_token, thread_ts)
             log_event("INFO", "error_message_posted", {
                 "channel": channel,
                 "error_type": "timeout"
@@ -147,7 +182,7 @@ def lambda_handler(event, context):
                 error_message = ERROR_MESSAGES["generic"]
 
             # Post error message to Slack
-            post_to_slack(channel, error_message, bot_token)
+            post_to_slack(channel, error_message, bot_token, thread_ts)
             log_event("INFO", "error_message_posted", {
                 "channel": channel,
                 "error_code": error_code
@@ -161,7 +196,7 @@ def lambda_handler(event, context):
                 "error": str(e)
             }, context)
             error_message = ERROR_MESSAGES["invalid_response"]
-            post_to_slack(channel, error_message, bot_token)
+            post_to_slack(channel, error_message, bot_token, thread_ts)
             log_event("INFO", "error_message_posted", {
                 "channel": channel,
                 "error_type": "validation"
@@ -176,7 +211,7 @@ def lambda_handler(event, context):
                 "error_type": type(e).__name__
             }, context)
             error_message = ERROR_MESSAGES["generic"]
-            post_to_slack(channel, error_message, bot_token)
+            post_to_slack(channel, error_message, bot_token, thread_ts)
             log_event("INFO", "error_message_posted", {
                 "channel": channel,
                 "error_type": "generic"
@@ -185,7 +220,7 @@ def lambda_handler(event, context):
 
         # Post AI response to Slack
         try:
-            post_to_slack(channel, ai_response, bot_token)
+            post_to_slack(channel, ai_response, bot_token, thread_ts)
             log_event("INFO", "slack_post_success", {
                 "channel": channel,
                 "response_length": len(ai_response)

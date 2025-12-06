@@ -1,0 +1,169 @@
+openapi: 3.0.3
+info:
+  title: Slack API - Thread Reply
+  description: |
+    Documentation of Slack chat.postMessage API usage for thread replies.
+    This contract documents the external Slack API call made by Bedrock Processor.
+  version: 1.0.0
+  contact:
+    name: Slack API Documentation
+    url: https://api.slack.com/methods/chat.postMessage
+
+servers:
+  - url: https://slack.com/api
+    description: Slack Web API
+
+paths:
+  /chat.postMessage:
+    post:
+      summary: Post message to Slack (with thread reply support)
+      description: |
+        Posts a message to a Slack channel or DM.
+        When thread_ts is provided, message is posted as thread reply.
+        When thread_ts is omitted, message is posted as new channel message.
+      operationId: chatPostMessage
+      security:
+        - BotToken: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ChatPostMessageRequest'
+            examples:
+              threadReply:
+                summary: Thread reply
+                value:
+                  channel: "C01234567"
+                  text: "Hello! I'm here to help."
+                  thread_ts: "1234567890.123456"
+              channelMessage:
+                summary: Channel message (no thread)
+                value:
+                  channel: "C01234567"
+                  text: "Hello! I'm here to help."
+      responses:
+        '200':
+          description: Message posted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatPostMessageResponse'
+              examples:
+                success:
+                  summary: Successful thread reply
+                  value:
+                    ok: true
+                    channel: "C01234567"
+                    ts: "1234567890.123457"
+                    message:
+                      text: "Hello! I'm here to help."
+                      thread_ts: "1234567890.123456"
+                      type: "message"
+        '200':
+          description: API error (ok: false)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SlackApiError'
+              examples:
+                messageNotFound:
+                  summary: Parent message not found
+                  value:
+                    ok: false
+                    error: "message_not_found"
+                invalidThreadTs:
+                  summary: Invalid thread timestamp
+                  value:
+                    ok: false
+                    error: "invalid_thread_ts"
+
+components:
+  securitySchemes:
+    BotToken:
+      type: http
+      scheme: bearer
+      bearerFormat: Bot Token
+      description: Slack bot OAuth token (xoxb-...)
+
+  schemas:
+    ChatPostMessageRequest:
+      type: object
+      required:
+        - channel
+        - text
+      properties:
+        channel:
+          type: string
+          pattern: '^(C|D)[A-Z0-9]{8,}$'
+          description: Channel ID (C* for channels, D* for DMs)
+          example: "C01234567"
+        text:
+          type: string
+          minLength: 1
+          maxLength: 40000
+          description: Message text to post
+          example: "Hello! I'm here to help."
+        thread_ts:
+          type: string
+          pattern: '^\d+\.\d+$'
+          description: |
+            Optional. Timestamp of parent message for thread reply.
+            If provided, message is posted as thread reply.
+            If omitted, message is posted as new channel message.
+          example: "1234567890.123456"
+          nullable: true
+
+    ChatPostMessageResponse:
+      type: object
+      required:
+        - ok
+      properties:
+        ok:
+          type: boolean
+          description: Whether the API call succeeded
+          example: true
+        channel:
+          type: string
+          description: Channel ID where message was posted
+          example: "C01234567"
+        ts:
+          type: string
+          description: Timestamp of posted message
+          example: "1234567890.123457"
+        message:
+          type: object
+          description: Message object
+          properties:
+            text:
+              type: string
+              example: "Hello! I'm here to help."
+            thread_ts:
+              type: string
+              description: Thread timestamp (if posted as thread reply)
+              example: "1234567890.123456"
+
+    SlackApiError:
+      type: object
+      required:
+        - ok
+        - error
+      properties:
+        ok:
+          type: boolean
+          example: false
+        error:
+          type: string
+          enum:
+            - message_not_found
+            - invalid_thread_ts
+            - channel_not_found
+            - not_in_channel
+            - invalid_auth
+          description: Error code from Slack API
+          example: "message_not_found"
+
+tags:
+  - name: Slack API
+    description: External Slack Web API calls
+
