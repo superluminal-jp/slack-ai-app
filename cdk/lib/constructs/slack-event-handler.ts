@@ -34,7 +34,7 @@ export class SlackEventHandler extends Construct {
             command: [
               "bash",
               "-c",
-              "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output",
+              "pip install --upgrade pip && pip install -r requirements.txt -t /asset-output && cp -au . /asset-output",
             ],
           },
         }

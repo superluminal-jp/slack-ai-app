@@ -77,7 +77,7 @@ class TestTimestampExtraction:
                                 mock_invoke.return_value = Mock(status_code=202)
                                 
                                 context = Mock()
-                                context.request_id = "test-request-id"
+                                context.aws_request_id = "test-request-id"
                                 
                                 result = lambda_handler(event, context)
                                 
@@ -116,7 +116,7 @@ class TestTimestampExtraction:
                                 mock_invoke.return_value = Mock(status_code=202)
                                 
                                 context = Mock()
-                                context.request_id = "test-request-id"
+                                context.aws_request_id = "test-request-id"
                                 
                                 result = lambda_handler(event, context)
                                 
@@ -154,7 +154,7 @@ class TestTimestampExtraction:
                                 mock_invoke.return_value = Mock(status_code=202)
                                 
                                 context = Mock()
-                                context.request_id = "test-request-id"
+                                context.aws_request_id = "test-request-id"
                                 
                                 result = lambda_handler(event, context)
                                 
@@ -205,7 +205,7 @@ class TestAttachmentExtraction:
                                 mock_invoke.return_value = Mock(status_code=202)
                                 
                                 context = Mock()
-                                context.request_id = "test-request-id"
+                                context.aws_request_id = "test-request-id"
                                 
                                 result = lambda_handler(event, context)
                                 
@@ -247,7 +247,7 @@ class TestAttachmentExtraction:
                                 mock_invoke.return_value = Mock(status_code=202)
                                 
                                 context = Mock()
-                                context.request_id = "test-request-id"
+                                context.aws_request_id = "test-request-id"
                                 
                                 result = lambda_handler(event, context)
                                 

@@ -112,7 +112,7 @@ def lambda_handler(event, context):
 
         # Set correlation ID for all subsequent logs
         correlation_id = payload.get("correlation_id") or (
-            context.request_id if context else None
+            context.aws_request_id if context else None
         )
         set_correlation_id(correlation_id)
 

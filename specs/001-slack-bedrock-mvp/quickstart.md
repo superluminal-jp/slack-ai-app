@@ -130,10 +130,12 @@ cdk bootstrap aws://ACCOUNT-ID/REGION
 ```bash
 # Install dependencies for Slack Event Handler (slack-event-handler)
 cd ../lambda/slack-event-handler
+pip install --upgrade pip
 pip install -r requirements.txt -t .
 
 # Install dependencies for Bedrock Processor (bedrock-processor)
 cd ../bedrock-processor
+pip install --upgrade pip
 pip install -r requirements.txt -t .
 ```
 

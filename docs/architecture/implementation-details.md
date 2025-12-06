@@ -280,7 +280,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     Raises:
         None（すべてのエラーをキャッチしてHTTPレスポンスとして返す）
     """
-    correlation_id = context.request_id
+    correlation_id = context.aws_request_id
 
     try:
         # ヘッダーとボディを抽出
@@ -732,7 +732,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     Returns:
         実行結果（Slackには直接返さず、response_urlに投稿）
     """
-    correlation_id = event.get("correlation_id", context.request_id)
+    correlation_id = event.get("correlation_id", context.aws_request_id)
     response_url = event.get("response_url", "")
     ai_function_type = event.get("ai_function_type", "conversation")
 

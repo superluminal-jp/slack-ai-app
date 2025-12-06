@@ -57,7 +57,7 @@ class TestAttachmentProcessing:
         }
         
         context = Mock()
-        context.request_id = "test-request-id"
+        context.aws_request_id = "test-request-id"
         
         result = lambda_handler(event, context)
         
@@ -112,7 +112,7 @@ class TestAttachmentProcessing:
         }
         
         context = Mock()
-        context.request_id = "test-request-id"
+        context.aws_request_id = "test-request-id"
         
         result = lambda_handler(event, context)
         
@@ -181,7 +181,7 @@ class TestAttachmentProcessing:
         }
         
         context = Mock()
-        context.request_id = "test-request-id"
+        context.aws_request_id = "test-request-id"
         
         result = lambda_handler(event, context)
         
@@ -227,7 +227,7 @@ class TestAttachmentProcessing:
         }
         
         context = Mock()
-        context.request_id = "test-request-id"
+        context.aws_request_id = "test-request-id"
         
         # Should post error message to Slack
         with patch('handler.invoke_bedrock') as mock_bedrock:
@@ -264,7 +264,7 @@ class TestBackwardCompatibility:
         }
         
         context = Mock()
-        context.request_id = "test-request-id"
+        context.aws_request_id = "test-request-id"
         
         result = lambda_handler(event, context)
         
@@ -301,7 +301,7 @@ class TestBackwardCompatibility:
         }
         
         context = Mock()
-        context.request_id = "test-request-id"
+        context.aws_request_id = "test-request-id"
         
         result = lambda_handler(event, context)
         

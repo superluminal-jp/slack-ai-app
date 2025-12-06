@@ -126,8 +126,8 @@ export SLACK_BOT_TOKEN=your-bot-token
 
 # 2. Install dependencies
 cd cdk && npm install
-cd ../lambda/slack-event-handler && pip install -r requirements.txt -t .
-cd ../bedrock-processor && pip install -r requirements.txt -t .
+cd ../lambda/slack-event-handler && pip install --upgrade pip && pip install -r requirements.txt -t .
+cd ../bedrock-processor && pip install --upgrade pip && pip install -r requirements.txt -t .
 
 # 3. Deploy infrastructure
 cd ../../cdk

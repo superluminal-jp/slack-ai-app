@@ -111,7 +111,7 @@ def log_event(level: str, event_type: str, data: dict, context=None):
         level: Log level (INFO, WARN, ERROR)
         event_type: Event type identifier (e.g., "event_received", "signature_verified")
         data: Event-specific data dictionary
-        context: Lambda context object (optional, for request_id)
+        context: Lambda context object (optional, for aws_request_id)
     """
     from logger import log, set_lambda_context as set_ctx
     

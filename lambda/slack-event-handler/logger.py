@@ -50,8 +50,8 @@ def get_correlation_id() -> Optional[str]:
 
 def _get_request_id() -> Optional[str]:
     """Extract request_id from Lambda context."""
-    if _lambda_context and hasattr(_lambda_context, "request_id"):
-        return _lambda_context.request_id
+    if _lambda_context and hasattr(_lambda_context, "aws_request_id"):
+        return _lambda_context.aws_request_id
     return None
 
 

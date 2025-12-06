@@ -40,6 +40,7 @@ cp -r "$LAMBDA_SOURCE_DIR"/* "$TEMP_DIR/"
 # Install dependencies
 echo "📦 Installing Python dependencies..."
 cd "$TEMP_DIR"
+pip install --upgrade pip --quiet
 pip install -r requirements.txt -t . --quiet
 
 # Create deployment package
