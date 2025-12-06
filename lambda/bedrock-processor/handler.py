@@ -12,7 +12,6 @@ Phase 6: Async processing to meet Slack's 3-second timeout requirement.
 import json
 import os
 import time
-from typing import Optional
 from botocore.exceptions import ClientError, ReadTimeoutError
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
@@ -21,9 +20,6 @@ from bedrock_client_converse import invoke_bedrock
 from slack_poster import post_to_slack
 from thread_history import get_thread_history, build_conversation_context
 from attachment_processor import process_attachments
-from reply_router import should_use_canvas
-from canvas_creator import create_canvas
-from canvas_sharer import share_canvas
 from logger import (
     set_correlation_id,
     set_lambda_context,
@@ -57,41 +53,6 @@ ERROR_MESSAGES = {
     # Generic fallback
     "generic": "Something went wrong. I've logged the issue and will try to fix it. Please try again later.",
 }
-
-
-def _fallback_to_regular_message(
-    reply_text: str,
-    channel: str,
-    bot_token: str,
-    thread_ts: Optional[str],
-) -> None:
-    """
-    Fallback to regular message if Canvas creation/sharing fails.
-
-    Truncates message if it exceeds Slack's 4000 character limit.
-
-    Args:
-        reply_text: The AI-generated reply text
-        channel: Slack channel ID
-        bot_token: Slack bot OAuth token
-        thread_ts: Optional thread timestamp
-    """
-    SLACK_MESSAGE_MAX_LENGTH = 4000
-
-    if len(reply_text) > SLACK_MESSAGE_MAX_LENGTH:
-        # Truncate with indication
-        truncated = reply_text[: SLACK_MESSAGE_MAX_LENGTH - 3] + "..."
-        post_to_slack(channel, truncated, bot_token, thread_ts)
-        log_warn(
-            "message_truncated",
-            {
-                "channel": channel,
-                "original_length": len(reply_text),
-                "truncated_length": len(truncated),
-            },
-        )
-    else:
-        post_to_slack(channel, reply_text, bot_token, thread_ts)
 
 
 def _get_error_message_for_attachment_failure(error_code: str) -> str:
@@ -150,10 +111,9 @@ def lambda_handler(event, context):
             payload = event
 
         # Set correlation ID for all subsequent logs
-        correlation_id = payload.get("correlation_id")
-        if not correlation_id and context:
-            # Use aws_request_id from Lambda context (not request_id)
-            correlation_id = getattr(context, "aws_request_id", None)
+        correlation_id = payload.get("correlation_id") or (
+            context.request_id if context else None
+        )
         set_correlation_id(correlation_id)
 
         channel = payload.get("channel")
@@ -571,123 +531,13 @@ def lambda_handler(event, context):
             )
             return {"statusCode": 200, "body": "Error handled"}
 
-        # Determine if Canvas should be used for this reply
-        # NOTE: Canvas feature development suspended - always use regular messages
-        # See specs/005-canvas-long-reply/DEVELOPMENT_SUSPENDED.md for details
-        use_canvas = False  # Disabled: Canvas API not available in slack-sdk
-        # use_canvas = should_use_canvas(ai_response)  # Original implementation
-
-        log_info(
-            "canvas_decision",
-            {
-                "channel": channel,
-                "reply_length": len(ai_response),
-                "use_canvas": use_canvas,
-                "correlation_id": correlation_id,
-            },
-        )
-
-        # Post AI response to Slack (Canvas or regular message)
+        # Post AI response to Slack
         try:
-            if use_canvas:
-                # Create and share Canvas
-                canvas_result = create_canvas(
-                    bot_token=bot_token, title="AI Response", content=ai_response
-                )
-
-                log_info(
-                    "canvas_creation_attempt",
-                    {
-                        "channel": channel,
-                        "reply_length": len(ai_response),
-                        "success": canvas_result.get("success", False),
-                        "correlation_id": correlation_id,
-                    },
-                )
-
-                if canvas_result.get("success"):
-                    canvas_id = canvas_result.get("canvas_id")
-                    creation_time_ms = canvas_result.get("creation_time_ms", 0)
-
-                    # Share Canvas in thread or channel
-                    share_start_time = time.time()
-                    share_result = share_canvas(
-                        bot_token=bot_token,
-                        canvas_id=canvas_id,
-                        channel=channel,
-                        thread_ts=thread_ts,
-                    )
-                    share_time_ms = (time.time() - share_start_time) * 1000
-
-                    if share_result.get("success"):
-                        # Post summary message
-                        summary_message = (
-                            "📄 I've created a Canvas with the full response."
-                        )
-                        post_to_slack(channel, summary_message, bot_token, thread_ts)
-
-                        total_canvas_time_ms = creation_time_ms + share_time_ms
-                        log_info(
-                            "canvas_creation_success",
-                            {
-                                "channel": channel,
-                                "canvas_id": canvas_id,
-                                "reply_length": len(ai_response),
-                                "creation_time_ms": creation_time_ms,
-                                "share_time_ms": share_time_ms,
-                                "total_canvas_time_ms": total_canvas_time_ms,
-                            },
-                        )
-
-                        # Log performance metric (per SC-002: <5 seconds target)
-                        if total_canvas_time_ms > 5000:
-                            log_warn(
-                                "canvas_creation_slow",
-                                {
-                                    "channel": channel,
-                                    "total_time_ms": total_canvas_time_ms,
-                                    "threshold_ms": 5000,
-                                },
-                            )
-                    else:
-                        # Canvas sharing failed, fallback to regular message
-                        log_warn(
-                            "canvas_sharing_failed",
-                            {
-                                "channel": channel,
-                                "canvas_id": canvas_id,
-                                "error_code": share_result.get("error_code"),
-                                "error_message": share_result.get("error_message"),
-                                "fallback_used": True,
-                                "correlation_id": correlation_id,
-                            },
-                        )
-                        _fallback_to_regular_message(
-                            ai_response, channel, bot_token, thread_ts
-                        )
-                else:
-                    # Canvas creation failed, fallback to regular message
-                    log_error(
-                        "canvas_creation_failed",
-                        {
-                            "channel": channel,
-                            "error_code": canvas_result.get("error_code"),
-                            "error_message": canvas_result.get("error_message"),
-                            "fallback_used": True,
-                            "correlation_id": correlation_id,
-                        },
-                    )
-                    _fallback_to_regular_message(
-                        ai_response, channel, bot_token, thread_ts
-                    )
-            else:
-                # Regular message (short reply, no structured formatting)
-                post_to_slack(channel, ai_response, bot_token, thread_ts)
-                log_info(
-                    "slack_post_success",
-                    {"channel": channel, "response_length": len(ai_response)},
-                )
-
+            post_to_slack(channel, ai_response, bot_token, thread_ts)
+            log_info(
+                "slack_post_success",
+                {"channel": channel, "response_length": len(ai_response)},
+            )
             # Return 202 Accepted for async operations (when invoked via API Gateway)
             # API Gateway Lambda proxy integration will return this status code to client
             return {"statusCode": 202, "body": "Accepted"}
