@@ -10,6 +10,7 @@ export interface SlackEventHandlerProps {
   slackBotTokenSecret: secretsmanager.ISecret; // Bot OAuth token from Secrets Manager
   tokenTableName: string; // DynamoDB table name for token storage
   dedupeTableName: string; // DynamoDB table name for event deduplication
+  existenceCheckCacheTableName: string; // DynamoDB table name for Existence Check cache
   awsRegion: string; // AWS region (e.g., ap-northeast-1)
   bedrockModelId: string; // Bedrock model ID (e.g., amazon.nova-pro-v1:0)
   executionApiUrl: string; // API Gateway URL for Execution Layer (required)
@@ -43,6 +44,7 @@ export class SlackEventHandler extends Construct {
       environment: {
         TOKEN_TABLE_NAME: props.tokenTableName,
         DEDUPE_TABLE_NAME: props.dedupeTableName,
+        EXISTENCE_CHECK_CACHE_TABLE: props.existenceCheckCacheTableName,
         AWS_REGION_NAME: props.awsRegion,
         BEDROCK_MODEL_ID: props.bedrockModelId,
         // Store secret names (not values) in environment variables
@@ -75,6 +77,20 @@ export class SlackEventHandler extends Construct {
         //     "bedrock:ModelId": "amazon.nova-pro-v1:0"
         //   }
         // }
+      })
+    );
+
+    // Grant CloudWatch permissions for Existence Check metrics (Phase 6 - Polish)
+    this.function.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["cloudwatch:PutMetricData"],
+        resources: ["*"],
+        conditions: {
+          StringEquals: {
+            "cloudwatch:namespace": "SlackEventHandler",
+          },
+        },
       })
     );
 

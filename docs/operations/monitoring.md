@@ -11,9 +11,10 @@
 | **Bedrock コスト超過**               | Cost Explorer                           | ユーザー単位で$10/月超過 | SNS → 財務チーム                     |
 | **Bedrock エラー率**                 | `Errors`                                | 5%以上                   | SNS → エンジニアリングチーム         |
 | **レイテンシ**                       | `Duration`                              | p95 で 5 秒以上          | SNS → エンジニアリングチーム         |
-| **Existence Check 失敗**             | カスタム: `ExistenceCheckFailed`        | 5 分間に 5 回以上        | SNS → PagerDuty → セキュリティチーム |
-| **Slack API レート制限**             | カスタム: `SlackAPIRateLimitExceeded`   | 1 時間に 10 回以上       | SNS → エンジニアリングチーム         |
-| **Existence Check キャッシュミス率** | カスタム: `ExistenceCheckCacheMissRate` | >50% が 10 分間継続      | SNS → エンジニアリングチーム         |
+| **Existence Check 失敗**             | カスタム: `ExistenceCheckFailed` (namespace: `SlackEventHandler`) | 5 分間に 5 回以上        | SNS → PagerDuty → セキュリティチーム |
+| **Slack API レート制限**             | カスタム: `ExistenceCheckFailed` (rate_limit エラー) | 1 時間に 10 回以上       | SNS → エンジニアリングチーム         |
+| **Existence Check キャッシュヒット率** | カスタム: `ExistenceCheckCacheHit` / (`ExistenceCheckCacheHit` + `ExistenceCheckCacheMiss`) | <80% が 10 分間継続      | SNS → エンジニアリングチーム         |
+| **Slack API レイテンシ**             | カスタム: `SlackAPILatency` (namespace: `SlackEventHandler`) | p95 > 500ms が 5 分間継続 | SNS → エンジニアリングチーム         |
 
 ---
 

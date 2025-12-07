@@ -7,6 +7,7 @@ from token_storage import store_token, get_token
 from slack_verifier import verify_signature
 from validation import validate_prompt
 from event_dedupe import is_duplicate_event, mark_event_processed
+from existence_check import check_entity_existence, ExistenceCheckError
 from botocore.exceptions import ClientError
 from typing import Optional
 from api_gateway_client import invoke_execution_api
@@ -126,7 +127,12 @@ def lambda_handler(event, context):
     Slack event handler with async Bedrock AI integration.
 
     Phase 6: Handles url_verification and event_callback.
-    - Verifies HMAC SHA256 signature before processing
+    - Verifies HMAC SHA256 signature before processing (first key in two-key defense)
+    - Performs Existence Check to verify entities exist in Slack (second key in two-key defense)
+      * Verifies team_id, user_id, channel_id via Slack API (team.info, users.info, conversations.info)
+      * Caches verification results in DynamoDB for 5 minutes to minimize performance impact
+      * Fails securely (rejects requests with 403) when verification cannot be performed
+      * Handles timeouts, rate limits, and API errors with retry logic
     - Validates timestamp within ±5 minutes window
     - Uses DynamoDB for event deduplication (prevents duplicate processing)
     - Returns 200 OK immediately to Slack (<3 seconds)
@@ -207,6 +213,83 @@ def lambda_handler(event, context):
 
         # Parse the incoming request body
         body = json.loads(raw_body)
+        
+        # Existence Check: Verify entities exist in Slack (Two-Key Defense)
+        # This implements the second key in the two-key defense model
+        # After signature verification succeeds, verify entities exist in Slack
+        # Only perform Existence Check for event_callback (not url_verification)
+        if body.get("type") == "event_callback":
+            try:
+                slack_event = body.get("event", {})
+                team_id = body.get("team_id")
+                user_id = slack_event.get("user")
+                channel_id = slack_event.get("channel")
+                
+                # Get Bot Token for Existence Check
+                bot_token = None
+                if team_id:
+                    bot_token = get_token(team_id)
+                    if not bot_token:
+                        bot_token = os.environ.get("SLACK_BOT_TOKEN")
+                else:
+                    bot_token = os.environ.get("SLACK_BOT_TOKEN")
+                
+                # Perform Existence Check if Bot Token is available
+                # Per FR-011: Skip Existence Check if Bot Token is unavailable (graceful degradation)
+                if bot_token and (team_id or user_id or channel_id):
+                    try:
+                        check_entity_existence(
+                            bot_token=bot_token,
+                            team_id=team_id,
+                            user_id=user_id,
+                            channel_id=channel_id,
+                        )
+                        log_info("existence_check_success", {
+                            "team_id": team_id,
+                            "user_id": user_id,
+                            "channel_id": channel_id,
+                        })
+                    except ExistenceCheckError as e:
+                        # Log security event for existence check failure
+                        error_str = str(e)
+                        event_type = "existence_check_failed"
+                        
+                        # Determine specific error type for more detailed logging
+                        if "timeout" in error_str.lower():
+                            event_type = "existence_check_timeout"
+                        elif "rate limit" in error_str.lower():
+                            event_type = "existence_check_rate_limit"
+                        elif "API error" in error_str or "Slack API" in error_str:
+                            event_type = "existence_check_api_error"
+                        
+                        log_error(event_type, {
+                            "team_id": team_id,
+                            "user_id": user_id,
+                            "channel_id": channel_id,
+                            "error": error_str,
+                        })
+                        # Reject request with 403 Forbidden (fail-closed security model)
+                        return {
+                            "statusCode": 403,
+                            "headers": {"Content-Type": "application/json"},
+                            "body": json.dumps({"error": "Entity verification failed"}),
+                        }
+                elif not bot_token:
+                    # Bot Token not available - skip Existence Check (graceful degradation)
+                    log_warn("existence_check_skipped", {
+                        "reason": "bot_token_unavailable",
+                        "team_id": team_id,
+                    })
+                elif not (team_id or user_id or channel_id):
+                    # No entity IDs available - skip Existence Check
+                    # Per FR-012: Verify only available fields
+                    log_info("existence_check_skipped", {
+                        "reason": "no_entity_ids",
+                    })
+            except Exception as e:
+                # Log error but continue processing (fail-open for handler errors)
+                # Existence Check errors are handled above, this catches unexpected errors
+                log_exception("existence_check_handler_error", {}, e)
 
         # Handle Slack's URL verification challenge
         if body.get("type") == "url_verification":

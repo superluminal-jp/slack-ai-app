@@ -13,6 +13,7 @@ This feature implements Slack API Existence Check as a second layer of defense i
 - Python 3.11+ for Lambda functions
 - TypeScript for CDK infrastructure
 - Slack app with Bot Token (xoxb-...) available
+- **Required Slack API Scopes**: `team:read`, `users:read`, `channels:read` (for Existence Check)
 - Existing SlackEventHandler Lambda deployed
 
 ## Quick Setup
@@ -26,6 +27,7 @@ cdk deploy
 ```
 
 This will create:
+
 - DynamoDB table: `slack-existence-check-cache` (with TTL support)
 - IAM permissions for SlackEventHandler Lambda to read/write cache table
 
@@ -104,25 +106,44 @@ pytest tests/test_existence_check.py -v
 **Symptoms**: All requests rejected with 403 Forbidden
 
 **Possible Causes**:
+
 1. Bot Token not available (check token storage)
-2. Slack API unavailable (check Slack status)
-3. Rate limiting (check CloudWatch logs for 429 errors)
+2. Missing Slack API scopes (check for "missing_scope" error in logs)
+3. Slack API unavailable (check Slack status)
+4. Rate limiting (check CloudWatch logs for 429 errors)
 
 **Solutions**:
+
 1. Verify Bot Token is stored in DynamoDB or environment variable
-2. Check Slack API status page
-3. Review retry logic and backoff delays
+2. **Add required Slack API scopes**: `team:read`, `users:read`, `channels:read` in Slack app configuration
+3. Check Slack API status page
+4. Review retry logic and backoff delays
+
+### CloudWatch Metrics Not Emitting
+
+**Symptoms**: Logs show "cloudwatch_metric_emission_failed" with AccessDenied error
+
+**Possible Causes**:
+
+1. Lambda IAM role missing CloudWatch PutMetricData permission
+
+**Solutions**:
+
+1. Deploy updated CDK stack (includes CloudWatch permissions)
+2. Verify IAM role has `cloudwatch:PutMetricData` permission for namespace `SlackEventHandler`
 
 ### Cache Not Working
 
 **Symptoms**: Every request calls Slack API (no cache hits)
 
 **Possible Causes**:
+
 1. DynamoDB table not created
 2. IAM permissions missing
 3. Cache key format incorrect
 
 **Solutions**:
+
 1. Verify DynamoDB table exists: `aws dynamodb describe-table --table-name slack-existence-check-cache`
 2. Check Lambda IAM role has DynamoDB read/write permissions
 3. Verify cache key format: `{team_id}#{user_id}#{channel_id}`
@@ -132,11 +153,13 @@ pytest tests/test_existence_check.py -v
 **Symptoms**: Requests take > 500ms for existence check
 
 **Possible Causes**:
+
 1. Slack API slow response
 2. Cache misses (too many Slack API calls)
 3. DynamoDB read latency
 
 **Solutions**:
+
 1. Check Slack API latency in CloudWatch metrics
 2. Review cache hit rate (target: ≥80%)
 3. Verify DynamoDB table is in same region as Lambda
@@ -169,6 +192,7 @@ When Slack API is unavailable or times out, all requests are rejected with 403 F
 ### Bot Token Security
 
 Bot Token is stored in:
+
 1. DynamoDB (token storage table) - primary source
 2. AWS Secrets Manager - fallback
 3. Environment variable - last resort
@@ -182,4 +206,3 @@ Cache entries contain only team_id, user_id, channel_id (not PII). DynamoDB encr
 - Review [spec.md](spec.md) for detailed requirements
 - Review [plan.md](plan.md) for implementation details
 - Review [research.md](research.md) for technical decisions
-

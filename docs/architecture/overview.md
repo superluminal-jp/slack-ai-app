@@ -97,18 +97,18 @@
 
 ## 2.2 システムコンポーネント
 
-| レイヤー          | 主な機能                 | 技術スタック           | 責任範囲                                                                           |
-| ----------------- | ------------------------ | ---------------------- | ---------------------------------------------------------------------------------- |
-| Slack             | ユーザーインターフェース | Slack API              | コマンド受付、メッセージ表示                                                       |
-| SlackEventHandler | 検証層処理               | Python 3.11            | 署名検証、認可、API Gateway 呼び出し、即座応答、添付ファイルメタデータ抽出       |
-| Function URL      | パブリックエンドポイント | Lambda Function URL    | リクエスト受付、SlackEventHandler へのルーティング                                 |
-| ExecutionApi      | 内部 API                 | API Gateway (IAM 認証) | 内部通信の保護（IAM 認証による）                                                   |
-| BedrockProcessor  | AI 処理                  | Python 3.11            | Bedrock 呼び出し、コンテキスト履歴管理、Slack API 投稿、添付ファイル処理          |
-| Bedrock           | AI モデル                | Foundation Model       | 多様な AI 機能（会話、画像生成、コード生成、データ分析など、モデル選択可能）、視覚分析 |
-| DynamoDB          | データストア             | DynamoDB               | トークンストレージ (slack-workspace-tokens)、イベント重複排除 (slack-event-dedupe) |
-| LibreOffice Layer | PPTX変換                 | Lambda Layer           | PowerPoint スライドを画像に変換（オプション）                                      |
+| レイヤー          | 主な機能                 | 技術スタック           | 責任範囲                                                                                                                                     |
+| ----------------- | ------------------------ | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Slack             | ユーザーインターフェース | Slack API              | コマンド受付、メッセージ表示                                                                                                                 |
+| SlackEventHandler | 検証層処理               | Python 3.11            | 署名検証、Existence Check、認可、API Gateway 呼び出し、即座応答、添付ファイルメタデータ抽出                                                  |
+| Function URL      | パブリックエンドポイント | Lambda Function URL    | リクエスト受付、SlackEventHandler へのルーティング                                                                                           |
+| ExecutionApi      | 内部 API                 | API Gateway (IAM 認証) | 内部通信の保護（IAM 認証による）                                                                                                             |
+| BedrockProcessor  | AI 処理                  | Python 3.11            | Bedrock 呼び出し、コンテキスト履歴管理、Slack API 投稿、添付ファイル処理                                                                     |
+| Bedrock           | AI モデル                | Foundation Model       | 多様な AI 機能（会話、画像生成、コード生成、データ分析など、モデル選択可能）、視覚分析                                                       |
+| DynamoDB          | データストア             | DynamoDB               | トークンストレージ (slack-workspace-tokens)、イベント重複排除 (slack-event-dedupe)、Existence Check キャッシュ (slack-existence-check-cache) |
+| LibreOffice Layer | PPTX 変換                | Lambda Layer           | PowerPoint スライドを画像に変換（オプション）                                                                                                |
 
-**データフロー**: Slack → SlackEventHandler Function URL → SlackEventHandler（即座応答、添付ファイルメタデータ抽出）→ ExecutionApi (API Gateway, IAM 認証) → BedrockProcessor（添付ファイルダウンロード・処理）→ Bedrock（テキスト+画像分析）→ Slack API → Slack
+**データフロー**: Slack → SlackEventHandler Function URL → SlackEventHandler（署名検証、Existence Check、即座応答、添付ファイルメタデータ抽出）→ ExecutionApi (API Gateway, IAM 認証) → BedrockProcessor（添付ファイルダウンロード・処理）→ Bedrock（テキスト+画像分析）→ Slack API → Slack
 
 **添付ファイル処理フロー**: Slack Event (`event.files`) → SlackEventHandler（メタデータ抽出）→ BedrockProcessor（Slack CDN からダウンロード、画像/ドキュメント処理）→ Bedrock（視覚分析/テキスト抽出）→ 統合された AI 応答
 
@@ -122,14 +122,18 @@
 
 1. **2 鍵防御モデル**: Signing Secret と Bot Token の両方が必要
 
-   - Signing Secret 漏洩時も Bot Token がなければ攻撃不可
+   - **鍵 1 (Signing Secret)**: HMAC SHA256 署名検証でリクエストの真正性を確認
+   - **鍵 2 (Bot Token)**: Slack API Existence Check で team_id, user_id, channel_id の実在性を動的に確認
+   - Signing Secret 漏洩時も Bot Token がなければ攻撃不可（Existence Check が失敗）
    - Bot Token 漏洩時も署名検証で偽造リクエストを検出
    - **防げる攻撃**: T-01 (署名シークレット漏洩)、T-04 (API Gateway URL 漏洩)
 
 2. **動的検証**: Slack API による実在性確認
 
    - 静的ホワイトリストではなく、動的に team_id, user_id, channel_id を検証
+   - Slack API (`team.info`, `users.info`, `conversations.info`) を使用して実在性を確認
    - 削除されたユーザー/チャンネルからのリクエストを即座に検出
+   - DynamoDB キャッシュ（5 分 TTL）でパフォーマンスを最適化
    - **防げる攻撃**: 偽造リクエスト、削除済みエンティティからの攻撃
 
 3. **fail-closed 原則**: 認証・認可失敗時は即座に拒否

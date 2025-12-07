@@ -42,11 +42,14 @@
 - **Slack API ダウン: タイムアウト時（>2 秒）は fail-closed（リクエスト拒否）** ← セキュリティ優先
 - 不正エンティティ: 403 Forbidden + セキュリティアラート
 
-**セキュリティメトリクス**:
+**セキュリティメトリクス** (CloudWatch namespace: `SlackEventHandler`):
 
-- `ExistenceCheckFailed`: 存在チェック失敗回数
-- `ExistenceCheckCacheHitRate`: キャッシュヒット率
-- `SlackAPILatency`: Slack API 呼び出しレイテンシ
+- `ExistenceCheckFailed`: 存在チェック失敗回数（Sum）
+- `ExistenceCheckCacheHit`: キャッシュヒット回数（Sum）
+- `ExistenceCheckCacheMiss`: キャッシュミス回数（Sum）
+- `SlackAPILatency`: Slack API 呼び出しレイテンシ（Milliseconds, p95）
+
+**キャッシュヒット率の計算**: `ExistenceCheckCacheHit / (ExistenceCheckCacheHit + ExistenceCheckCacheMiss) * 100`
 
 ## 6.2 Slack API Existence Check 実装コード
 
@@ -165,15 +168,18 @@ const existenceCheckFailedAlarm = new cloudwatch.Alarm(
   this,
   "ExistenceCheckFailedAlarm",
   {
+    alarmName: `${cdk.Stack.of(this).stackName}-existence-check-failed`,
+    alarmDescription: "Alert when Existence Check failures exceed threshold (potential security issue)",
     metric: new cloudwatch.Metric({
-      namespace: "AIApp/Security",
+      namespace: "SlackEventHandler",
       metricName: "ExistenceCheckFailed",
       statistic: "Sum",
       period: cdk.Duration.minutes(5),
     }),
     threshold: 5,
     evaluationPeriods: 1,
-    alarmDescription: "Existence Check が 5 分間に 5 回以上失敗",
+    comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
   }
 );
 

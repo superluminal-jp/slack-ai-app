@@ -82,11 +82,21 @@
 
 ---
 
-## フェーズ 2: セキュリティ強化（Week 3）
+## フェーズ 2: セキュリティ強化（Week 3-4）
 
-**目標**: AI 特有の脅威に対する保護を実装
+**目標**: AI 特有の脅威に対する保護を実装、Two-Key Defense モデルの実装
 
 ### 優先度: 高（P1）
+
+4.5. **Slack API Existence Check (Two-Key Defense - 鍵2)**
+
+   - タスク: team_id, user_id, channel_id の実在性を Slack API で動的に確認
+   - 成果物: `lambda/slack-event-handler/existence_check.py`
+   - DynamoDB キャッシュテーブル作成（5分TTL）
+   - エラーハンドリング（タイムアウト、レート制限、リトライ）
+   - CloudWatch メトリクスとアラーム
+   - 検証: 偽造リクエスト拒否テスト、キャッシュ動作テスト
+   - 所要時間: 5 日
 
 5. **Bedrock Guardrails 設定**
 
