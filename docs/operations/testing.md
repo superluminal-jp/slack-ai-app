@@ -95,6 +95,84 @@
 
 ## 9.2 セキュリティ検証（BDD シナリオ）
 
+### Existence Check (Two-Key Defense)
+
+```gherkin
+フィーチャー: Two-Key Defense - Existence Check
+  セキュリティ管理として
+  システムはSigning SecretとBot Tokenの両方を使用してリクエストを検証する必要がある
+  署名シークレット漏洩時でも攻撃を防ぐため
+
+  背景:
+    前提 システムに有効なBot Tokenがある
+    かつ システムがリクエストの署名を検証済みである
+
+  シナリオ: 有効な署名と偽造team_id
+    前提 リクエストに有効な署名がある
+    かつ リクエストに存在しないteam_id "T_INVALID"が含まれている
+    もし システムがExistence Checkを実行する
+    ならば システムはリクエストを403 Forbiddenで拒否する必要がある
+    かつ システムはセキュリティイベント "existence_check_failed" をログに記録する必要がある
+    かつ セキュリティイベントにはteam_id "T_INVALID"が含まれる必要がある
+
+  シナリオ: 有効な署名と偽造user_id
+    前提 リクエストに有効な署名がある
+    かつ リクエストに存在しないuser_id "U_INVALID"が含まれている
+    もし システムがExistence Checkを実行する
+    ならば システムはリクエストを403 Forbiddenで拒否する必要がある
+    かつ システムはセキュリティイベント "existence_check_failed" をログに記録する必要がある
+
+  シナリオ: 有効な署名と偽造channel_id
+    前提 リクエストに有効な署名がある
+    かつ リクエストに存在しないchannel_id "C_INVALID"が含まれている
+    もし システムがExistence Checkを実行する
+    ならば システムはリクエストを403 Forbiddenで拒否する必要がある
+    かつ システムはセキュリティイベント "existence_check_failed" をログに記録する必要がある
+
+  シナリオ: 有効な署名とすべて有効なエンティティ
+    前提 リクエストに有効な署名がある
+    かつ リクエストに有効なteam_id "T01234567"が含まれている
+    かつ リクエストに有効なuser_id "U01234567"が含まれている
+    かつ リクエストに有効なchannel_id "C01234567"が含まれている
+    もし システムがExistence Checkを実行する
+    ならば システムはリクエストを受け入れる必要がある
+    かつ システムは "existence_check_success" をログに記録する必要がある
+
+  シナリオ: Bot Tokenが利用不可
+    前提 リクエストに有効な署名がある
+    かつ Bot Tokenが利用できない
+    もし システムがExistence Checkを実行する
+    ならば システムはExistence Checkをスキップする必要がある
+    かつ システムは "existence_check_skipped" を理由 "bot_token_unavailable" でログに記録する必要がある
+    かつ システムはリクエストの処理を続行する必要がある
+
+  シナリオ: Slack APIタイムアウト
+    前提 リクエストに有効な署名がある
+    かつ リクエストに有効なteam_id "T01234567"が含まれている
+    かつ Slack APIが2秒後にタイムアウトする
+    もし システムがExistence Checkを実行する
+    ならば システムはリクエストを403 Forbiddenで拒否する必要がある
+    かつ システムはセキュリティイベント "existence_check_timeout" をログに記録する必要がある
+
+  シナリオ: Slack APIレート制限
+    前提 リクエストに有効な署名がある
+    かつ リクエストに有効なteam_id "T01234567"が含まれている
+    かつ Slack APIがレート制限エラー（429）を返す
+    もし システムがExistence Checkを実行する
+    ならば システムは指数バックオフ（1s, 2s, 4s）でリトライする必要がある
+    かつ すべてのリトライが失敗した場合、システムはリクエストを403 Forbiddenで拒否する必要がある
+    かつ システムはセキュリティイベント "existence_check_rate_limit" をログに記録する必要がある
+
+  シナリオ: キャッシュヒット
+    前提 リクエストに有効な署名がある
+    かつ リクエストに有効なteam_id "T01234567"が含まれている
+    かつ 同じteam_id/user_id/channel_idの組み合わせが5分以内に検証済みである
+    もし システムがExistence Checkを実行する
+    ならば システムはキャッシュから結果を取得する必要がある
+    かつ システムはSlack APIを呼び出さない必要がある
+    かつ システムは "existence_check_cache_hit" をログに記録する必要がある
+```
+
 ### プロンプトインジェクション防止（AI 特有）
 
 ```gherkin

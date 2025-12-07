@@ -257,3 +257,130 @@ class TestAttachmentExtraction:
                                 assert 'attachments' in payload
                                 assert payload['attachments'] == []
 
+
+class TestExistenceCheckIntegration:
+    """Test Existence Check integration in handler."""
+    
+    def test_handler_with_existence_check_success(self):
+        """Test handler with successful Existence Check."""
+        event = {
+            "body": json.dumps({
+                "type": "event_callback",
+                "event": {
+                    "type": "app_mention",
+                    "ts": "1234567890.123456",
+                    "channel": "C01234567",
+                    "text": "<@U12345> hello",
+                    "user": "U12345"
+                },
+                "team_id": "T12345"
+            }),
+            "headers": {
+                "x-slack-signature": "v0=test",
+                "x-slack-request-timestamp": "1234567890"
+            }
+        }
+        
+        with patch('handler.verify_signature', return_value=True):
+            with patch('handler.is_duplicate_event', return_value=False):
+                with patch('handler.mark_event_processed', return_value=True):
+                    with patch('handler.validate_prompt', return_value=(True, None)):
+                        with patch('handler.get_token', return_value="xoxb-test"):
+                            with patch('handler.check_entity_existence', return_value=True) as mock_check:
+                                with patch('handler.invoke_execution_api') as mock_invoke:
+                                    mock_invoke.return_value = Mock(status_code=202)
+                                    
+                                    context = Mock()
+                                    context.aws_request_id = "test-request-id"
+                                    
+                                    result = lambda_handler(event, context)
+                                    
+                                    # Verify Existence Check was called
+                                    mock_check.assert_called_once_with(
+                                        bot_token="xoxb-test",
+                                        team_id="T12345",
+                                        user_id="U12345",
+                                        channel_id="C01234567",
+                                    )
+                                    # Verify request was processed (status 200)
+                                    assert result["statusCode"] == 200
+    
+    def test_handler_with_existence_check_failure(self):
+        """Test handler rejects request when Existence Check fails."""
+        from existence_check import ExistenceCheckError
+        
+        event = {
+            "body": json.dumps({
+                "type": "event_callback",
+                "event": {
+                    "type": "app_mention",
+                    "ts": "1234567890.123456",
+                    "channel": "C_INVALID",
+                    "text": "<@U12345> hello",
+                    "user": "U12345"
+                },
+                "team_id": "T12345"
+            }),
+            "headers": {
+                "x-slack-signature": "v0=test",
+                "x-slack-request-timestamp": "1234567890"
+            }
+        }
+        
+        with patch('handler.verify_signature', return_value=True):
+            with patch('handler.get_token', return_value="xoxb-test"):
+                with patch('handler.check_entity_existence') as mock_check:
+                    # Mock Existence Check failure
+                    mock_check.side_effect = ExistenceCheckError("Channel not found: C_INVALID")
+                    
+                    context = Mock()
+                    context.aws_request_id = "test-request-id"
+                    
+                    result = lambda_handler(event, context)
+                    
+                    # Verify request was rejected with 403
+                    assert result["statusCode"] == 403
+                    body = json.loads(result["body"])
+                    assert "error" in body
+                    assert "Entity verification failed" in body["error"]
+    
+    def test_handler_skips_existence_check_when_bot_token_unavailable(self):
+        """Test handler skips Existence Check when Bot Token is unavailable."""
+        event = {
+            "body": json.dumps({
+                "type": "event_callback",
+                "event": {
+                    "type": "app_mention",
+                    "ts": "1234567890.123456",
+                    "channel": "C01234567",
+                    "text": "<@U12345> hello",
+                    "user": "U12345"
+                },
+                "team_id": "T12345"
+            }),
+            "headers": {
+                "x-slack-signature": "v0=test",
+                "x-slack-request-timestamp": "1234567890"
+            }
+        }
+        
+        with patch('handler.verify_signature', return_value=True):
+            with patch('handler.is_duplicate_event', return_value=False):
+                with patch('handler.mark_event_processed', return_value=True):
+                    with patch('handler.validate_prompt', return_value=(True, None)):
+                        with patch('handler.get_token', return_value=None):
+                            with patch.dict('os.environ', {}, clear=True):
+                                with patch('handler.check_entity_existence') as mock_check:
+                                    with patch('handler.invoke_execution_api') as mock_invoke:
+                                        mock_invoke.return_value = Mock(status_code=202)
+                                        
+                                        context = Mock()
+                                        context.aws_request_id = "test-request-id"
+                                        
+                                        result = lambda_handler(event, context)
+                                        
+                                        # Verify Existence Check was NOT called (Bot Token unavailable)
+                                        mock_check.assert_not_called()
+                                        # Verify request was still processed (graceful degradation)
+                                        assert result["statusCode"] == 200
+

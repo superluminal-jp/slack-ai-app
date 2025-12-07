@@ -20,7 +20,10 @@ oauth_config:
       - app_mentions:read
       - channels:history
       - groups:history
-      - files:read  # Required for downloading attachments
+      - files:read # Required for downloading attachments
+      - team:read # Required for Existence Check (team_id verification)
+      - users:read # Required for Existence Check (user_id verification)
+      - channels:read # Required for Existence Check (channel_id verification)
 
 event_subscriptions:
   bot_events:

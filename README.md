@@ -68,12 +68,16 @@ This project implements a serverless Slack bot that:
 ### Components
 
 - **Slack Event Handler** (`lambda/slack-event-handler/`): Receives Slack events, verifies signatures, and invokes Bedrock Processor asynchronously
-  - HMAC SHA256 signature verification
+
+  - HMAC SHA256 signature verification (first key in two-key defense)
+  - **Slack API Existence Check** (second key in two-key defense) - verifies team_id, user_id, channel_id exist in Slack
+  - **DynamoDB cache** for Existence Check results (5-minute TTL)
   - Event deduplication using DynamoDB
   - Immediate acknowledgment (<3 seconds)
   - Token storage and retrieval
 
 - **Bedrock Processor** (`lambda/bedrock-processor/`): Invokes Bedrock API and posts responses to Slack
+
   - AWS Bedrock API integration
   - Multi-model support (Claude, Nova)
   - Error handling and user-friendly messages
@@ -85,20 +89,23 @@ This project implements a serverless Slack bot that:
 
 - **Infrastructure** (`cdk/`): AWS CDK (TypeScript) for provisioning Lambda functions, DynamoDB tables, and IAM roles
   - Lambda function URLs for public access
-  - DynamoDB tables for event deduplication and tokens
-  - IAM roles with least privilege
+  - DynamoDB tables for event deduplication, tokens, and Existence Check cache
+  - IAM roles with least privilege (including CloudWatch metrics permissions)
   - AWS Secrets Manager integration
+  - CloudWatch alarms for Existence Check failures
 
 For complete architecture details, see [docs/architecture/overview.md](docs/architecture/overview.md).
 
 ## Key Features
 
 - ✅ HMAC SHA256 signature verification for Slack requests
+- ✅ **Two-Key Defense Security Model** - Existence Check verifies entities via Slack API (Signing Secret + Bot Token)
 - ✅ Event deduplication to prevent duplicate processing
 - ✅ Async processing pattern (Slack Event Handler responds <3 seconds)
 - ✅ Structured JSON logging for CloudWatch
 - ✅ Error handling with user-friendly messages
 - ✅ DynamoDB token storage for workspace installations
+- ✅ **DynamoDB cache for Existence Check** - 5-minute TTL cache to minimize Slack API calls
 - ✅ Multi-model support (Claude and Nova models)
 - ✅ **Image attachment processing** - Analyze images using AWS Bedrock vision capabilities (PNG, JPEG, GIF, WebP)
 - ✅ **Document attachment processing** - Extract text from PDF, DOCX, CSV, XLSX, PPTX, TXT files
@@ -115,6 +122,7 @@ See [quickstart.md](specs/001-slack-bedrock-mvp/quickstart.md) for detailed depl
 - Node.js 18+ and AWS CDK CLI
 - Python 3.11+
 - Slack workspace with admin permissions
+- **Slack App with required OAuth scopes**: `team:read`, `users:read`, `channels:read` (for Existence Check)
 
 ### Quick Deploy
 
@@ -154,6 +162,7 @@ slack-ai-app/
 │   ├── slack-event-handler/      # Slack Event Handler Lambda
 │   │   ├── handler.py
 │   │   ├── slack_verifier.py
+│   │   ├── existence_check.py    # Existence Check module (Two-Key Defense)
 │   │   ├── token_storage.py
 │   │   └── requirements.txt
 │   └── bedrock-processor/        # Bedrock Processor Lambda
@@ -194,6 +203,7 @@ After the first deployment, these environment variables are no longer needed. Th
 
 - `AWS_REGION_NAME`: AWS region (e.g., `ap-northeast-1`) - configured in `cdk.json`
 - `BEDROCK_MODEL_ID`: Bedrock model ID (e.g., `amazon.nova-pro-v1:0`) - configured in `cdk.json`
+- `EXISTENCE_CHECK_CACHE_TABLE`: DynamoDB table name for Existence Check cache (automatically set by CDK)
 
 ### Secrets Management
 
@@ -247,6 +257,7 @@ The project includes comprehensive architecture documentation organized by topic
 ### Key Policies
 
 1. **Documentation Maintenance Policy**:
+
    - Always read `README.md` and relevant `docs/` sections before making changes
    - Update documentation whenever code changes
    - Create ADRs for architectural decisions
@@ -342,6 +353,11 @@ See [quickstart.md](specs/001-slack-bedrock-mvp/quickstart.md#troubleshooting) f
 ### Common Issues
 
 - **Slack verification fails**: Check Lambda Function URL and verify the secret value in AWS Secrets Manager
+- **Existence Check fails**:
+  - Verify Bot Token has required OAuth scopes: `team:read`, `users:read`, `channels:read`
+  - Check CloudWatch logs for "missing_scope" errors
+  - Ensure Bot Token is available in DynamoDB or environment variable
+- **CloudWatch metrics not emitting**: Ensure Lambda IAM role has `cloudwatch:PutMetricData` permission (automatically granted by CDK)
 - **Bot doesn't respond**: Verify Event Subscriptions are enabled and bot is installed
 - **Bedrock errors**: Check IAM permissions and model access in AWS Console
 - **Secret access errors**: Ensure Lambda function has permission to read secrets (should be automatically granted by CDK)
@@ -377,15 +393,18 @@ Contributions are welcome! Please follow these guidelines:
 For issues or questions:
 
 1. **Check Documentation First**:
+
    - [docs/README.md](docs/README.md) - Comprehensive architecture documentation
    - [Troubleshooting Guide](specs/001-slack-bedrock-mvp/quickstart.md#troubleshooting)
    - [CLAUDE.md](CLAUDE.md) - Development guidelines
 
 2. **Review Logs**:
+
    - Check CloudWatch Logs for detailed error information
    - Review structured JSON logs for debugging
 
 3. **External Resources**:
+
    - [Slack API Documentation](https://api.slack.com/docs)
    - [AWS Bedrock Documentation](https://docs.aws.amazon.com/bedrock/)
    - [AWS CDK Documentation](https://docs.aws.amazon.com/cdk/)
@@ -400,4 +419,4 @@ For issues or questions:
 ---
 
 **Documentation Status**: ✅ Up-to-date with comprehensive architecture docs in `docs/`
-**Last Updated**: 2025-12-06 (Added attachment processing documentation)
+**Last Updated**: 2025-12-07 (Added Existence Check / Two-Key Defense security feature)

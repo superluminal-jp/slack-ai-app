@@ -34,6 +34,9 @@
 
    - Slack スラッシュコマンド `/ask "リクエスト内容"` でリクエストを受け付ける
    - Slack メンション `@bot リクエスト内容` でもリクエストを受け付ける
+   - **Two-Key Defense セキュリティ**: すべてのリクエストは以下の検証を通過する必要がある:
+     - **鍵1**: HMAC SHA256 署名検証（Signing Secret）
+     - **鍵2**: Slack API Existence Check（Bot Token） - team_id, user_id, channel_id の実在性確認
    - リクエストは即座に「処理中です...」という応答で確認される
 
 2. **AI 処理実行**

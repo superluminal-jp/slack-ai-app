@@ -2,6 +2,39 @@
 
 ## 7.実装例（Bedrock 統合 + response_url 非同期処理）
 
+## 7.0 Existence Check 実装（Two-Key Defense - 鍵2）
+
+**ファイル**: `lambda/slack-event-handler/existence_check.py`
+
+Existence Check は Two-Key Defense モデルの第二の鍵として、Slack API を使用して team_id, user_id, channel_id の実在性を動的に確認します。
+
+**実装フロー**:
+
+1. **キャッシュチェック**: DynamoDB からキャッシュエントリを取得（5分TTL）
+2. **Slack API 呼び出し**: キャッシュミスの場合、以下の API を順次呼び出し:
+   - `team.info(team=team_id)`: ワークスペースの存在確認
+   - `users.info(user=user_id)`: ユーザーの存在確認
+   - `conversations.info(channel=channel_id)`: チャンネルの存在確認
+3. **エラーハンドリング**:
+   - レート制限（429）: 指数バックオフで最大3回リトライ（1s, 2s, 4s）
+   - タイムアウト: 2秒でタイムアウト、fail-closed（リクエスト拒否）
+   - その他のエラー: fail-closed（リクエスト拒否）
+4. **キャッシュ保存**: 検証成功時、DynamoDB に5分TTLで保存
+
+**DynamoDB テーブル**: `slack-existence-check-cache`
+- Partition Key: `cache_key` (String, 形式: `{team_id}#{user_id}#{channel_id}`)
+- TTL Attribute: `ttl` (Number, Unix timestamp)
+- Billing Mode: PAY_PER_REQUEST
+
+**CloudWatch メトリクス**:
+- `ExistenceCheckFailed`: 失敗回数
+- `ExistenceCheckCacheHit`: キャッシュヒット回数
+- `ExistenceCheckCacheMiss`: キャッシュミス回数
+- `SlackAPILatency`: Slack API 呼び出しレイテンシ（ミリ秒）
+
+**CloudWatch アラーム**:
+- `ExistenceCheckFailedAlarm`: 5分間に5回以上失敗した場合にトリガー
+
 ## 7.1 SlackEventHandler（検証層 Verification Layer） - API Gateway呼び出し版
 
 | ID         | 要件                                 | 目標値                       | 測定方法                           |
@@ -102,7 +135,11 @@
 
 **ファイル**: `lambda/slack-event-handler/handler.py`
 
-SlackEventHandler は署名検証と認可を行い、即座に応答を返してから ExecutionApi (API Gateway) を呼び出します:
+SlackEventHandler は署名検証、Existence Check、認可を行い、即座に応答を返してから ExecutionApi (API Gateway) を呼び出します:
+
+**Two-Key Defense 実装**:
+- **鍵1**: HMAC SHA256 署名検証（Signing Secret）
+- **鍵2**: Slack API Existence Check（Bot Token） - team_id, user_id, channel_id の実在性確認
 
 ```python
 """
@@ -317,6 +354,34 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         text = urllib.parse.unquote_plus(parsed_body.get("text", ""))
         response_url = urllib.parse.unquote_plus(parsed_body.get("response_url", ""))
 
+        # Existence Check (Two-Key Defense - 鍵2)
+        # Bot Tokenを使用してteam_id, user_id, channel_idの実在性を確認
+        from existence_check import check_entity_existence, ExistenceCheckError
+        
+        bot_token = get_bot_token(team_id)  # DynamoDBまたは環境変数から取得
+        if bot_token:
+            try:
+                check_entity_existence(
+                    bot_token=bot_token,
+                    team_id=team_id,
+                    user_id=user_id,
+                    channel_id=channel_id,
+                )
+            except ExistenceCheckError as e:
+                print(json.dumps({
+                    "level": "ERROR",
+                    "event": "existence_check_failed",
+                    "correlation_id": correlation_id,
+                    "team_id": team_id,
+                    "user_id": user_id,
+                    "channel_id": channel_id,
+                    "error": str(e)
+                }))
+                return {
+                    "statusCode": 403,
+                    "body": json.dumps({"text": "エンティティ検証に失敗しました"})
+                }
+        
         # 認可
         authorize_request(team_id, user_id, channel_id)
 

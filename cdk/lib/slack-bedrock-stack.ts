@@ -1,10 +1,12 @@
 import * as cdk from "aws-cdk-lib";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import { Construct } from "constructs";
 import { SlackEventHandler } from "./constructs/slack-event-handler";
 import { TokenStorage } from "./constructs/token-storage";
 import { EventDedupe } from "./constructs/event-dedupe";
+import { ExistenceCheckCache } from "./constructs/existence-check-cache";
 import { BedrockProcessor } from "./constructs/bedrock-processor";
 import { ExecutionApi } from "./constructs/execution-api";
 import { ApiGatewayMonitoring } from "./constructs/api-gateway-monitoring";
@@ -64,6 +66,9 @@ export class SlackBedrockStack extends cdk.Stack {
     // Create DynamoDB table for event deduplication
     const eventDedupe = new EventDedupe(this, "EventDedupe");
 
+    // Create DynamoDB table for Existence Check cache
+    const existenceCheckCache = new ExistenceCheckCache(this, "ExistenceCheckCache");
+
     // Create Bedrock processor Lambda (Lambda②)
     const bedrockProcessor = new BedrockProcessor(this, "BedrockProcessor", {
       awsRegion,
@@ -83,6 +88,7 @@ export class SlackBedrockStack extends cdk.Stack {
       slackBotTokenSecret: slackBotTokenSecret,
       tokenTableName: tokenStorage.table.tableName,
       dedupeTableName: eventDedupe.table.tableName,
+      existenceCheckCacheTableName: existenceCheckCache.table.tableName,
       awsRegion,
       bedrockModelId,
       executionApiUrl: executionApi.apiUrl,
@@ -106,6 +112,7 @@ export class SlackBedrockStack extends cdk.Stack {
     // Grant Lambda① read/write permissions to DynamoDB tables
     tokenStorage.table.grantReadWriteData(slackEventHandler.function);
     eventDedupe.table.grantReadWriteData(slackEventHandler.function);
+    existenceCheckCache.table.grantReadWriteData(slackEventHandler.function);
 
     // Output the Function URL for Slack Event Subscriptions configuration
     new cdk.CfnOutput(this, "SlackEventHandlerUrl", {
@@ -134,5 +141,29 @@ export class SlackBedrockStack extends cdk.Stack {
         description: "CloudWatch Dashboard URL for API Gateway monitoring",
       });
     }
+
+    // CloudWatch Alarm for Existence Check failures (Phase 6 - Polish)
+    // Alarm triggers when 5+ failures occur in 5 minutes
+    const existenceCheckAlarm = new cloudwatch.Alarm(this, "ExistenceCheckFailedAlarm", {
+      alarmName: `${this.stackName}-existence-check-failed`,
+      alarmDescription:
+        "Alert when Existence Check failures exceed threshold (potential security issue)",
+      metric: new cloudwatch.Metric({
+        namespace: "SlackEventHandler",
+        metricName: "ExistenceCheckFailed",
+        statistic: "Sum",
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 5,
+      evaluationPeriods: 1,
+      comparisonOperator:
+        cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    // Note: To add SNS notification, create SNS topic and add alarm action
+    // Example:
+    // const alarmTopic = new sns.Topic(this, "ExistenceCheckAlarmTopic", {...});
+    // existenceCheckAlarm.addAlarmAction(new cloudwatch_actions.SnsAction(alarmTopic));
   }
 }

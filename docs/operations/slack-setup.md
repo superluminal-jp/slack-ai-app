@@ -68,6 +68,9 @@ oauth_config:
       - chat:write
       - im:history
       - app_mentions:read
+      - team:read # Existence Check: team_id 検証
+      - users:read # Existence Check: user_id 検証
+      - channels:read # Existence Check: channel_id 検証
 
 event_subscriptions:
   bot_events:
@@ -98,13 +101,21 @@ settings:
 2. **"Scopes"** セクションまでスクロール
 3. **"Bot Token Scopes"** に以下のスコープを追加：
 
-| スコープ            | 説明                                 | 用途                                 |
-| ------------------- | ------------------------------------ | ------------------------------------ |
-| `chat:write`        | メッセージを送信                     | Slack に AI レスポンスを投稿         |
-| `im:history`        | ダイレクトメッセージの履歴を読み取り | ダイレクトメッセージイベントを受信   |
-| `app_mentions:read` | メンションを読み取り                 | チャンネルでの @bot メンションを受信 |
-| `channels:history`  | パブリックチャンネルの履歴を読み取り | スレッド履歴取得（conversations.replies） |
-| `groups:history`    | プライベートチャンネルの履歴を読み取り | プライベートチャンネルのスレッド履歴取得 |
+**必須スコープ（Existence Check 用）**:
+
+- `team:read` - ワークスペース情報の取得（Existence Check で team_id 検証に使用）
+- `users:read` - ユーザー情報の取得（Existence Check で user_id 検証に使用）
+- `channels:read` - チャンネル情報の取得（Existence Check で channel_id 検証に使用）
+
+**既存スコープ**:
+
+| スコープ            | 説明                                   | 用途                                      |
+| ------------------- | -------------------------------------- | ----------------------------------------- |
+| `chat:write`        | メッセージを送信                       | Slack に AI レスポンスを投稿              |
+| `im:history`        | ダイレクトメッセージの履歴を読み取り   | ダイレクトメッセージイベントを受信        |
+| `app_mentions:read` | メンションを読み取り                   | チャンネルでの @bot メンションを受信      |
+| `channels:history`  | パブリックチャンネルの履歴を読み取り   | スレッド履歴取得（conversations.replies） |
+| `groups:history`    | プライベートチャンネルの履歴を読み取り | プライベートチャンネルのスレッド履歴取得  |
 
 4. 各スコープを追加後、**"Save Changes"** をクリック
 
@@ -325,6 +336,9 @@ Event Subscriptions が正しく設定されているか確認：
 - [ ] `chat:write` スコープが追加されている
 - [ ] `im:history` スコープが追加されている
 - [ ] `app_mentions:read` スコープが追加されている
+- [ ] `team:read` スコープが追加されている（Existence Check 用）
+- [ ] `users:read` スコープが追加されている（Existence Check 用）
+- [ ] `channels:read` スコープが追加されている（Existence Check 用）
 - [ ] アプリがワークスペースにインストールされている
 - [ ] Bot User OAuth Token が取得されている
 
@@ -430,6 +444,31 @@ Event Subscriptions が正しく設定されているか確認：
    - Slack のリクエストタイムスタンプ検証（±5 分）を確認
    - システム時刻が正しいか確認
 
+### 問題 5: Existence Check エラー（missing_scope）
+
+**症状**: CloudWatch Logs に "Slack API error verifying team: missing_scope" エラーが記録される
+
+**原因と解決方法**:
+
+1. **必要な OAuth スコープが設定されていない**
+
+   - OAuth & Permissions で以下のスコープが追加されているか確認:
+     - `team:read` - ワークスペース情報の取得
+     - `users:read` - ユーザー情報の取得
+     - `channels:read` - チャンネル情報の取得
+   - スコープを追加した後、**アプリを再インストール**（重要: スコープ変更後は再インストールが必要）
+
+2. **Bot Token が古い**
+
+   - スコープを追加した後、Bot Token が更新されていない可能性
+   - OAuth & Permissions で "Reinstall App" を実行
+   - 新しい Bot Token を AWS Secrets Manager に更新
+
+3. **CloudWatch メトリクスエラー（AccessDenied）**
+
+   - Lambda IAM ロールに `cloudwatch:PutMetricData` 権限が不足している可能性
+   - CDK スタックを再デプロイして CloudWatch 権限を追加
+
 ---
 
 ## 9. セキュリティベストプラクティス
@@ -473,9 +512,9 @@ Event Subscriptions が正しく設定されているか確認：
 
 ## 11. 更新履歴
 
-| 日付       | バージョン | 変更内容 |
-| ---------- | ---------- | -------- |
-| 2025-12-05 | 1.0        | 初版作成 |
+| 日付       | バージョン | 変更内容                 |
+| ---------- | ---------- | ------------------------ |
+| 2025-12-05 | 1.0        | 初版作成                 |
 | 2025-12-06 | 1.1        | 添付ファイル処理機能追加 |
 
 ---
