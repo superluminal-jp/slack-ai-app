@@ -5,7 +5,6 @@
 ## ADR 一覧
 
 - [ADR-001: AWS Bedrock Foundation Model の採用](./001-bedrock-foundation-model.md)
-- [ADR-002: 正規表現ベース PII 検出の採用](./002-regex-pii-detection.md)
 - [ADR-003: response_url 非同期パターンの採用](./003-response-url-async.md)
 - [ADR-004: Slack API Existence Check の採用](./004-slack-api-existence-check.md)
 

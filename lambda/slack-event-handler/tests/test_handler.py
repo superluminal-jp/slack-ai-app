@@ -384,3 +384,104 @@ class TestExistenceCheckIntegration:
                                         # Verify request was still processed (graceful degradation)
                                         assert result["statusCode"] == 200
 
+
+class TestHandlerWithWhitelistAuthorization:
+    """Test handler with whitelist authorization integration."""
+    
+    def test_handler_with_whitelist_authorization_success(self):
+        """Test handler processes request when whitelist authorization succeeds."""
+        event = {
+            "body": json.dumps({
+                "type": "event_callback",
+                "event": {
+                    "type": "app_mention",
+                    "ts": "1234567890.123456",
+                    "channel": "C001",
+                    "text": "<@U111> hello",
+                    "user": "U111"
+                },
+                "team_id": "T123ABC"
+            }),
+            "headers": {
+                "x-slack-signature": "v0=test",
+                "x-slack-request-timestamp": "1234567890"
+            }
+        }
+        
+        with patch('handler.verify_signature', return_value=True):
+            with patch('handler.is_duplicate_event', return_value=False):
+                with patch('handler.mark_event_processed', return_value=True):
+                    with patch('handler.validate_prompt', return_value=(True, None)):
+                        with patch('handler.get_token', return_value="xoxb-test"):
+                            with patch('handler.check_entity_existence', return_value=True):
+                                with patch('handler.authorize_request') as mock_auth:
+                                    # Mock authorization success
+                                    from authorization import AuthorizationResult
+                                    mock_auth.return_value = AuthorizationResult(
+                                        authorized=True,
+                                        team_id="T123ABC",
+                                        user_id="U111",
+                                        channel_id="C001",
+                                    )
+                                    with patch('handler.invoke_execution_api') as mock_invoke:
+                                        mock_invoke.return_value = Mock(status_code=202)
+                                        
+                                        context = Mock()
+                                        context.aws_request_id = "test-request-id"
+                                        
+                                        result = lambda_handler(event, context)
+                                        
+                                        # Verify authorization was called
+                                        mock_auth.assert_called_once_with(
+                                            team_id="T123ABC",
+                                            user_id="U111",
+                                            channel_id="C001",
+                                        )
+                                        # Verify request was processed (status 200)
+                                        assert result["statusCode"] == 200
+    
+    def test_handler_with_whitelist_authorization_failure(self):
+        """Test handler rejects request when whitelist authorization fails."""
+        event = {
+            "body": json.dumps({
+                "type": "event_callback",
+                "event": {
+                    "type": "app_mention",
+                    "ts": "1234567890.123456",
+                    "channel": "C999XXX",
+                    "text": "<@U111> hello",
+                    "user": "U111"
+                },
+                "team_id": "T123ABC"
+            }),
+            "headers": {
+                "x-slack-signature": "v0=test",
+                "x-slack-request-timestamp": "1234567890"
+            }
+        }
+        
+        with patch('handler.verify_signature', return_value=True):
+            with patch('handler.get_token', return_value="xoxb-test"):
+                with patch('handler.check_entity_existence', return_value=True):
+                    with patch('handler.authorize_request') as mock_auth:
+                        # Mock authorization failure
+                        from authorization import AuthorizationResult
+                        mock_auth.return_value = AuthorizationResult(
+                            authorized=False,
+                            team_id="T123ABC",
+                            user_id="U111",
+                            channel_id="C999XXX",
+                            unauthorized_entities=["channel_id"],
+                        )
+                        
+                        context = Mock()
+                        context.aws_request_id = "test-request-id"
+                        
+                        result = lambda_handler(event, context)
+                        
+                        # Verify request was rejected with 403
+                        assert result["statusCode"] == 403
+                        body = json.loads(result["body"])
+                        assert "error" in body
+                        assert "Authorization failed" in body["error"]
+

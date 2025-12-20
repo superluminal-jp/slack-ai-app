@@ -11,6 +11,7 @@ export interface SlackEventHandlerProps {
   tokenTableName: string; // DynamoDB table name for token storage
   dedupeTableName: string; // DynamoDB table name for event deduplication
   existenceCheckCacheTableName: string; // DynamoDB table name for Existence Check cache
+  whitelistConfigTableName: string; // DynamoDB table name for whitelist configuration
   awsRegion: string; // AWS region (e.g., ap-northeast-1)
   bedrockModelId: string; // Bedrock model ID (e.g., amazon.nova-pro-v1:0)
   executionApiUrl: string; // API Gateway URL for Execution Layer (required)
@@ -45,12 +46,19 @@ export class SlackEventHandler extends Construct {
         TOKEN_TABLE_NAME: props.tokenTableName,
         DEDUPE_TABLE_NAME: props.dedupeTableName,
         EXISTENCE_CHECK_CACHE_TABLE: props.existenceCheckCacheTableName,
+        WHITELIST_TABLE_NAME: props.whitelistConfigTableName,
         AWS_REGION_NAME: props.awsRegion,
         BEDROCK_MODEL_ID: props.bedrockModelId,
         // Store secret names (not values) in environment variables
         // Lambda function will fetch the actual secret values from Secrets Manager at runtime
         SLACK_SIGNING_SECRET_NAME: props.slackSigningSecret.secretName,
         SLACK_BOT_TOKEN_SECRET_NAME: props.slackBotTokenSecret.secretName,
+        // Optional: Whitelist secret name (can be set via environment variable or Secrets Manager)
+        // Format: {stackName}/slack/whitelist-config
+        WHITELIST_SECRET_NAME: `${cdk.Stack.of(this).stackName}/slack/whitelist-config`,
+        // Optional: Whitelist environment variables (comma-separated values)
+        // These are optional fallbacks if DynamoDB and Secrets Manager are not used
+        // WHITELIST_TEAM_IDS, WHITELIST_USER_IDS, WHITELIST_CHANNEL_IDS can be set via CDK context or environment
         // API Gateway URL for Execution Layer (required)
         EXECUTION_API_URL: props.executionApiUrl,
       },
@@ -59,6 +67,19 @@ export class SlackEventHandler extends Construct {
     // Grant Lambda function permission to read secrets
     props.slackSigningSecret.grantRead(this.function);
     props.slackBotTokenSecret.grantRead(this.function);
+    
+    // Grant Lambda function permission to read whitelist config from Secrets Manager (optional)
+    // The secret name follows the pattern: {stackName}/slack/whitelist-config
+    // This permission allows reading the whitelist config secret if it exists
+    this.function.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["secretsmanager:GetSecretValue"],
+        resources: [
+          `arn:aws:secretsmanager:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:secret:${cdk.Stack.of(this).stackName}/slack/whitelist-config*`,
+        ],
+      })
+    );
 
     // Grant Bedrock permissions to Lambda function
     // Per AWS official documentation, use wildcard resource with optional conditions

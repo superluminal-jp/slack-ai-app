@@ -36,59 +36,84 @@ This project implements a serverless Slack bot that:
 ┌─────────────────────────────────────────────────────────────┐
 │ Slack Workspace                                             │
 │ User triggers: /ask "question" or @bot mentions             │
+│ + attachments (images, documents)                            │
 └────────────────────┬────────────────────────────────────────┘
                      │ [1] HTTPS POST (sync)
                      │ X-Slack-Signature (HMAC SHA256)
                      │ + response_url (Webhook URL)
                      ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ Verification Layer: Slack Event Handler (Lambda)            │
-│ - HMAC SHA256 signature verification                        │
+│ Verification Layer: Slack Event Handler (Lambda Function URL)│
+│ - HMAC SHA256 signature verification (Key 1)                 │
+│ - Slack API Existence Check (Key 2 - Two-Key Defense)       │
 │ - Event deduplication (DynamoDB)                            │
+│ - Attachment metadata extraction                             │
 │ - [2] → Immediate "Processing..." response (<3 seconds)     │
-│ - [3] → Async invocation of Bedrock Processor               │
+│ - [3] → Invoke Execution API (API Gateway, IAM auth)        │
 └────────────────────┬────────────────────────────────────────┘
-                     │ [3] Lambda async invocation
-                     │ InvocationType: Event
+                     │ [3] API Gateway POST /execute
+                     │ IAM authentication
                      ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ Execution Layer: Bedrock Processor (Lambda)                 │
-│ - AWS Bedrock API invocation (Claude/Nova models)           │
-│ - Error handling and retry logic                            │
-│ - [4] → POST response to response_url                       │
+│ Execution Layer: Execution API (API Gateway)                 │
+│ - IAM authentication (internal API protection)                │
+│ - Lambda proxy integration                                   │
 └────────────────────┬────────────────────────────────────────┘
-                     │ [4] HTTPS POST to response_url
+                     │ [4] Lambda invocation
+                     ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Execution Layer: Bedrock Processor (Lambda)                  │
+│ - AWS Bedrock Converse API invocation                        │
+│ - Thread history retrieval (conversations.replies)           │
+│ - Attachment processing (images, documents)                  │
+│ - Error handling and retry logic                            │
+│ - [5] → POST response to Slack (thread reply)                │
+└────────────────────┬────────────────────────────────────────┘
+                     │ [5] HTTPS POST to Slack API
+                     │ (chat.postMessage with thread_ts)
                      ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ Slack Workspace                                             │
-│ [5] Display AI response in channel                          │
+│ [6] Display AI response in thread                            │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ### Components
 
-- **Slack Event Handler** (`lambda/slack-event-handler/`): Receives Slack events, verifies signatures, and invokes Bedrock Processor asynchronously
+- **Slack Event Handler** (`lambda/slack-event-handler/`): Receives Slack events, verifies signatures, and invokes Execution API
 
   - HMAC SHA256 signature verification (first key in two-key defense)
   - **Slack API Existence Check** (second key in two-key defense) - verifies team_id, user_id, channel_id exist in Slack
   - **DynamoDB cache** for Existence Check results (5-minute TTL)
   - Event deduplication using DynamoDB
+  - Attachment metadata extraction
   - Immediate acknowledgment (<3 seconds)
   - Token storage and retrieval
+  - Invokes Execution API (API Gateway) with IAM authentication
 
-- **Bedrock Processor** (`lambda/bedrock-processor/`): Invokes Bedrock API and posts responses to Slack
+- **Execution API** (`cdk/lib/constructs/execution-api.ts`): Internal API Gateway for secure Lambda invocation
 
-  - AWS Bedrock API integration
+  - API Gateway REST API with IAM authentication
+  - Resource policy restricts access to Verification Layer Lambda role only
+  - Lambda proxy integration to Bedrock Processor
+
+- **Bedrock Processor** (`lambda/bedrock-processor/`): Invokes Bedrock Converse API and posts responses to Slack
+
+  - AWS Bedrock Converse API integration (unified interface, multimodal support)
   - Multi-model support (Claude, Nova)
+  - **Thread history retrieval**: Fetches conversation history from Slack threads
+  - **Thread replies**: Posts responses in thread (not as new channel messages)
   - Error handling and user-friendly messages
-  - Response posting via Slack Webhooks
+  - Response posting via Slack API (chat.postMessage)
   - **Attachment processing**: Downloads and processes images and documents from Slack
-  - **Image analysis**: Supports vision models for image content analysis
+  - **Image analysis**: Supports vision models for image content analysis (PNG, JPEG, GIF, WebP)
   - **Document extraction**: Extracts text from PDF, DOCX, CSV, XLSX, PPTX, TXT files
-  - **PPTX conversion**: Converts PowerPoint slides to images using LibreOffice
+  - **PPTX conversion**: Converts PowerPoint slides to images using LibreOffice (optional)
+  - **Multiple attachments**: Processes multiple attachments in a single message
 
 - **Infrastructure** (`cdk/`): AWS CDK (TypeScript) for provisioning Lambda functions, DynamoDB tables, and IAM roles
-  - Lambda function URLs for public access
+  - Lambda Function URL for Slack Event Handler (public access)
+  - API Gateway REST API for Execution Layer (IAM authentication)
   - DynamoDB tables for event deduplication, tokens, and Existence Check cache
   - IAM roles with least privilege (including CloudWatch metrics permissions)
   - AWS Secrets Manager integration
@@ -107,10 +132,13 @@ For complete architecture details, see [docs/architecture/overview.md](docs/arch
 - ✅ DynamoDB token storage for workspace installations
 - ✅ **DynamoDB cache for Existence Check** - 5-minute TTL cache to minimize Slack API calls
 - ✅ Multi-model support (Claude and Nova models)
-- ✅ **Image attachment processing** - Analyze images using AWS Bedrock vision capabilities (PNG, JPEG, GIF, WebP)
+- ✅ **Thread reply support** - Bot responses are posted in threads (not as new channel messages)
+- ✅ **Thread history retrieval** - Fetches conversation history from Slack threads for context-aware responses
+- ✅ **Image attachment processing** - Analyze images using AWS Bedrock Converse API vision capabilities (PNG, JPEG, GIF, WebP)
 - ✅ **Document attachment processing** - Extract text from PDF, DOCX, CSV, XLSX, PPTX, TXT files
-- ✅ **PPTX slide-to-image conversion** - Convert PowerPoint slides to images for visual analysis
+- ✅ **PPTX slide-to-image conversion** - Convert PowerPoint slides to images for visual analysis (optional, requires LibreOffice Layer)
 - ✅ **Multiple attachments support** - Process multiple attachments in a single message
+- ✅ **Bedrock Converse API** - Unified interface for multimodal inputs (text + images)
 
 ## Quick Start
 
@@ -122,7 +150,11 @@ See [quickstart.md](specs/001-slack-bedrock-mvp/quickstart.md) for detailed depl
 - Node.js 18+ and AWS CDK CLI
 - Python 3.11+
 - Slack workspace with admin permissions
-- **Slack App with required OAuth scopes**: `team:read`, `users:read`, `channels:read` (for Existence Check)
+- **Slack App with required OAuth scopes**:
+  - `team:read`, `users:read`, `channels:read` (for Existence Check)
+  - `files:read` (for attachment processing)
+  - `chat:write` (for posting responses)
+  - `channels:history`, `groups:history`, `im:history` (for thread history retrieval)
 
 ### Quick Deploy
 
@@ -159,15 +191,21 @@ slack-ai-app/
 │   └── bin/
 │       └── cdk.ts
 ├── lambda/
-│   ├── slack-event-handler/      # Slack Event Handler Lambda
+│   ├── slack-event-handler/      # Slack Event Handler Lambda (Verification Layer)
 │   │   ├── handler.py
 │   │   ├── slack_verifier.py
 │   │   ├── existence_check.py    # Existence Check module (Two-Key Defense)
 │   │   ├── token_storage.py
+│   │   ├── attachment_extractor.py
+│   │   ├── api_gateway_client.py
 │   │   └── requirements.txt
-│   └── bedrock-processor/        # Bedrock Processor Lambda
+│   └── bedrock-processor/        # Bedrock Processor Lambda (Execution Layer)
 │       ├── handler.py
-│       ├── bedrock_client.py
+│       ├── bedrock_client_converse.py  # Bedrock Converse API client
+│       ├── thread_history.py     # Thread history retrieval
+│       ├── attachment_processor.py
+│       ├── document_extractor.py
+│       ├── file_downloader.py
 │       ├── slack_poster.py
 │       └── requirements.txt
 ├── docs/                         # Comprehensive architecture documentation
@@ -204,6 +242,7 @@ After the first deployment, these environment variables are no longer needed. Th
 - `AWS_REGION_NAME`: AWS region (e.g., `ap-northeast-1`) - configured in `cdk.json`
 - `BEDROCK_MODEL_ID`: Bedrock model ID (e.g., `amazon.nova-pro-v1:0`) - configured in `cdk.json`
 - `EXISTENCE_CHECK_CACHE_TABLE`: DynamoDB table name for Existence Check cache (automatically set by CDK)
+- `EXECUTION_API_URL`: Execution API Gateway URL (automatically set by CDK)
 
 ### Secrets Management
 
@@ -277,8 +316,9 @@ This MVP prioritizes basic functionality over production-grade features. The fol
 
 ### Functionality
 
-- ❌ Multi-turn conversations with context retention
-- ❌ Conversation history storage
+- ✅ Thread-based conversations with history retrieval
+- ✅ Context retention within threads
+- ❌ Cross-thread context retention
 - ❌ Advanced prompt engineering or custom prompt templates
 - ❌ Rate limiting per user or workspace
 - ✅ File/image processing (images and documents supported)
@@ -292,7 +332,6 @@ This MVP prioritizes basic functionality over production-grade features. The fol
 - ❌ Compliance certifications (SOC2, GDPR, HIPAA)
 - ❌ Advanced authorization checks (whitelist users/channels)
 - ❌ Bedrock Guardrails integration (deferred to post-MVP)
-- ❌ PII detection and masking (deferred to post-MVP)
 
 ### Infrastructure
 
@@ -419,4 +458,4 @@ For issues or questions:
 ---
 
 **Documentation Status**: ✅ Up-to-date with comprehensive architecture docs in `docs/`
-**Last Updated**: 2025-12-07 (Added Existence Check / Two-Key Defense security feature)
+**Last Updated**: 2025-12-30 (Updated to reflect current implementation: Converse API, Execution API, thread features, attachment processing)

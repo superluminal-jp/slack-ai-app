@@ -5,9 +5,7 @@
 | アラーム                             | メトリクス                              | 閾値                     | アクション                           |
 | ------------------------------------ | --------------------------------------- | ------------------------ | ------------------------------------ |
 | **署名検証失敗**                     | カスタム: `SignatureVerificationFailed` | 5 分間に 5 回以上        | SNS → PagerDuty → セキュリティチーム |
-| **プロンプトインジェクション検出**   | カスタム: `PromptInjectionDetected`     | 1 時間に 10 回以上       | SNS → セキュリティチーム             |
 | **Guardrails ブロック**              | カスタム: `GuardrailsBlocked`           | 1 時間に 20 回以上       | SNS → AI 運用チーム                  |
-| **PII 検出**                         | カスタム: `PIIDetected`                 | 1 日に 100 回以上        | SNS → コンプライアンスチーム         |
 | **Bedrock コスト超過**               | Cost Explorer                           | ユーザー単位で$10/月超過 | SNS → 財務チーム                     |
 | **Bedrock エラー率**                 | `Errors`                                | 5%以上                   | SNS → エンジニアリングチーム         |
 | **レイテンシ**                       | `Duration`                              | p95 で 5 秒以上          | SNS → エンジニアリングチーム         |
@@ -20,11 +18,11 @@
 
 ## 10.2 インシデントレスポンスプレイブック
 
-### シナリオ: プロンプトインジェクション攻撃の大規模試行
+### シナリオ: 不正リクエストの大規模試行
 
 **検出**:
 
-- プロンプトインジェクション検出アラームが継続的にトリガー
+- 署名検証失敗アラームが継続的にトリガー
 - 特定ユーザーまたは IP から大量の不正リクエスト
 - Guardrails ブロック率の急増
 
@@ -46,7 +44,7 @@
 
 3. **中期対応（T+24 時間）**:
 
-   - プロンプトインジェクション検出ルールを更新
+   - セキュリティ検出ルールを更新
    - SlackEventHandler と BedrockProcessor のコードをデプロイ
    - 攻撃パターンをドキュメント化
    - 脅威モデルを更新
@@ -115,7 +113,7 @@
 1. **機能実現**: Slack から AI 機能を利用できる環境を構築（会話、画像生成、コード生成、データ分析など）
 2. **優れたユーザー体験**: 2 秒以内の初期応答、5〜30 秒で最終レスポンス、非ブロッキング処理
 3. **コンテキスト履歴管理**: コンテキストを保持した連続的な処理が可能
-4. **セキュリティ保護**: 多層防御、Guardrails、PII 検出により安全に運用
+4. **セキュリティ保護**: 多層防御、Guardrails により安全に運用
 5. **モデル選択の柔軟性**: AWS Bedrock の多様な Foundation Model から要件に応じて選択可能
 6. **コスト管理**: トークン制限でユーザー単位$10/月以下を実現
 7. **スケーラビリティ**: サーバーレスアーキテクチャで自動スケール
@@ -125,7 +123,6 @@
 - **モデル**: AWS Bedrock Foundation Model（要件に応じて選択：Claude、Titan、Llama など）
 - **Model ID**: 環境変数 `BEDROCK_MODEL_ID` で設定（デフォルト例: `us.anthropic.claude-sonnet-4-5-20250929-v1:0`）
 - **Guardrails**: Automated Reasoning checks、60 言語対応、コーディングユースケース対応
-- **PII 検出**: 正規表現ベース（AWS Comprehend は日本語未対応）
 - **セキュリティ**: 多層防御による安全な実行
 
 **次のステップ**:
@@ -133,11 +130,8 @@
 - 提供されたコード例を使用して SlackEventHandler と BedrockProcessor を実装
 - セキュリティ設計を実装
 - 要件に応じて適切な Bedrock Foundation Model を選択
-- Bedrock Guardrails を設定（Automated Reasoning、プロンプトインジェクション、有害コンテンツ）
+- Bedrock Guardrails を設定（Automated Reasoning、有害コンテンツ）
 - DynamoDB コンテキスト履歴テーブルを作成（KMS 暗号化有効化）
-- BDD テストを作成してプロンプトインジェクション防止を検証
-- 正規表現ベース PII 検出パターンを日本語向けに最適化
-- Red Team によるプロンプトインジェクション攻撃テストを実施
 - ユーザー単位の Bedrock コストモニタリングを設定
 
 **参考資料（2025 年最新）**:
@@ -145,7 +139,6 @@
 - [Amazon Bedrock Foundation Models](https://docs.aws.amazon.com/bedrock/latest/userguide/foundation-models.html)
 - [Amazon Bedrock Guardrails - Coding Use Cases (Nov 2025)](https://aws.amazon.com/about-aws/whats-new/2025/11/amazon-bedrock-guardrails-coding-use-cases/)
 - [Automated Reasoning checks in Bedrock Guardrails (Aug 2025)](https://aws.amazon.com/about-aws/whats-new/2025/08/automated-reasoning-checks-amazon-bedrock-guardrails/)
-- [AWS Comprehend PII Detection](https://docs.aws.amazon.com/comprehend/latest/dg/how-pii.html)
 - [Slack API response_url Webhooks](https://api.slack.com/messaging/webhooks)
 
 ---

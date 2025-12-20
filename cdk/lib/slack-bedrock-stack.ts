@@ -7,6 +7,7 @@ import { SlackEventHandler } from "./constructs/slack-event-handler";
 import { TokenStorage } from "./constructs/token-storage";
 import { EventDedupe } from "./constructs/event-dedupe";
 import { ExistenceCheckCache } from "./constructs/existence-check-cache";
+import { WhitelistConfig } from "./constructs/whitelist-config";
 import { BedrockProcessor } from "./constructs/bedrock-processor";
 import { ExecutionApi } from "./constructs/execution-api";
 import { ApiGatewayMonitoring } from "./constructs/api-gateway-monitoring";
@@ -69,6 +70,9 @@ export class SlackBedrockStack extends cdk.Stack {
     // Create DynamoDB table for Existence Check cache
     const existenceCheckCache = new ExistenceCheckCache(this, "ExistenceCheckCache");
 
+    // Create DynamoDB table for whitelist configuration
+    const whitelistConfig = new WhitelistConfig(this, "WhitelistConfig");
+
     // Create Bedrock processor Lambda (Lambda②)
     const bedrockProcessor = new BedrockProcessor(this, "BedrockProcessor", {
       awsRegion,
@@ -89,6 +93,7 @@ export class SlackBedrockStack extends cdk.Stack {
       tokenTableName: tokenStorage.table.tableName,
       dedupeTableName: eventDedupe.table.tableName,
       existenceCheckCacheTableName: existenceCheckCache.table.tableName,
+      whitelistConfigTableName: whitelistConfig.table.tableName,
       awsRegion,
       bedrockModelId,
       executionApiUrl: executionApi.apiUrl,
@@ -113,6 +118,53 @@ export class SlackBedrockStack extends cdk.Stack {
     tokenStorage.table.grantReadWriteData(slackEventHandler.function);
     eventDedupe.table.grantReadWriteData(slackEventHandler.function);
     existenceCheckCache.table.grantReadWriteData(slackEventHandler.function);
+    // Grant Lambda① read permissions to whitelist config table (read-only for security)
+    whitelistConfig.table.grantReadData(slackEventHandler.function);
+
+    // CloudWatch Alarms for Whitelist Authorization
+    // Alarm for whitelist authorization failures (5 failures in 5 minutes)
+    const whitelistAuthFailureAlarm = new cloudwatch.Alarm(
+      this,
+      "WhitelistAuthorizationFailureAlarm",
+      {
+        alarmName: `${this.stackName}-WhitelistAuthorizationFailure`,
+        alarmDescription:
+          "Alert when whitelist authorization failures exceed threshold (5 failures in 5 minutes)",
+        metric: new cloudwatch.Metric({
+          namespace: "SlackEventHandler",
+          metricName: "WhitelistAuthorizationFailed",
+          statistic: "Sum",
+          period: cdk.Duration.minutes(5),
+        }),
+        threshold: 5,
+        evaluationPeriods: 1,
+        comparisonOperator:
+          cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      }
+    );
+
+    // Alarm for whitelist config load errors
+    const whitelistConfigLoadErrorAlarm = new cloudwatch.Alarm(
+      this,
+      "WhitelistConfigLoadErrorAlarm",
+      {
+        alarmName: `${this.stackName}-WhitelistConfigLoadError`,
+        alarmDescription:
+          "Alert when whitelist configuration load errors occur",
+        metric: new cloudwatch.Metric({
+          namespace: "SlackEventHandler",
+          metricName: "WhitelistConfigLoadErrors",
+          statistic: "Sum",
+          period: cdk.Duration.minutes(5),
+        }),
+        threshold: 1,
+        evaluationPeriods: 1,
+        comparisonOperator:
+          cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      }
+    );
 
     // Output the Function URL for Slack Event Subscriptions configuration
     new cdk.CfnOutput(this, "SlackEventHandlerUrl", {

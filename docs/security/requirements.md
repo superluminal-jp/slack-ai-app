@@ -28,8 +28,6 @@
 
 ### AI 特有の脅威
 
-- **T-09: プロンプトインジェクション** → Bedrock Guardrails（99%精度）で検出・ブロック
-- **T-10: PII 漏洩** → PII 検出・自動マスキング（日本語対応、85%以上精度）
 - **T-11: モデル乱用（コスト）** → トークン制限、ユーザー単位クォータ
 - **T-12: コンテキスト履歴情報漏洩** → コンテキスト ID 分離、DynamoDB 暗号化
 
@@ -52,16 +50,14 @@
 │    ├─ 3a. 署名検証 (Signing Secret) ← 鍵1                  │
 │    ├─ 3b. Existence Check (Bot Token) ← 鍵2                │
 │    │   └─ Slack API (team.info, users.info, conversations) │
-│    ├─ 3c. 認可 (ホワイトリスト)                            │
-│    └─ 3d. プロンプト検証                                    │
+│    └─ 3c. 認可 (ホワイトリスト)                            │
 │    ↓ すべて成功時のみ次へ                                   │
 ├─────────────────────────────────────────────────────────────┤
 │ 4. ExecutionApi (IAM 認証)                                   │
 │    ↓                                                         │
 ├─────────────────────────────────────────────────────────────┤
 │ 5. BedrockProcessor → Bedrock                                │
-│    ├─ Guardrails (プロンプトインジェクション検出)          │
-│    └─ PII 検出                                              │
+│    └─ Guardrails                                            │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -76,21 +72,11 @@
 
 - team_id、user_id、channel_id によるホワイトリスト認可
 
-### SR-03: プロンプトインジェクション防止（AI 特有）
-
-- すべてのユーザー入力は、Bedrock Guardrails で検証され、プロンプトインジェクション攻撃を防がなければなりません
-- SlackEventHandler での基本的なパターン検出と、BedrockProcessor での Guardrails 適用による多層防御
-
-### SR-04: PII 保護（AI 特有）
-
-- Bedrock のレスポンスからすべての個人識別情報（PII）を削除しなければなりません
-- 正規表現ベースの PII 検出（日本語対応）
-
-### SR-05: トークン数制限（AI 特有）
+### SR-03: トークン数制限（AI 特有）
 
 - 各リクエストは最大 4000 トークンを超えてはなりません
 
-### SR-06: Slack API Existence Check (Dynamic Entity Verification)
+### SR-04: Slack API Existence Check (Dynamic Entity Verification)
 
 すべてのリクエストは、Slack API を使用して team_id、user_id、channel_id が実在するエンティティであることを動的に検証しなければなりません。
 
@@ -98,7 +84,7 @@
 
 - Slack API (team.info, users.info, conversations.info) による実在性確認
 
-### SR-07: 添付ファイルセキュリティ
+### SR-05: 添付ファイルセキュリティ
 
 添付ファイル処理に関するセキュリティ要件：
 
@@ -134,18 +120,17 @@
 | NFR-06 | 脆弱性スキャン                     | 週次                            | Snyk、Trivy                    |
 | NFR-07 | ペネトレーションテスト             | 四半期ごと                      | 外部企業                       |
 | NFR-08 | Bedrock 呼び出しレイテンシ         | ≤5 秒（p95）                    | CloudWatch メトリクス          |
-| NFR-09 | プロンプトインジェクション検出率   | ≥95%                            | Guardrails Automated Reasoning |
-| NFR-10 | PII 検出精度（日本語）             | ≥85% Recall                     | 正規表現パターンテスト         |
-| NFR-11 | ユーザー単位 Bedrock コスト        | ≤$10/月                         | Cost Explorer                  |
-| NFR-12 | コンテキスト履歴暗号化             | すべての DynamoDB データ        | KMS 暗号化確認                 |
-| NFR-13 | Existence Check レイテンシ         | ≤500ms（p95、キャッシュミス時） | CloudWatch メトリクス          |
-| NFR-14 | Existence Check キャッシュヒット率 | ≥80%                            | DynamoDB + CloudWatch          |
-| NFR-15 | Slack API 呼び出し成功率           | ≥99%                            | CloudWatch メトリクス          |
+| NFR-09 | ユーザー単位 Bedrock コスト        | ≤$10/月                         | Cost Explorer                  |
+| NFR-10 | コンテキスト履歴暗号化             | すべての DynamoDB データ        | KMS 暗号化確認                 |
+| NFR-11 | Existence Check レイテンシ         | ≤500ms（p95、キャッシュミス時） | CloudWatch メトリクス          |
+| NFR-12 | Existence Check キャッシュヒット率 | ≥80%                            | DynamoDB + CloudWatch          |
+| NFR-13 | Slack API 呼び出し成功率           | ≥99%                            | CloudWatch メトリクス          |
 
 ---
 
 ## 関連ドキュメント
 
+- [**認証・認可セキュリティ解説**](./authentication-authorization.md) - 認証・認可の詳細解説（Two-Key Defense、各レイヤーの説明、攻撃シナリオ）
 - [アーキテクチャ概要](../architecture/overview.md) - セキュリティ設計の原則
 - [脅威モデル](./threat-model.md) - リスク分析とアクター
 - [セキュリティ実装](./implementation.md) - 多層防御の実装詳細

@@ -10,10 +10,9 @@
   - 3a. HMAC SHA256 署名検証
   - **3b. Slack API Existence Check（NEW）**
   - 3c. 認可（ホワイトリスト）
-  - 3d. 基本的プロンプト検証
 - **レイヤー 4（ExecutionApi）**: IAM 認証による内部 API 保護
-- **レイヤー 5（BedrockProcessor）**: Bedrock Guardrails、PII 検出
-- **レイヤー 6（Bedrock）**: Automated Reasoning（99%精度）によるプロンプトインジェクション検出
+- **レイヤー 5（BedrockProcessor）**: Bedrock Guardrails
+- **レイヤー 6（Bedrock）**: Automated Reasoning
 
 ### レイヤー 3b: Slack API Existence Check 実装詳細
 
@@ -50,6 +49,85 @@
 - `SlackAPILatency`: Slack API 呼び出しレイテンシ（Milliseconds, p95）
 
 **キャッシュヒット率の計算**: `ExistenceCheckCacheHit / (ExistenceCheckCacheHit + ExistenceCheckCacheMiss) * 100`
+
+### レイヤー 3c: ホワイトリスト認可 実装詳細
+
+**目的**: 認可済みのワークスペース、ユーザー、チャンネルのみがAI機能にアクセスできるようにする
+
+**実装フロー**:
+
+1. Existence Check（3b）が成功した後、ホワイトリスト認可を実行
+2. 以下の3つのエンティティすべてがホワイトリストに含まれているか確認（AND条件）:
+   - `team_id`: ワークスペースID
+   - `user_id`: ユーザーID
+   - `channel_id`: チャンネルID
+3. すべてのエンティティが認可済みの場合のみ、Execution API に進む
+4. いずれかが未認可の場合、セキュリティイベントをログに記録し、403 を返す
+
+**ホワイトリスト設定ソース（優先順位）**:
+
+1. **DynamoDB** (推奨): 動的更新、即座に反映（キャッシュTTL 5分を除く）
+   - テーブル名: `slack-whitelist-config`
+   - パーティションキー: `entity_type` (team_id, user_id, channel_id)
+   - ソートキー: `entity_id` (実際のID値)
+2. **AWS Secrets Manager** (セカンダリ): 機密情報として管理、暗号化、ローテーション対応
+   - シークレット名: `{stackName}/slack/whitelist-config`
+   - JSON形式: `{"team_ids": ["T123ABC"], "user_ids": ["U111"], "channel_ids": ["C001"]}`
+3. **環境変数** (フォールバック): シンプル、再デプロイ必要
+   - `WHITELIST_TEAM_IDS`: カンマ区切り
+   - `WHITELIST_USER_IDS`: カンマ区切り
+   - `WHITELIST_CHANNEL_IDS`: カンマ区切り
+
+**キャッシュ戦略**:
+
+- ホワイトリスト設定をメモリ内に5分間キャッシュ
+- TTL: 300秒（5分）
+- キャッシュヒット時は設定ソースへのアクセスをスキップ
+- キャッシュTTLが経過すると自動的に再読み込み
+
+**エラーハンドリング**:
+
+- **設定読み込み失敗: fail-closed（すべてのリクエストを拒否）** ← セキュリティ優先
+- **ホワイトリストが空: fail-closed（すべてのリクエストを拒否）** ← セキュリティ優先
+- 未認可エンティティ: 403 Forbidden + セキュリティアラート
+
+**セキュリティメトリクス** (CloudWatch namespace: `SlackEventHandler`):
+
+- `WhitelistAuthorizationSuccess`: 認可成功回数（Sum）
+- `WhitelistAuthorizationFailed`: 認可失敗回数（Sum）
+- `WhitelistAuthorizationLatency`: 認可処理レイテンシ（Milliseconds, p95）
+- `WhitelistConfigLoadErrors`: 設定読み込みエラー回数（Sum）
+
+**CloudWatchアラーム**:
+
+- `WhitelistAuthorizationFailureAlarm`: 5分間に5回以上の認可失敗でトリガー
+- `WhitelistConfigLoadErrorAlarm`: 設定読み込みエラーが発生した場合にトリガー
+
+**認可ロジック**:
+
+```python
+def authorize_request(team_id, user_id, channel_id) -> AuthorizationResult:
+    """
+    AND条件: すべてのエンティティが認可済みである必要がある
+    - team_id がホワイトリストに含まれている AND
+    - user_id がホワイトリストに含まれている AND
+    - channel_id がホワイトリストに含まれている
+    """
+    whitelist = load_whitelist_config()  # キャッシュから読み込み
+    
+    unauthorized_entities = []
+    if team_id not in whitelist["team_ids"]:
+        unauthorized_entities.append("team_id")
+    if user_id not in whitelist["user_ids"]:
+        unauthorized_entities.append("user_id")
+    if channel_id not in whitelist["channel_ids"]:
+        unauthorized_entities.append("channel_id")
+    
+    if len(unauthorized_entities) == 0:
+        return AuthorizationResult(authorized=True, ...)
+    else:
+        return AuthorizationResult(authorized=False, unauthorized_entities=unauthorized_entities, ...)
+```
 
 ## 6.2 Slack API Existence Check 実装コード
 

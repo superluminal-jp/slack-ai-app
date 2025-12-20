@@ -15,9 +15,9 @@
 
 2. **BedrockProcessor（実行層 Execution Layer）実装**
 
-   - タスク: Bedrock API 呼び出し、正規表現 PII 検出、response_url 投稿
+   - タスク: Bedrock API 呼び出し、response_url 投稿
    - 成果物: `src/application/execution_handler.py`
-   - 検証: Bedrock 接続テスト、PII 検出精度テスト、多様な AI 機能タイプのテスト
+   - 検証: Bedrock 接続テスト、多様な AI 機能タイプのテスト
    - 所要時間: 4 日
 
 3. **DynamoDB コンテキスト履歴テーブル作成**
@@ -100,20 +100,13 @@
 
 5. **Bedrock Guardrails 設定**
 
-   - タスク: Guardrail 作成（Automated Reasoning、プロンプトインジェクション検出）
+   - タスク: Guardrail 作成（Automated Reasoning、有害コンテンツ検出）
    - 成果物: Guardrail 設定（YAML/JSON）
-   - 検証: ジェイルブレイクテスト、有害コンテンツフィルタテスト
+   - 検証: 有害コンテンツフィルタテスト
    - 所要時間: 3 日
 
-6. **プロンプトインジェクション検出強化**
-
-   - タスク: SlackEventHandler の基本パターン検出実装
-   - 成果物: 正規表現パターンリスト
-   - 検証: OWASP LLM Top 10 テストケース
-   - 所要時間: 2 日
-
-7. **CloudWatch Logs & Metrics 設定**
-   - タスク: 構造化 JSON ログ、カスタムメトリクス（署名検証失敗、PII 検出）
+6. **CloudWatch Logs & Metrics 設定**
+   - タスク: 構造化 JSON ログ、カスタムメトリクス（署名検証失敗）
    - 成果物: ログフィルタ、メトリクスフィルタ
    - 検証: ログ可視性確認、アラート動作確認
    - 所要時間: 2 日
@@ -128,9 +121,9 @@
 
 ### 優先度: 中（P2）
 
-8. **BDD テストスイート作成**
+7. **BDD テストスイート作成**
 
-   - タスク: Gherkin シナリオ実装（署名検証、プロンプトインジェクション、PII 検出）
+   - タスク: Gherkin シナリオ実装（署名検証）
    - 成果物: `tests/bdd/features/*.feature`、ステップ定義
    - 検証: CI/CD パイプラインで全シナリオ合格
    - 所要時間: 3 日
@@ -222,11 +215,6 @@
     - タスク: トークン数分析、モデル選択最適化
     - 目標: ユーザー単位コスト $10/月 → $7/月
     - 頻度: 月次レビュー
-
-21. **PII 検出精度向上**
-
-    - タスク: ML-based 検出への移行検討（AWS Comprehend 日本語対応待ち）
-    - 目標: Recall 85% → 95%
     - 頻度: 四半期ごと
 
 22. **Red Team テスト**
@@ -254,10 +242,8 @@
 
 | リスク                         | 影響 | 確率 | 緩和策                                             |
 | ------------------------------ | ---- | ---- | -------------------------------------------------- |
-| Bedrock Guardrails 精度不足    | 高   | 中   | SlackEventHandler の正規表現検出で多層防御         |
-| PII 検出 False Positive 多発   | 中   | 高   | パターン継続的チューニング、ユーザーフィードバック |
+| Bedrock Guardrails 精度不足    | 高   | 中   | Guardrails 設定の継続的な改善                      |
 | レイテンシ超過（>35 秒）       | 中   | 低   | タイムアウトエラーハンドリング、ユーザー通知       |
-| AWS Comprehend 日本語対応遅延  | 低   | 高   | 正規表現で当面運用、移行計画準備                   |
 | コスト超過（>$10/月/ユーザー） | 中   | 中   | トークン制限強化、Cost Explorer アラート           |
 
 ---

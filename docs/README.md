@@ -5,8 +5,8 @@
 
 **ドキュメントタイプ**: システムアーキテクチャ & 実装ガイド
 **ステータス**: 推奨
-**バージョン**: 2.5
-**最終更新日**: 2025-12-07
+**バージョン**: 3.0
+**最終更新日**: 2025-12-30
 **対象読者**: AI エンジニア、クラウドアーキテクト、DevOps チーム、プロダクトマネージャー
 
 ## エグゼクティブサマリー
@@ -24,29 +24,30 @@ Slack ワークスペース上で AI 機能を提供し、Slack ユーザーの�
 実装にあたり以下の技術的課題があります：
 
 - **タイムアウト制約**: Bedrock の 5〜30 秒の処理時間が Slack の 3 秒タイムアウトを超過
-- **セキュリティ要件**: 認証情報保護、プロンプトインジェクション防止、PII 保護が必要
+- **セキュリティ要件**: 認証情報保護が必要
 - **コスト管理**: モデル乱用によるコスト増大を防止
 - **ユーザー体験**: 即座のフィードバックと非ブロッキング処理が必要
 
 ### 提案（Solution）
 
-本ドキュメントは、**2 層 Lambda + Bedrock Guardrails + 非同期 response_url**アーキテクチャを定義します：
+本ドキュメントは、**2 層 Lambda + Execution API + Bedrock Converse API + スレッド機能**アーキテクチャを定義します：
 
 **機能実現の核心**:
 
-1. **非同期処理**: SlackEventHandler が即座に応答し、BedrockProcessor がバックグラウンドで Bedrock を呼び出して Slack API に投稿
-2. **スレッド返信機能**: ボットの応答はスレッド内に投稿され、会話の整理とコンテキスト保持が可能
-3. **スレッド履歴管理**: Slack API の `conversations.replies` を使用してスレッド内の会話履歴を取得し、Bedrock に渡すことで文脈を理解した応答を実現
-4. **コンテキスト履歴管理**: DynamoDB でユーザー単位の処理コンテキストを保持（会話、画像生成、コード生成など）
-5. **AI モデル**: AWS Bedrock の Foundation Model で高品質な出力を提供（モデル選択は要件に応じて決定）
-6. **セキュリティ保護**: 多層防御、Guardrails、PII 検出により安全に運用
+1. **非同期処理**: SlackEventHandler が即座に応答し、Execution API 経由で BedrockProcessor がバックグラウンドで Bedrock Converse API を呼び出して Slack API に投稿
+2. **スレッド返信機能**: ボットの応答はスレッド内に投稿され（`chat.postMessage` with `thread_ts`）、会話の整理とコンテキスト保持が可能
+3. **スレッド履歴管理**: Slack API の `conversations.replies` を使用してスレッド内の会話履歴を取得し、Bedrock Converse API に渡すことで文脈を理解した応答を実現
+4. **添付ファイル処理**: 画像（PNG, JPEG, GIF, WebP）とドキュメント（PDF, DOCX, CSV, XLSX, PPTX, TXT）を処理し、Bedrock Converse API のマルチモーダル機能で統合分析
+5. **Bedrock Converse API**: 統一インターフェース、マルチモーダル入力（テキスト+画像）、バイナリ画像データ（Base64 不要）
+6. **セキュリティ保護**: Two-Key Defense（Signing Secret + Existence Check）、多層防御により安全に運用
 
 **実装成果**:
 
-- **ユーザー体験**: 2 秒以内の初期応答、5〜30 秒で最終レスポンス
-- **機能性**: コンテキスト履歴を保持した連続的な処理が可能（会話、画像生成、コード生成など）
-- **セキュリティ**: プロンプトインジェクション検出率 ≥95%、PII 自動マスキング
-- **コスト管理**: トークン制限でユーザー単位$10/月以下
+- **ユーザー体験**: 2 秒以内の初期応答、5〜30 秒で最終レスポンス（スレッド内に表示）
+- **機能性**: スレッド履歴を保持した連続的な処理が可能（会話、画像生成、コード生成など）
+- **マルチモーダル**: テキストと画像を同時に処理し、統合された応答を提供
+- **セキュリティ**: Two-Key Defense（Signing Secret + Existence Check）により偽造リクエストを検出
+- **コスト管理**: Bedrock Converse API の効率的な使用でコスト最適化
 
 **適用範囲**: 本アーキテクチャは Slack-to-Bedrock に特化していますが、Microsoft Teams、Google Chat など他のチャットプラットフォームにも応用可能です。
 
@@ -63,8 +64,8 @@ Slack ワークスペース上で AI 機能を提供し、Slack ユーザーの�
    - Slack API 動的実在性確認（Bot Token） ← **2 鍵防御モデル**
    - ホワイトリスト認可（team_id, user_id, channel_id）
 4. **ExecutionApi**: IAM 認証による内部 API 保護
-5. **BedrockProcessor (プロセッサ)**: Bedrock Guardrails, PII 検出
-6. **Bedrock**: Automated Reasoning によるプロンプトインジェクション検出
+5. **BedrockProcessor (プロセッサ)**: Bedrock Guardrails
+6. **Bedrock**: Automated Reasoning
 
 **認証・認可の特徴**:
 
@@ -80,8 +81,6 @@ Slack ワークスペース上で AI 機能を提供し、Slack ユーザーの�
 | **署名シークレット漏洩** (T-01)                   | 2 鍵防御 (Signing Secret + Bot Token) | ✅ Existence Check で偽造リクエストを検出 |
 | **Bot Token 漏洩** (T-01)                         | HMAC SHA256 署名検証                  | ✅ 署名検証失敗で即座にブロック           |
 | **削除されたユーザー/チャンネルからのリクエスト** | Slack API 動的実在性確認              | ✅ 実在しないエンティティを即座に検出     |
-| **プロンプトインジェクション** (T-09)             | Bedrock Guardrails (L5-6)             | ✅ 99%精度で検出・ブロック                |
-| **PII 漏洩** (T-10)                               | PII 検出・自動マスキング (L5)         | ✅ 日本語対応、85%以上の精度              |
 | **DDoS / レート乱用** (T-07)                      | WAF レート制限 (L2)                   | ✅ ユーザー単位スロットリング             |
 | **リプレイアタック** (T-03)                       | タイムスタンプ検証 (L3)               | ✅ ±5 分以内の検証                        |
 | **権限昇格** (T-08)                               | IAM 最小権限 + 認可 (L3-4)            | ✅ ホワイトリスト + ロール分離            |
@@ -92,12 +91,15 @@ Slack ワークスペース上で AI 機能を提供し、Slack ユーザーの�
 
 - 署名検証レイテンシ: ≤50ms (p99)
 - Existence Check 精度: ≥95%
-- プロンプトインジェクション検出率: ≥95%
 - セキュリティインシデント: 0 件（目標）
 
 ---
 
 ## 📚 ドキュメント構成
+
+### 0. クイックスタート（Quick Start）
+
+- [**クイックスタートガイド**](./quickstart.md) - 5 分で始めるセットアップガイド、前提条件、デプロイ手順、トラブルシューティング
 
 ### I. 機能要件と設計（Requirements & Design）
 
@@ -109,6 +111,7 @@ Slack ワークスペース上で AI 機能を提供し、Slack ユーザーの�
 ### II. セキュリティ対策（Security）
 
 - [**セキュリティ要件**](./security/requirements.md) - 機能的・非機能的要件
+- [**認証・認可セキュリティ解説**](./security/authentication-authorization.md) - 認証・認可の詳細解説（Two-Key Defense、各レイヤーの説明、攻撃シナリオ）
 - [**脅威モデル**](./security/threat-model.md) - リスク分析とアクター
 - [**セキュリティ実装**](./security/implementation.md) - 多層防御、認証・認可、AI 保護
 
@@ -126,7 +129,6 @@ Slack ワークスペース上で AI 機能を提供し、Slack ユーザーの�
 
 - [**ADR インデックス**](./adr/README.md) - アーキテクチャ決定記録の一覧とテンプレート
   - [ADR-001: AWS Bedrock Foundation Model の採用](./adr/001-bedrock-foundation-model.md)
-  - [ADR-002: 正規表現ベース PII 検出の採用](./adr/002-regex-pii-detection.md)
   - [ADR-003: response_url 非同期パターンの採用](./adr/003-response-url-async.md)
   - [ADR-004: Slack API Existence Check の採用](./adr/004-slack-api-existence-check.md)
 
@@ -134,11 +136,17 @@ Slack ワークスペース上で AI 機能を提供し、Slack ユーザーの�
 
 - [**付録**](./appendix.md) - 用語集と参考資料
 
+### VII. 行政官向け資料
+
+- [**行政官向け説明資料**](./presentation-for-officials.md) - SAIGA の概要、背景、期待される効果、実装方針
+
 ---
 
 ## 🚀 クイックナビゲーション
 
-**初めての方**: [機能要件](./requirements/functional-requirements.md) → [アーキテクチャ概要](./architecture/overview.md) → [ユーザー体験](./architecture/user-experience.md)
+**🚀 今すぐ始める**: [クイックスタートガイド](./quickstart.md) - 5 分でセットアップ
+
+**初めての方**: [クイックスタートガイド](./quickstart.md) → [機能要件](./requirements/functional-requirements.md) → [アーキテクチャ概要](./architecture/overview.md) → [ユーザー体験](./architecture/user-experience.md)
 
 **セキュリティ担当者**: [セキュリティ要件](./security/requirements.md) → [脅威モデル](./security/threat-model.md) → [セキュリティ実装](./security/implementation.md)
 
@@ -146,14 +154,19 @@ Slack ワークスペース上で AI 機能を提供し、Slack ユーザーの�
 
 **運用担当者**: [Slack 側設定作業ガイド](./operations/slack-setup.md) → [テストと検証](./operations/testing.md) → [モニタリング](./operations/monitoring.md)
 
-**意思決定者**: [ADR インデックス](./adr/README.md) で技術選択の理由を確認
+**意思決定者・行政官**: [行政官向け説明資料](./presentation-for-officials.md) → [ADR インデックス](./adr/README.md) で技術選択の理由を確認
 
 ---
 
 ## 📝 ドキュメントメタデータ
 
 - **作成日**: 2025-12-01
-- **最終更新日**: 2025-12-07
-- **バージョン**: 2.5
-- **最新機能**: Two-Key Defense (Existence Check) 実装完了
+- **最終更新日**: 2025-12-30
+- **バージョン**: 3.0
+- **最新機能**:
+  - Bedrock Converse API への移行完了
+  - Execution API (API Gateway) 実装完了
+  - スレッド返信・履歴取得機能実装完了
+  - 添付ファイル処理（画像・ドキュメント）実装完了
+  - Two-Key Defense (Existence Check) 実装完了
 - **管理**: このドキュメントは slack-ai-app プロジェクトの一部として管理されています

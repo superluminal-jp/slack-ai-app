@@ -8,11 +8,8 @@ A: 用語集
 | **IAM SigV4**                               | AWS Signature Version 4、AWS API リクエストの暗号化署名プロトコル              |
 | **Two-Key Defense (2鍵防御)**              | Signing Secret と Bot Token の両方を使用した多層認証モデル。いずれか漏洩時も攻撃面を縮小 |
 | **Existence Check**                         | Slack API を使用して team_id, user_id, channel_id の実在性を動的に確認するセキュリティ機能 |
-| **プロンプトインジェクション**              | 悪意のある入力で AI のシステムプロンプトを上書きまたはジェイルブレイクする攻撃 |
-| **Bedrock Guardrails**                      | AWS Bedrock の安全機能。有害コンテンツ、PII、プロンプトインジェクションを検出  |
-| **PII (Personal Identifiable Information)** | 個人を識別できる情報（メール、電話、住所、名前など）                           |
+| **Bedrock Guardrails**                      | AWS Bedrock の安全機能。有害コンテンツを検出                                    |
 | **トークン**                                | LLM が処理するテキストの最小単位。日本語では約 4 文字 = 1 トークン             |
-| **ジェイルブレイク**                        | AI の安全制約を回避して不適切な応答を引き出す試み                              |
 | **fail-closed**                             | セキュリティ失敗時にリクエストを拒否する原則（セキュリティを可用性より優先）   |
 
 ---
