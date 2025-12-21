@@ -63,8 +63,48 @@
 
 SAIGA は、**行動心理学のナッジ理論**と**ネットワーク効果**という学術的に実証された仕組みを活用して、ガバメント AI の利用を促進します。
 
-- **ナッジ理論**: 行動心理学で実証された、強制せずに行動を自然に促す仕組み。既存のツール（Slack）を活用し、必要なアクションを最小限にすることで、利用への心理的ハードルを下げます。
-- **ネットワーク効果**: 経済学で実証された、利用者が増えるほど価値が高まる仕組み。職員間での利用事例の共有により、組織全体の知識が蓄積され、より良い使い方が発見されていきます。
+#### ナッジ理論（Nudge Theory）
+
+**定義と原理**:
+
+ナッジ理論は、リチャード・セイラーとキャス・サンスティーン（2008）によって提唱された行動経済学の概念です。**「選択アーキテクチャを変更することで、人々の行動を予測可能な方法で変えること」**と定義されています。強制や禁止ではなく、人々の意思決定を自然に良い方向に導く仕組みです。
+
+**主要な原則**:
+
+1. **優れたデフォルト設定**: 最も望ましい選択肢をデフォルトとして設定することで、人々がその選択を選びやすくする
+2. **必要なアクションの最小化**: 行動を起こすために必要なステップ数を減らし、心理的ハードルを下げる
+3. **フィードバックの提供**: 行動の結果を即座にフィードバックすることで、行動を強化する
+4. **予測可能性**: 人々がどのように反応するかを予測し、それに基づいて設計する
+
+**SAIGA への適用**:
+
+- **既存ツール（Slack）の活用**: 新たなツールを覚える必要がなく、既に慣れ親しんだ環境で AI アプリを利用できる（優れたデフォルト）
+- **アクション数の削減**: 3 ステップから 1 ステップへの簡素化により、利用への心理的ハードルを大幅に低下（必要なアクションの最小化）
+- **即座のフィードバック**: Slack 上で即座に結果を確認でき、利用の価値を実感できる（フィードバックの提供）
+
+#### ネットワーク効果（Network Effects）
+
+**定義と原理**:
+
+ネットワーク効果は、経済学で実証された現象で、**「利用者が増えるほど、ネットワーク全体の価値が高まる」**というものです。ロバート・メトカーフ（1993）は、ネットワークの価値はユーザー数の二乗に比例するという「メトカーフの法則」を提唱しました。
+
+**主要な原則**:
+
+1. **直接ネットワーク効果**: 利用者間の直接的な相互作用により、各利用者の価値が向上する
+2. **間接ネットワーク効果**: プラットフォームの利用者が増えることで、プラットフォーム全体の価値が向上し、それにより各利用者の価値も向上する
+3. **正のフィードバックループ**: 利用者が増える → 価値が高まる → さらに利用者が増える、という循環が生まれる
+
+**SAIGA への適用**:
+
+- **利用事例の共有**: 職員間で効果的な使い方を共有することで、組織全体の知識が蓄積される（直接ネットワーク効果）
+- **ベストプラクティスの形成**: 利用者が増えるほど、より良い使い方が発見され、組織全体の価値が高まる（間接ネットワーク効果）
+- **受動的な発見**: 他の職員の利用を見ることで、AI アプリの存在と機能を自然に知ることができ、利用が拡大する（正のフィードバックループ）
+
+**参考文献**:
+
+- Thaler, R. H., & Sunstein, C. R. (2008). *Nudge: Improving Decisions About Health, Wealth, and Happiness*. Yale University Press.
+- Metcalfe, R. M. (1993). Metcalfe's Law: A network becomes more valuable as it reaches more users. *Infoworld*, 15(40), 53-54.
+- Katz, M. L., & Shapiro, C. (1985). Network externalities, competition, and compatibility. *The American Economic Review*, 75(3), 424-440.
 
 #### コンセプト 1: 優れたデフォルトと多様な選択肢
 
@@ -390,6 +430,24 @@ SAIGA は、デジタル庁職員が日常業務の中で自然とガバメン�
 - 💡 **組織的な知識の蓄積とイノベーションの促進**: 効果的な使い方の共有により、組織全体のスキル向上と新しい活用方法の発見が促進される
 
 SAIGA により、デジタル庁は、ガバメント AI の効果的な活用を通じて、業務の効率化と品質向上を実現し、より良い行政サービスを提供できるようになります。
+
+---
+
+---
+
+## 参考文献
+
+### ナッジ理論（Nudge Theory）
+
+- Thaler, R. H., & Sunstein, C. R. (2008). *Nudge: Improving Decisions About Health, Wealth, and Happiness*. Yale University Press.
+- Sunstein, C. R. (2014). *Why Nudge? The Politics of Libertarian Paternalism*. Yale University Press.
+- Thaler, R. H. (2015). *Misbehaving: The Making of Behavioral Economics*. W. W. Norton & Company.
+
+### ネットワーク効果（Network Effects）
+
+- Metcalfe, R. M. (1993). Metcalfe's Law: A network becomes more valuable as it reaches more users. *Infoworld*, 15(40), 53-54.
+- Katz, M. L., & Shapiro, C. (1985). Network externalities, competition, and compatibility. *The American Economic Review*, 75(3), 424-440.
+- Shapiro, C., & Varian, H. R. (1998). *Information Rules: A Strategic Guide to the Network Economy*. Harvard Business Review Press.
 
 ---
 

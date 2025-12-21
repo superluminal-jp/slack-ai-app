@@ -59,8 +59,21 @@ Slack App Integration system for Government AI Applications
 
 **学術的裏付け**:
 
-- **ナッジ理論**: 行動心理学で実証された、強制せずに行動を自然に促す仕組み
-- **ネットワーク効果**: 経済学で実証された、利用者が増えるほど価値が高まる仕組み
+- **ナッジ理論** (Thaler & Sunstein, 2008): 行動心理学で実証された、強制せずに行動を自然に促す仕組み
+
+  - **定義**: 選択アーキテクチャを変更することで、人々の行動を予測可能な方法で変えること
+  - **主要原則**: 優れたデフォルト設定、必要なアクションの最小化、フィードバックの提供
+  - **SAIGA への適用**: 既存ツール（Slack）を活用し、アクション数を削減することで、利用への心理的ハードルを下げる
+
+- **ネットワーク効果** (Metcalfe's Law, 1993): 経済学で実証された、利用者が増えるほど価値が高まる仕組み
+  - **定義**: ネットワークの価値はユーザー数の二乗に比例する（Metcalfe's Law）
+  - **主要原則**: 直接ネットワーク効果（利用者間の直接的な相互作用）と間接ネットワーク効果（プラットフォーム価値の向上）
+  - **SAIGA への適用**: 職員間での利用事例の共有により、組織全体の知識が蓄積され、より良い使い方が発見される
+
+**参考文献**:
+
+- Thaler, R. H., & Sunstein, C. R. (2008). _Nudge: Improving Decisions About Health, Wealth, and Happiness_. Yale University Press.
+- Metcalfe, R. M. (1993). Metcalfe's Law: A network becomes more valuable as it reaches more users. _Infoworld_, 15(40), 53-54.
 
 ---
 
@@ -356,6 +369,19 @@ Slack App Integration system for Government AI Applications
 ## スライド 31: ご質問・ご意見
 
 **ご質問・ご意見をお待ちしております**
+
+---
+
+## スライド 32: 参考文献
+
+**ナッジ理論**:
+
+- Thaler, R. H., & Sunstein, C. R. (2008). _Nudge: Improving Decisions About Health, Wealth, and Happiness_. Yale University Press.
+
+**ネットワーク効果**:
+
+- Metcalfe, R. M. (1993). Metcalfe's Law: A network becomes more valuable as it reaches more users. _Infoworld_, 15(40), 53-54.
+- Katz, M. L., & Shapiro, C. (1985). Network externalities, competition, and compatibility. _The American Economic Review_, 75(3), 424-440.
 
 ---
 
