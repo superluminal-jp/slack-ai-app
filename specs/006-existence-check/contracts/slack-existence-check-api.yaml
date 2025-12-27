@@ -1,0 +1,261 @@
+openapi: 3.0.3
+info:
+  title: Slack Existence Check API
+  description: |
+    Internal API contract for Slack API Existence Check feature.
+    This document defines the Slack API methods used to verify entity existence
+    and the expected request/response formats.
+  version: 1.0.0
+  contact:
+    name: Slack AI App Team
+
+servers:
+  - url: https://slack.com/api
+    description: Slack API server
+
+paths:
+  /team.info:
+    get:
+      summary: Verify team (workspace) exists
+      description: |
+        Verifies that a team_id exists in Slack.
+        Used as part of Existence Check to validate workspace.
+      operationId: verifyTeam
+      parameters:
+        - name: team
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Slack team ID (e.g., "T01234567")
+          example: "T01234567"
+      responses:
+        '200':
+          description: Team exists
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  team:
+                    type: object
+                    description: Team metadata (not used for verification)
+        '404':
+          description: Team not found
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - error
+                properties:
+                  ok:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "team_not_found"
+      security:
+        - BotToken: []
+
+  /users.info:
+    get:
+      summary: Verify user exists
+      description: |
+        Verifies that a user_id exists in Slack workspace.
+        Used as part of Existence Check to validate user.
+      operationId: verifyUser
+      parameters:
+        - name: user
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Slack user ID (e.g., "U01234567")
+          example: "U01234567"
+      responses:
+        '200':
+          description: User exists
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  user:
+                    type: object
+                    description: User metadata (not used for verification)
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - error
+                properties:
+                  ok:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "user_not_found"
+      security:
+        - BotToken: []
+
+  /conversations.info:
+    get:
+      summary: Verify channel exists
+      description: |
+        Verifies that a channel_id exists in Slack workspace.
+        Used as part of Existence Check to validate channel.
+      operationId: verifyChannel
+      parameters:
+        - name: channel
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Slack channel ID (e.g., "C01234567")
+          example: "C01234567"
+      responses:
+        '200':
+          description: Channel exists
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  channel:
+                    type: object
+                    description: Channel metadata (not used for verification)
+        '404':
+          description: Channel not found
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - error
+                properties:
+                  ok:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "channel_not_found"
+      security:
+        - BotToken: []
+
+components:
+  securitySchemes:
+    BotToken:
+      type: http
+      scheme: bearer
+      bearerFormat: xoxb-...
+      description: |
+        Slack Bot Token (xoxb-...) used for authentication.
+        Token must have permissions to call team.info, users.info, conversations.info.
+
+  schemas:
+    ExistenceCheckRequest:
+      type: object
+      required:
+        - team_id
+        - user_id
+        - channel_id
+      properties:
+        team_id:
+          type: string
+          description: Slack team ID
+          example: "T01234567"
+        user_id:
+          type: string
+          description: Slack user ID
+          example: "U01234567"
+        channel_id:
+          type: string
+          description: Slack channel ID
+          example: "C01234567"
+        bot_token:
+          type: string
+          description: Slack Bot Token (xoxb-...)
+          format: password
+          example: "xoxb-EXAMPLE-TOKEN-REPLACE-WITH-ACTUAL-TOKEN"
+
+    ExistenceCheckResponse:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+          description: Whether all entities exist
+          example: true
+        verified_entities:
+          type: object
+          properties:
+            team_id:
+              type: boolean
+              example: true
+            user_id:
+              type: boolean
+              example: true
+            channel_id:
+              type: boolean
+              example: true
+        error:
+          type: string
+          description: Error message if verification failed
+          example: "Team not found: T01234567"
+
+    ExistenceCheckError:
+      type: object
+      required:
+        - error
+        - error_code
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+          example: "Team not found: T01234567"
+        error_code:
+          type: string
+          enum:
+            - team_not_found
+            - user_not_found
+            - channel_not_found
+            - rate_limit_exceeded
+            - timeout
+            - slack_api_error
+          example: "team_not_found"
+        team_id:
+          type: string
+          description: Team ID that failed verification (if applicable)
+          example: "T01234567"
+        user_id:
+          type: string
+          description: User ID that failed verification (if applicable)
+          example: "U01234567"
+        channel_id:
+          type: string
+          description: Channel ID that failed verification (if applicable)
+          example: "C01234567"
+

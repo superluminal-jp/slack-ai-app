@@ -1,0 +1,162 @@
+# Cross-Account API Contract
+# Feature: 010-cross-account-zones
+# Date: 2025-12-27
+
+openapi: "3.0.3"
+info:
+  title: Execution API (Cross-Account)
+  description: |
+    Execution Zone の API Gateway。Verification Zone からのリクエストを受け付け、
+    BedrockProcessor Lambda を呼び出す。クロスアカウント対応の IAM 認証を使用。
+  version: "2.0.0"
+
+servers:
+  - url: https://{apiId}.execute-api.{region}.amazonaws.com/prod
+    description: Execution API Gateway
+    variables:
+      apiId:
+        default: "xxxxxxxxxx"
+        description: API Gateway ID
+      region:
+        default: "ap-northeast-1"
+        description: AWS Region
+
+security:
+  - sigv4: []
+
+paths:
+  /execute:
+    post:
+      summary: Execute AI Processing
+      description: |
+        Verification Zone から呼び出される。Slack メッセージを処理し、
+        Bedrock API で AI 応答を生成して Slack に投稿する。
+      operationId: executeAiProcessing
+      security:
+        - sigv4: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExecuteRequest"
+      responses:
+        "200":
+          description: Processing accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecuteResponse"
+        "403":
+          description: Access denied (IAM authentication failed or resource policy rejected)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  securitySchemes:
+    sigv4:
+      type: apiKey
+      name: Authorization
+      in: header
+      description: |
+        AWS Signature Version 4 authentication.
+        Cross-account access requires:
+        1. API Gateway resource policy allowing the caller's account/role
+        2. Caller Lambda must have execute-api:Invoke permission
+
+  schemas:
+    ExecuteRequest:
+      type: object
+      required:
+        - channel
+        - text
+        - bot_token
+      properties:
+        channel:
+          type: string
+          description: Slack channel ID
+          example: "C1234567890"
+        text:
+          type: string
+          description: User message text
+          example: "What is the capital of Japan?"
+        bot_token:
+          type: string
+          description: Slack Bot Token for posting response
+          example: "xoxb-..."
+        thread_ts:
+          type: string
+          description: Thread timestamp for threaded replies
+          example: "1234567890.123456"
+        attachments:
+          type: array
+          description: File attachment metadata
+          items:
+            $ref: "#/components/schemas/Attachment"
+        correlation_id:
+          type: string
+          description: Correlation ID for request tracing
+          example: "uuid-1234-5678"
+
+    Attachment:
+      type: object
+      properties:
+        file_id:
+          type: string
+          description: Slack file ID
+        file_name:
+          type: string
+          description: Original file name
+        file_type:
+          type: string
+          description: File MIME type
+        url_private:
+          type: string
+          description: Private URL for file download
+
+    ExecuteResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [accepted, processing, completed]
+          description: Processing status
+        correlation_id:
+          type: string
+          description: Correlation ID for tracing
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error type
+        message:
+          type: string
+          description: Human-readable error message
+        correlation_id:
+          type: string
+          description: Correlation ID for debugging
+
+# Cross-Account Resource Policy Example (for documentation)
+x-resource-policy:
+  description: |
+    API Gateway resource policy to allow cross-account access.
+    This is configured in ExecutionStack based on VerificationStack's Lambda role ARN.
+  example:
+    Version: "2012-10-17"
+    Statement:
+      - Effect: Allow
+        Principal:
+          AWS:
+            - "arn:aws:iam::VERIFICATION_ACCOUNT_ID:role/VERIFICATION_LAMBDA_ROLE"
+        Action: "execute-api:Invoke"
+        Resource: "arn:aws:execute-api:REGION:EXECUTION_ACCOUNT_ID:API_ID/*"

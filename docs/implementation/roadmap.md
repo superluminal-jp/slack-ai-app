@@ -1,0 +1,265 @@
+# 実装ロードマップ
+
+## フェーズ 1: 基盤構築（Week 1-2）
+
+**目標**: セキュアな基本アーキテクチャを構築
+
+### 優先度: 必須（P0）
+
+1. **SlackEventHandler（検証層 Verification Layer）実装**
+
+   - タスク: HMAC SHA256 署名検証、認可ロジック、非同期呼び出し
+   - 成果物: `src/adapters/slack/verification_handler.py`
+   - 検証: 署名検証テスト、認可テスト
+   - 所要時間: 3 日
+
+2. **BedrockProcessor（実行層 Execution Layer）実装**
+
+   - タスク: Bedrock API 呼び出し、response_url 投稿
+   - 成果物: `src/application/execution_handler.py`
+   - 検証: Bedrock 接続テスト、多様な AI 機能タイプのテスト
+   - 所要時間: 4 日
+
+3. **DynamoDB コンテキスト履歴テーブル作成**
+
+   - タスク: テーブル設計（コンテキスト ID、タイムスタンプ）、KMS 暗号化設定
+   - 成果物: CloudFormation/Terraform テンプレート
+   - 検証: データ暗号化確認、アクセスパターンテスト
+   - 所要時間: 2 日
+
+4. **IAM ポリシー設定**
+   - タスク: SlackEventHandler、BedrockProcessor の最小権限ポリシー作成
+   - 成果物: IAM Policy JSON ファイル
+   - 検証: ポリシーバリデーター、権限過剰チェック
+   - 所要時間: 2 日
+
+**マイルストーン**: エンドツーエンドでリクエスト → レスポンスが動作
+
+---
+
+## フェーズ 1.5: 添付ファイル処理機能（Week 2-3）
+
+**目標**: Slack メッセージの添付ファイル（画像・ドキュメント）を処理し、AI 分析に含める
+
+### 優先度: 高（P1-P2）
+
+1. **添付ファイルメタデータ抽出** (SlackEventHandler)
+
+   - タスク: `event.files` から添付ファイル情報を抽出
+   - 成果物: `lambda/verification-stack/slack-event-handler/attachment_extractor.py`
+   - 検証: 各種ファイル形式のメタデータ抽出テスト
+   - 所要時間: 1 日
+
+2. **ファイルダウンロード機能** (BedrockProcessor)
+
+   - タスク: Slack CDN からファイルをダウンロード（ボットトークン認証）
+   - 成果物: `lambda/execution-stack/bedrock-processor/file_downloader.py`
+   - 検証: ダウンロード成功/失敗のテスト
+   - 所要時間: 2 日
+
+3. **ドキュメントテキスト抽出** (BedrockProcessor)
+
+   - タスク: PDF, DOCX, CSV, XLSX, PPTX, TXT からテキスト抽出
+   - 成果物: `lambda/execution-stack/bedrock-processor/document_extractor.py`
+   - 検証: 各形式のテキスト抽出テスト
+   - 所要時間: 3 日
+
+4. **画像処理統合** (BedrockProcessor)
+
+   - タスク: 画像を Bedrock 視覚機能に送信
+   - 成果物: `lambda/execution-stack/bedrock-processor/bedrock_client.py` の更新
+   - 検証: 画像分析のテスト
+   - 所要時間: 2 日
+
+5. **添付ファイル処理オーケストレーション** (BedrockProcessor)
+
+   - タスク: 複数添付ファイルの処理、エラーハンドリング
+   - 成果物: `lambda/execution-stack/bedrock-processor/attachment_processor.py`
+   - 検証: 複数ファイル、部分成功、エラーケースのテスト
+   - 所要時間: 2 日
+
+**マイルストーン**: 画像とドキュメントの添付ファイルが AI 分析に含まれる
+
+---
+
+## フェーズ 2: セキュリティ強化（Week 3-4）
+
+**目標**: AI 特有の脅威に対する保護を実装、Two-Key Defense モデルの実装
+
+### 優先度: 高（P1）
+
+4.5. **Slack API Existence Check (Two-Key Defense - 鍵2)**
+
+   - タスク: team_id, user_id, channel_id の実在性を Slack API で動的に確認
+   - 成果物: `lambda/verification-stack/slack-event-handler/existence_check.py`
+   - DynamoDB キャッシュテーブル作成（5分TTL）
+   - エラーハンドリング（タイムアウト、レート制限、リトライ）
+   - CloudWatch メトリクスとアラーム
+   - 検証: 偽造リクエスト拒否テスト、キャッシュ動作テスト
+   - 所要時間: 5 日
+
+5. **Bedrock Guardrails 設定**
+
+   - タスク: Guardrail 作成（Automated Reasoning、有害コンテンツ検出）
+   - 成果物: Guardrail 設定（YAML/JSON）
+   - 検証: 有害コンテンツフィルタテスト
+   - 所要時間: 3 日
+
+6. **CloudWatch Logs & Metrics 設定**
+   - タスク: 構造化 JSON ログ、カスタムメトリクス（署名検証失敗）
+   - 成果物: ログフィルタ、メトリクスフィルタ
+   - 検証: ログ可視性確認、アラート動作確認
+   - 所要時間: 2 日
+
+**マイルストーン**: セキュリティ監査で脆弱性ゼロ
+
+---
+
+## フェーズ 3: 品質保証（Week 4）
+
+**目標**: テスト自動化とドキュメント整備
+
+### 優先度: 中（P2）
+
+7. **BDD テストスイート作成**
+
+   - タスク: Gherkin シナリオ実装（署名検証）
+   - 成果物: `tests/bdd/features/*.feature`、ステップ定義
+   - 検証: CI/CD パイプラインで全シナリオ合格
+   - 所要時間: 3 日
+
+9. **パフォーマンステスト**
+
+   - タスク: 負荷テスト（100 同時リクエスト）、レイテンシ測定
+   - 成果物: パフォーマンステストレポート
+   - 検証: p95 レイテンシ ≤35 秒
+   - 所要時間: 2 日
+
+10. **運用ドキュメント作成**
+    - タスク: デプロイ手順、トラブルシューティングガイド
+    - 成果物: `docs/operations/deployment-guide.md`
+    - 検証: 第三者によるデプロイ再現
+    - 所要時間: 2 日
+
+**マイルストーン**: ステージング環境で本番同等の安定性
+
+---
+
+## フェーズ 4: 本番展開（Week 5）
+
+**目標**: 段階的ロールアウトと監視
+
+### 優先度: 必須（P0）
+
+11. **パイロット展開**
+
+    - タスク: 10 ユーザーでベータテスト
+    - 成果物: フィードバックレポート、バグ修正
+    - 検証: ユーザー満足度スコア ≥4/5
+    - 所要時間: 5 日
+
+12. **本番モニタリング設定**
+
+    - タスク: CloudWatch アラーム（エラー率、レイテンシ）、PagerDuty 統合
+    - 成果物: アラーム設定、オンコールローテーション
+    - 検証: テストアラートで通知確認
+    - 所要時間: 2 日
+
+13. **全社展開**
+    - タスク: 段階的ロールアウト（10% → 50% → 100%）
+    - 成果物: ロールアウト計画、ロールバック手順
+    - 検証: 各段階でエラー率 <0.5%
+    - 所要時間: 1 週間
+
+**マイルストーン**: 全ユーザーが利用可能、インシデントゼロ
+
+---
+
+## フェーズ 5: スレッド返信機能（Week 6）✅ 完了
+
+**目標**: スレッド返信と会話履歴保持機能の実装
+
+### 優先度: 高（P1）
+
+17. **スレッド返信機能実装** ✅ 完了
+
+    - タスク: Slack API `thread_ts` パラメータを使用したスレッド返信機能
+    - 成果物: `lambda/execution-stack/bedrock-processor/slack_poster.py`、`lambda/verification-stack/slack-event-handler/handler.py`
+    - 検証: スレッド返信テスト、エラーハンドリングテスト
+    - 完了日: 2025-12-06
+
+18. **スレッド履歴取得機能実装** ✅ 完了
+
+    - タスク: Slack API `conversations.replies` を使用したスレッド履歴取得
+    - 成果物: `lambda/execution-stack/bedrock-processor/thread_history.py`
+    - 検証: スレッド履歴取得テスト、会話コンテキストテスト
+    - 完了日: 2025-12-06
+
+19. **Slack OAuth スコープ更新** ✅ 完了
+
+    - タスク: `channels:history`、`groups:history` スコープの追加
+    - 成果物: `docs/operations/slack-setup.md`、`docs/slack-app-manifest.yaml`
+    - 検証: スコープ設定確認、再インストール確認
+    - 完了日: 2025-12-06
+
+**マイルストーン**: スレッド返信と会話履歴保持が正常に動作 ✅
+
+---
+
+## 継続的改善（Week 7 以降）
+
+### 優先度: 低（P3）
+
+20. **コスト最適化**
+
+    - タスク: トークン数分析、モデル選択最適化
+    - 目標: ユーザー単位コスト $10/月 → $7/月
+    - 頻度: 月次レビュー
+    - 頻度: 四半期ごと
+
+22. **Red Team テスト**
+    - タスク: 外部セキュリティ専門家によるペネトレーションテスト
+    - 成果物: 脆弱性レポート、修正計画
+    - 頻度: 四半期ごと
+
+---
+
+## リソース配分
+
+| 役割                       | 人数 | 期間     | 主なタスク                       |
+| -------------------------- | ---- | -------- | -------------------------------- |
+| **バックエンドエンジニア** | 2 名 | Week 1-5 | Lambda 実装、DynamoDB 設計       |
+| **セキュリティエンジニア** | 1 名 | Week 2-5 | Guardrails 設定、脆弱性テスト    |
+| **QA エンジニア**          | 1 名 | Week 3-5 | BDD テスト、パフォーマンステスト |
+| **DevOps エンジニア**      | 1 名 | Week 1-5 | CI/CD、モニタリング、デプロイ    |
+| **プロダクトマネージャー** | 1 名 | Week 1-5 | 要件管理、ステークホルダー調整   |
+
+**総工数**: 約 30 人日/週 × 5 週 = 150 人日
+
+---
+
+## リスクと緩和策
+
+| リスク                         | 影響 | 確率 | 緩和策                                             |
+| ------------------------------ | ---- | ---- | -------------------------------------------------- |
+| Bedrock Guardrails 精度不足    | 高   | 中   | Guardrails 設定の継続的な改善                      |
+| レイテンシ超過（>35 秒）       | 中   | 低   | タイムアウトエラーハンドリング、ユーザー通知       |
+| コスト超過（>$10/月/ユーザー） | 中   | 中   | トークン制限強化、Cost Explorer アラート           |
+
+---
+
+**ドキュメントバージョン**: 2.3
+**最終レビュー**: 2025-12-06
+**次回レビュー**: 2026-02-28
+**管理者**: セキュリティアーキテクチャチーム + AI 運用チーム
+
+---
+
+---
+
+## 関連ドキュメント
+
+- [機能要件](../reference/requirements/functional-requirements.md) - ビジネス要件と機能仕様
+- [アーキテクチャ概要](../reference/architecture/overview.md) - システム全体像
+- [セキュリティ要件](../reference/security/requirements.md) - セキュリティ実装要件
+- [テストと検証](../reference/operations/testing.md) - テスト戦略

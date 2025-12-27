@@ -1,0 +1,152 @@
+# Document Templates Contract
+# Defines the structure and format for each document type
+
+version: "1.0.0"
+date: "2025-12-27"
+feature: "009-docs-reorganization"
+
+# Document Type Definitions
+document_types:
+  tutorial:
+    description: "Learning-oriented, step-by-step guides"
+    required_sections:
+      - title: "Overview"
+        description: "What the reader will learn"
+      - title: "Prerequisites"
+        description: "Required knowledge and setup"
+      - title: "Steps"
+        description: "Numbered steps with examples"
+      - title: "Summary"
+        description: "What was accomplished"
+    optional_sections:
+      - title: "Next Steps"
+        description: "Links to related tutorials"
+    metadata:
+      - type: "Tutorial"
+      - audience: ["Developer"]
+      - estimated_time: "minutes"
+
+  how_to:
+    description: "Task-oriented, problem-solving guides"
+    required_sections:
+      - title: "Goal"
+        description: "What problem this solves"
+      - title: "Prerequisites"
+        description: "Required setup"
+      - title: "Steps"
+        description: "Actionable steps"
+      - title: "Verification"
+        description: "How to verify success"
+    optional_sections:
+      - title: "Troubleshooting"
+        description: "Common issues and solutions"
+    metadata:
+      - type: "How-to"
+      - audience: ["Developer", "Operations"]
+
+  reference:
+    description: "Information-oriented, accurate documentation"
+    required_sections:
+      - title: "Overview"
+        description: "What this document covers"
+      - title: "Content"
+        description: "Main reference content"
+    optional_sections:
+      - title: "Related"
+        description: "Links to related references"
+    metadata:
+      - type: "Reference"
+      - audience: ["Developer", "Security", "Operations"]
+
+  explanation:
+    description: "Understanding-oriented, background documentation"
+    required_sections:
+      - title: "Context"
+        description: "Background and situation"
+      - title: "Explanation"
+        description: "Detailed explanation"
+      - title: "Rationale"
+        description: "Why this approach was chosen"
+    optional_sections:
+      - title: "Alternatives"
+        description: "Other options considered"
+      - title: "References"
+        description: "Academic or industry references"
+    metadata:
+      - type: "Explanation"
+      - audience: ["Developer", "DecisionMaker"]
+
+# Standard File Templates
+standard_files:
+  contributing:
+    path: "CONTRIBUTING.md"
+    sections:
+      - "Welcome"
+      - "Code of Conduct"
+      - "How to Contribute"
+      - "Development Setup"
+      - "Pull Request Process"
+      - "Style Guidelines"
+
+  changelog:
+    path: "CHANGELOG.md"
+    format: "Keep a Changelog"
+    sections:
+      - "Unreleased"
+      - "[Version] - Date"
+      - "Added"
+      - "Changed"
+      - "Deprecated"
+      - "Removed"
+      - "Fixed"
+      - "Security"
+
+  security:
+    path: "SECURITY.md"
+    sections:
+      - "Security Policy"
+      - "Supported Versions"
+      - "Reporting a Vulnerability"
+      - "Response Process"
+
+# Navigation Hub Template
+navigation_hub:
+  path: "docs/README.md"
+  max_lines: 100
+  required_sections:
+    - title: "Quick Navigation"
+      description: "Prominent links to most common destinations"
+    - title: "For Different Audiences"
+      description: "Paths for Developer, Security, Operations, DecisionMaker"
+    - title: "Document Index"
+      description: "Categorized list of all documents"
+  excluded_content:
+    - "Detailed explanations"
+    - "Theoretical foundations"
+    - "Code examples"
+    - "Long prose sections"
+
+# Root README Template
+root_readme:
+  path: "README.md"
+  max_lines: 200
+  required_sections:
+    - title: "Project Title"
+      description: "Clear, descriptive title"
+    - title: "Overview"
+      description: "1-2 paragraph project description"
+    - title: "Key Features"
+      description: "Categorized feature list"
+    - title: "Quick Start"
+      description: "Link to quickstart with brief steps"
+    - title: "Documentation"
+      description: "Links to docs/"
+    - title: "Contributing"
+      description: "Link to CONTRIBUTING.md"
+    - title: "License"
+      description: "License information"
+  excluded_content:
+    - "Detailed theoretical foundations"
+    - "Complete architecture diagrams"
+    - "Full API documentation"
+

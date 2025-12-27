@@ -1,0 +1,139 @@
+openapi: 3.0.3
+info:
+  title: Whitelist Authorization API
+  description: |
+    Internal API contract for Whitelist Authorization feature.
+    This document defines the internal function interfaces for whitelist authorization
+    within the SlackEventHandler Lambda function.
+  version: 1.0.0
+  contact:
+    name: Slack AI App Team
+
+servers:
+  - url: lambda://slack-event-handler
+    description: SlackEventHandler Lambda function (internal)
+
+paths:
+  /authorize:
+    post:
+      summary: Authorize request using whitelist
+      description: |
+        Checks if team_id, user_id, and channel_id are all present in the whitelist.
+        Returns authorization result with detailed information about which entities
+        are authorized or unauthorized.
+      operationId: authorizeRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthorizationRequest'
+      responses:
+        '200':
+          description: Authorization check completed (authorized or unauthorized)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthorizationResponse'
+        '500':
+          description: Internal server error (configuration load failure)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthorizationError'
+
+components:
+  schemas:
+    AuthorizationRequest:
+      type: object
+      required:
+        - team_id
+        - user_id
+        - channel_id
+      properties:
+        team_id:
+          type: string
+          description: Slack team ID
+          example: "T01234567"
+        user_id:
+          type: string
+          description: Slack user ID
+          example: "U01234567"
+        channel_id:
+          type: string
+          description: Slack channel ID
+          example: "C01234567"
+
+    AuthorizationResponse:
+      type: object
+      required:
+        - authorized
+        - timestamp
+      properties:
+        authorized:
+          type: boolean
+          description: Whether the request is authorized
+          example: true
+        team_id:
+          type: string
+          description: Team ID that was checked
+          example: "T01234567"
+        user_id:
+          type: string
+          description: User ID that was checked
+          example: "U01234567"
+        channel_id:
+          type: string
+          description: Channel ID that was checked
+          example: "C01234567"
+        unauthorized_entities:
+          type: array
+          items:
+            type: string
+            enum:
+              - team_id
+              - user_id
+              - channel_id
+          description: List of entity types that were not authorized (only present if authorized is false)
+          example: ["team_id", "user_id"]
+        timestamp:
+          type: integer
+          format: int64
+          description: Unix timestamp when authorization check was performed
+          example: 1706630400
+
+    AuthorizationError:
+      type: object
+      required:
+        - error
+        - error_code
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+          example: "Failed to load whitelist configuration from DynamoDB"
+        error_code:
+          type: string
+          enum:
+            - config_load_failed
+            - dynamodb_error
+            - secrets_manager_error
+            - invalid_config_format
+            - whitelist_empty
+          description: Error code indicating the type of error
+          example: "config_load_failed"
+        timestamp:
+          type: integer
+          format: int64
+          description: Unix timestamp when error occurred
+          example: 1706630400
+
+  securitySchemes:
+    LambdaExecutionRole:
+      type: apiKey
+      in: header
+      name: X-Amz-Security-Token
+      description: |
+        IAM execution role credentials for Lambda function.
+        Used for accessing DynamoDB and Secrets Manager.
+
