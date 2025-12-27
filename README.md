@@ -14,7 +14,7 @@ A serverless Slack bot that integrates with Amazon Bedrock to provide AI-generat
 - Node.js 18+ and Python 3.11+
 - Slack workspace admin permissions
 
-### Deploy
+### Deploy (Single Stack - Legacy)
 
 ```bash
 # 1. Set credentials (first deployment only)
@@ -27,7 +27,27 @@ cd ../lambda/verification-stack/slack-event-handler && pip install -r requiremen
 cd ../../execution-stack/bedrock-processor && pip install -r requirements.txt -t .
 
 # 3. Deploy
-cd ../../cdk && cdk deploy
+cd ../../cdk && cdk deploy --context deploymentMode=single
+```
+
+### Deploy (Split Stack - Recommended)
+
+For cross-account ready deployment, see [CDK README](cdk/README.md#2-split-stack-mode-recommended) for detailed instructions.
+
+**Quick start with deployment script:**
+
+```bash
+# 1. Create .env file with credentials
+cat > .env << EOF
+SLACK_BOT_TOKEN=xoxb-your-bot-token
+SLACK_SIGNING_SECRET=your-signing-secret
+EOF
+
+# 2. Update cdk.json with account IDs
+# Add "verificationAccountId" and "executionAccountId" to context
+
+# 3. Run deployment script
+cd scripts && ./deploy-split-stacks.sh
 ```
 
 **⚠️ Important**: Configure whitelist after deployment. See [Quick Start Guide](docs/quickstart.md).

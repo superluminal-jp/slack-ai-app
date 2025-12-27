@@ -25,62 +25,94 @@ Two independent stacks that can be deployed to separate accounts:
 - **ExecutionStack**: BedrockProcessor + API Gateway
 - **VerificationStack**: SlackEventHandler + DynamoDB + Secrets
 
-#### Step 1: Update cdk.json
+#### Step 1: Configure Environment Variables
+
+Create a `.env` file in the project root:
+
+```bash
+# From project root
+cat > .env << EOF
+SLACK_BOT_TOKEN=xoxb-your-bot-token
+SLACK_SIGNING_SECRET=your-signing-secret
+EOF
+```
+
+#### Step 2: Update cdk.json
+
+Add account IDs to `cdk.json`:
 
 ```json
 {
   "context": {
     "deploymentMode": "split",
     "verificationStackName": "SlackAI-Verification",
-    "executionStackName": "SlackAI-Execution"
+    "executionStackName": "SlackAI-Execution",
+    "verificationAccountId": "YOUR_AWS_ACCOUNT_ID",
+    "executionAccountId": "YOUR_AWS_ACCOUNT_ID"
   }
 }
 ```
 
-#### Step 2: Deploy Execution Stack
+**Note**: Get your account ID with: `aws sts get-caller-identity --query Account --output text`
+
+#### Step 3: Deploy Execution Stack
 
 ```bash
-export SLACK_BOT_TOKEN="xoxb-your-bot-token"
-export SLACK_SIGNING_SECRET="your-signing-secret"
+# Load environment variables from .env
+set -a && source ../.env && set +a
 
-npx cdk deploy SlackAI-Execution
+# Deploy Execution Stack
+npx cdk deploy SlackAI-Execution \
+  --context deploymentMode=split \
+  --profile YOUR_PROFILE \
+  --require-approval never
 ```
 
 Note the `ExecutionApiUrl` from the outputs.
 
-#### Step 3: Configure and Deploy Verification Stack
+#### Step 4: Deploy Verification Stack
 
-Update `cdk.json`:
-```json
-{
-  "context": {
-    "executionApiUrl": "https://xxx.execute-api.ap-northeast-1.amazonaws.com/prod/"
-  }
-}
-```
-
-Deploy:
 ```bash
-npx cdk deploy SlackAI-Verification
+# Load environment variables from .env
+set -a && source ../.env && set +a
+
+# Deploy Verification Stack with ExecutionApiUrl
+npx cdk deploy SlackAI-Verification \
+  --context deploymentMode=split \
+  --context executionApiUrl=<ExecutionApiUrl from step 3> \
+  --profile YOUR_PROFILE \
+  --require-approval never
 ```
 
 Note the `VerificationLambdaRoleArn` from the outputs.
 
-#### Step 4: Update Execution Stack with Resource Policy
+#### Step 5: Update Execution Stack with Resource Policy
 
-Update `cdk.json`:
-```json
-{
-  "context": {
-    "verificationLambdaRoleArn": "arn:aws:iam::123456789012:role/..."
-  }
-}
-```
-
-Re-deploy:
 ```bash
-npx cdk deploy SlackAI-Execution
+# Update Execution Stack to add API Gateway resource policy
+npx cdk deploy SlackAI-Execution \
+  --context deploymentMode=split \
+  --context verificationLambdaRoleArn=<VerificationLambdaRoleArn from step 4> \
+  --context verificationAccountId=YOUR_AWS_ACCOUNT_ID \
+  --profile YOUR_PROFILE \
+  --require-approval never
 ```
+
+#### Alternative: Use Deployment Script
+
+For automated 3-phase deployment, use the provided script:
+
+```bash
+# From project root
+cd scripts
+chmod +x deploy-split-stacks.sh
+./deploy-split-stacks.sh
+```
+
+This script automatically:
+1. Deploys Execution Stack
+2. Deploys Verification Stack with ExecutionApiUrl
+3. Updates Execution Stack with VerificationLambdaRoleArn
 
 ### Cross-Account Deployment (Future)
 

@@ -25,37 +25,83 @@ aws cloudformation describe-stacks \
 cat backup-outputs.json | jq -r '.[] | select(.OutputKey=="SlackEventHandlerUrl") | .OutputValue'
 ```
 
-### Step 2: cdk.json を更新
+### Step 2: 環境変数の設定
+
+`.env` ファイルを作成または確認します：
+
+```bash
+# プロジェクトルートに .env ファイルを作成
+cat > .env << EOF
+SLACK_BOT_TOKEN=xoxb-your-bot-token
+SLACK_SIGNING_SECRET=your-signing-secret
+EOF
+```
+
+### Step 3: cdk.json を更新
 
 ```json
 {
   "context": {
     "deploymentMode": "split",
     "verificationStackName": "SlackAI-Verification",
-    "executionStackName": "SlackAI-Execution"
+    "executionStackName": "SlackAI-Execution",
+    "verificationAccountId": "YOUR_AWS_ACCOUNT_ID",
+    "executionAccountId": "YOUR_AWS_ACCOUNT_ID"
   }
 }
 ```
 
-### Step 3: 新しいスタックをデプロイ
+**注意**: アカウントIDは `aws sts get-caller-identity --query Account --output text` で確認できます。
+
+### Step 4: 新しいスタックをデプロイ
+
+#### 4.1 Execution Stack をデプロイ
 
 ```bash
 cd cdk
 
-# Execution Stack をデプロイ
-npx cdk deploy SlackAI-Execution
+# .env ファイルから環境変数を読み込んでデプロイ
+set -a && source ../.env && set +a
+npx cdk deploy SlackAI-Execution \
+  --context deploymentMode=split \
+  --profile YOUR_PROFILE \
+  --require-approval never
+```
 
-# API URL を取得して cdk.json に設定
-# "executionApiUrl": "<API URL from output>"
+出力から `ExecutionApiUrl` を記録します。
 
-# Verification Stack をデプロイ
-npx cdk deploy SlackAI-Verification
+#### 4.2 Verification Stack をデプロイ
 
-# Lambda Role ARN を取得して cdk.json に設定
-# "verificationLambdaRoleArn": "<Role ARN from output>"
+```bash
+# ExecutionApiUrl をコンテキストとして渡してデプロイ
+set -a && source ../.env && set +a
+npx cdk deploy SlackAI-Verification \
+  --context deploymentMode=split \
+  --context executionApiUrl=<ExecutionApiUrl from step 4.1> \
+  --profile YOUR_PROFILE \
+  --require-approval never
+```
 
-# Execution Stack を更新（リソースポリシー追加）
-npx cdk deploy SlackAI-Execution
+出力から `VerificationLambdaRoleArn` を記録します。
+
+#### 4.3 Execution Stack を更新（リソースポリシー追加）
+
+```bash
+# VerificationLambdaRoleArn をコンテキストとして渡して再デプロイ
+npx cdk deploy SlackAI-Execution \
+  --context deploymentMode=split \
+  --context verificationLambdaRoleArn=<VerificationLambdaRoleArn from step 4.2> \
+  --context verificationAccountId=YOUR_AWS_ACCOUNT_ID \
+  --profile YOUR_PROFILE \
+  --require-approval never
+```
+
+**または**、`scripts/deploy-split-stacks.sh` スクリプトを使用して3段階のデプロイを自動化できます：
+
+```bash
+cd scripts
+chmod +x deploy-split-stacks.sh
+./deploy-split-stacks.sh
 ```
 
 ### Step 4: Slack アプリの設定を更新
@@ -72,13 +118,41 @@ npx cdk deploy SlackAI-Execution
 2. 正常に応答が返ることを確認
 3. CloudWatch Logs でエラーがないことを確認
 
-### Step 6: 旧スタックの削除（オプション）
+### Step 6: 旧スタックの削除
 
-動作確認が完了したら、旧スタックを削除できます：
+**重要**: 新しいスタックが正常に動作することを確認してから、旧スタックを削除してください。
+
+#### 6.1 リソース名の競合について
+
+新しいスタックは、DynamoDB テーブル名にスタック名プレフィックスを使用しているため、既存の `SlackBedrockStack` とリソース名の競合はありません。ただし、以下の点に注意してください：
+
+- **DynamoDB テーブル**: 新しいスタックは `SlackAI-Verification-*` という名前のテーブルを作成します
+- **Secrets Manager**: 新しいスタックは `SlackAI-Verification/slack/*` という名前のシークレットを作成します
+- **CloudWatch アラーム**: 新しいスタックは `SlackAI-Verification-*` という名前のアラームを作成します
+
+#### 6.2 削除手順
 
 ```bash
 # 注意: これにより旧スタックのすべてのリソースが削除されます
-npx cdk destroy SlackBedrockStack
+# DynamoDB テーブルのデータも削除されるため、必要に応じてバックアップを取得してください
+
+aws cloudformation delete-stack \
+  --stack-name SlackBedrockStack \
+  --profile YOUR_PROFILE \
+  --region ap-northeast-1
+
+# 削除の完了を待機
+aws cloudformation wait stack-delete-complete \
+  --stack-name SlackBedrockStack \
+  --profile YOUR_PROFILE \
+  --region ap-northeast-1
+```
+
+**または** CDK を使用：
+
+```bash
+cd cdk
+npx cdk destroy SlackBedrockStack --profile YOUR_PROFILE
 ```
 
 ## ロールバック手順
@@ -143,6 +217,27 @@ npx cdk destroy SlackAI-Execution
 **解決策**:
 1. `executionApiUrl` が正しいことを確認
 2. IAM 権限を確認
+
+### DynamoDB テーブル名の競合エラー
+
+**原因**: 既存の `SlackBedrockStack` が同じテーブル名を使用している
+
+**エラーメッセージ**: `slack-workspace-tokens already exists in stack SlackBedrockStack`
+
+**解決策**:
+1. 新しいスタックは自動的にスタック名プレフィックス（`SlackAI-Verification-*`）を使用します
+2. このエラーが発生する場合は、既存の `SlackBedrockStack` を削除するか、新しいスタックのコードが最新であることを確認してください
+3. コードを最新化: `git pull` してから再デプロイ
+
+### API Gateway リソースポリシーエラー
+
+**原因**: Execution Stack の API Gateway にリソースポリシーが設定されていない
+
+**症状**: Verification Stack の Lambda が Execution API を呼び出せない（403 Forbidden）
+
+**解決策**:
+1. `VerificationLambdaRoleArn` を取得: `aws cloudformation describe-stacks --stack-name SlackAI-Verification --query 'Stacks[0].Outputs[?OutputKey==`VerificationLambdaRoleArn`].OutputValue' --output text`
+2. Execution Stack を更新: `npx cdk deploy SlackAI-Execution --context verificationLambdaRoleArn=<ARN> --context verificationAccountId=<ACCOUNT_ID>`
 
 ## 関連ドキュメント
 
