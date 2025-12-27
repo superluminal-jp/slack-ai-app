@@ -1,5 +1,7 @@
 # Slack Bedrock MVP
 
+> **日本語版**: [README.ja.md](README.ja.md)
+
 A minimal Slack bot that integrates with Amazon Bedrock to provide AI-generated responses. This MVP demonstrates basic connectivity between Slack and AWS Bedrock, prioritizing functionality over production-grade features.
 
 ## Table of Contents
