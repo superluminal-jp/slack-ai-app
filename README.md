@@ -64,8 +64,64 @@ cd scripts && ./deploy-split-stacks.sh
 The system processes requests through two independent zones that can be deployed separately for enhanced security:
 
 ```
-Slack → Verification Zone → Execution Zone → Slack
-         (Validates)         (AI Processing)
+┌─────────────────────────────────────────────────────────────┐
+│ Slack Workspace                                              │
+│ User: @bot question or /ask "question"                      │
+└────────────────────┬────────────────────────────────────────┘
+                     │ [1] HTTPS POST
+                     │ X-Slack-Signature (HMAC SHA256)
+                     ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Verification Zone                                            │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ SlackEventHandler (Function URL)                        │ │
+│ │ - Signature verification (Key 1)                       │ │
+│ │ - Existence Check via Slack API (Key 2)                │ │
+│ │ - Whitelist authorization                             │ │
+│ │ - Event deduplication                                  │ │
+│ │ [2] → Immediate response "Processing..." (<3 sec)      │ │
+│ │ [3] → Calls Execution API (IAM authenticated)          │ │
+│ └──────────────────────┬──────────────────────────────────┘ │
+└────────────────────────┼────────────────────────────────────┘
+                         │ [3] API Gateway (IAM auth)
+                         │ POST /execute
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Execution Zone                                               │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ Execution API (API Gateway)                             │ │
+│ │ - IAM authentication only                                │ │
+│ │ - Resource policy: Verification Lambda role only        │ │
+│ └──────────────────────┬──────────────────────────────────┘ │
+│                        │                                     │
+│ ┌─────────────────────▼──────────────────────────────────┐ │
+│ │ BedrockProcessor                                        │ │
+│ │ - Calls Amazon Bedrock Converse API                    │ │
+│ │ - Manages thread history                                │ │
+│ │ - Processes attachments (images, documents)            │ │
+│ │ [4] → Posts response to Slack (thread reply)           │ │
+│ └────────────────────┬───────────────────────────────────┘ │
+│                      │ [4] HTTPS POST to Slack API         │
+│                      ↓                                       │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ AWS Bedrock Converse API                                 │ │
+│ │ - Foundation Model (Claude, Nova, etc.)                │ │
+│ │ - Multimodal input (text + images)                      │ │
+│ └─────────────────────────────────────────────────────────┘ │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ↓
+┌──────────────────────────────────────────────────────────────┐
+│ Slack Workspace                                               │
+│ [5] AI response displayed in thread (5-30 seconds)          │
+└──────────────────────────────────────────────────────────────┘
+
+Flow:
+[1] User sends request via Slack
+[2] Verification Zone responds immediately (<3 seconds)
+[3] Verification Zone calls Execution API (IAM authenticated)
+[4] Execution Zone processes with Bedrock and posts to Slack
+[5] Response appears in Slack thread (5-30 seconds)
 ```
 
 **Verification Zone** ensures requests are legitimate:
