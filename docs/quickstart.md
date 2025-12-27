@@ -80,24 +80,38 @@ cd ../../execution-stack/bedrock-processor
 pip install -r requirements.txt
 ```
 
-### ステップ 3: 環境変数の設定
+### ステップ 3: 設定ファイルの作成
 
-プロジェクトルートに `.env` ファイルを作成（または環境変数を設定）：
+CDK設定ファイルを作成して、Slack認証情報とAWSアカウントIDを設定します：
 
 ```bash
-# Slack 認証情報（必須）
-export SLACK_SIGNING_SECRET="your-slack-signing-secret"
-export SLACK_BOT_TOKEN="xoxb-your-bot-token"
+# 開発環境用の設定ファイルを作成
+cp cdk/cdk.config.json.example cdk/cdk.config.dev.json
 
-# AWS 設定（オプション、AWS CLI の設定を使用する場合は不要）
-export AWS_REGION="ap-northeast-1"
-export AWS_ACCOUNT_ID="your-account-id"
-
-# Bedrock モデル設定（オプション、デフォルト: amazon.nova-pro-v1:0）
-export BEDROCK_MODEL_ID="amazon.nova-pro-v1:0"
+# 本番環境用の設定ファイルを作成（本番環境を使用する場合）
+cp cdk/cdk.config.json.example cdk/cdk.config.prod.json
 ```
 
-**重要**: `.env` ファイルは Git にコミットしないでください（`.gitignore` に含まれています）。
+`cdk/cdk.config.dev.json`（または`cdk/cdk.config.prod.json`）を編集して、以下を設定：
+
+```json
+{
+  "awsRegion": "ap-northeast-1",
+  "bedrockModelId": "jp.anthropic.claude-haiku-4-5-20251001-v1:0",
+  "deploymentMode": "split",
+  "deploymentEnv": "dev",
+  "verificationStackName": "SlackAI-Verification",
+  "executionStackName": "SlackAI-Execution",
+  "verificationAccountId": "YOUR_AWS_ACCOUNT_ID",
+  "executionAccountId": "YOUR_AWS_ACCOUNT_ID",
+  "slackBotToken": "xoxb-your-bot-token",
+  "slackSigningSecret": "your-signing-secret"
+}
+```
+
+**重要**: 
+- 設定ファイルには機密情報が含まれるため、Gitにコミットしないでください（`.gitignore`に含まれています）
+- 環境変数（`SLACK_BOT_TOKEN`、`SLACK_SIGNING_SECRET`）として設定することも可能ですが、設定ファイルの方が管理しやすくなります
 
 ### ステップ 4: CDK ブートストラップ（初回のみ）
 
@@ -185,8 +199,8 @@ cdk bootstrap aws://123456789012/ap-northeast-1
 
 ```bash
 # プロジェクトルートから
-# .env ファイルから環境変数を読み込む
-set -a && source .env && set +a
+# デプロイ環境を設定（dev または prod）
+export DEPLOYMENT_ENV=dev  # 本番環境の場合は 'prod' を使用
 
 # AWS プロファイルを使用する場合（オプション）
 export AWS_PROFILE=your-profile-name
@@ -196,12 +210,14 @@ chmod +x scripts/deploy-split-stacks.sh
 ./scripts/deploy-split-stacks.sh
 ```
 
+**注意**: デプロイスクリプトは`cdk.config.{env}.json`ファイルから設定を自動的に読み込みます。環境変数（`SLACK_BOT_TOKEN`、`SLACK_SIGNING_SECRET`）もサポートされていますが、設定ファイルの方が推奨されます。
+
 **注意**: デプロイスクリプトは自動的に以下を実行します：
 1. Execution Stack をデプロイ
-2. ExecutionApiUrl を取得して cdk.json を更新
+2. ExecutionApiUrl を取得して `cdk.config.{env}.json` を更新
 3. Verification Stack をデプロイ
-4. VerificationLambdaRoleArn を取得して cdk.json を更新
-5. Execution Stack を更新（リソースポリシー追加）
+4. VerificationLambdaRoleArn と ExecutionResponseQueueUrl を取得して `cdk.config.{env}.json` を更新
+5. Execution Stack を更新（リソースポリシーとSQSキューURL設定）
 
 #### 方法 2: 手動デプロイ
 
@@ -211,31 +227,43 @@ cd cdk
 # .env ファイルから環境変数を読み込む
 set -a && source ../.env && set +a
 
-# 1. Execution Stack をデプロイ
-npx cdk deploy SlackAI-Execution \
+# デプロイ環境を設定（dev または prod）
+export DEPLOYMENT_ENV=dev  # 本番環境の場合は 'prod' を使用
+
+# 1. Execution Stack をデプロイ（環境サフィックスが自動的に追加されます）
+npx cdk deploy SlackAI-Execution-Dev \
   --context deploymentMode=split \
+  --context deploymentEnv=dev \
   --profile YOUR_PROFILE \
   --require-approval never
 
 # 出力から ExecutionApiUrl を取得
 
 # 2. Verification Stack をデプロイ
-npx cdk deploy SlackAI-Verification \
+npx cdk deploy SlackAI-Verification-Dev \
   --context deploymentMode=split \
+  --context deploymentEnv=dev \
   --context executionApiUrl=<ExecutionApiUrl from step 1> \
   --profile YOUR_PROFILE \
   --require-approval never
 
-# 出力から VerificationLambdaRoleArn を取得
+# 出力から VerificationLambdaRoleArn と ExecutionResponseQueueUrl を取得
 
-# 3. Execution Stack を更新（リソースポリシー追加）
-npx cdk deploy SlackAI-Execution \
+# 3. Execution Stack を更新（リソースポリシーとSQSキューURL設定）
+npx cdk deploy SlackAI-Execution-Dev \
   --context deploymentMode=split \
+  --context deploymentEnv=dev \
   --context verificationLambdaRoleArn=<VerificationLambdaRoleArn from step 2> \
+  --context executionResponseQueueUrl=<ExecutionResponseQueueUrl from step 2> \
   --context verificationAccountId=YOUR_AWS_ACCOUNT_ID \
   --profile YOUR_PROFILE \
   --require-approval never
 ```
+
+**重要**: 
+- スタック名には環境サフィックス（`-Dev` または `-Prod`）が自動的に追加されます
+- `DEPLOYMENT_ENV` 環境変数を設定することで、正しい環境のスタックがデプロイされます
+- `cdk.config.{env}.json` ファイルに値を設定することで、`--context` オプションの代わりに使用できます
 
 デプロイ中に以下のリソースが作成されます：
 
@@ -245,8 +273,9 @@ npx cdk deploy SlackAI-Execution \
 - CloudWatch アラームとメトリクス
 
 **VerificationStack**:
-- Lambda 関数（SlackEventHandler）
+- Lambda 関数（SlackEventHandler, SlackResponseHandler）
 - DynamoDB テーブル（Token Storage, Event Dedupe, Existence Check Cache, Whitelist Config, Rate Limit）
+- SQS キュー（ExecutionResponseQueue, ExecutionResponseDlq）
 - Secrets Manager シークレット（Slack Signing Secret, Bot Token）
 - CloudWatch アラームとメトリクス
 - IAM ロールとポリシー
@@ -257,14 +286,17 @@ npx cdk deploy SlackAI-Execution \
 
 **VerificationStack の出力**:
 ```
-SlackAI-Verification.SlackEventHandlerUrl = https://xxxxxxxxxx.lambda-url.ap-northeast-1.on.aws/
-SlackAI-Verification.VerificationLambdaRoleArn = arn:aws:iam::123456789012:role/...
+SlackAI-Verification-Dev.SlackEventHandlerUrl = https://xxxxxxxxxx.lambda-url.ap-northeast-1.on.aws/
+SlackAI-Verification-Dev.VerificationLambdaRoleArn = arn:aws:iam::123456789012:role/...
+SlackAI-Verification-Dev.ExecutionResponseQueueUrl = https://sqs.ap-northeast-1.amazonaws.com/123456789012/slackai-verification-dev-execution-response-queue
+SlackAI-Verification-Dev.ExecutionResponseQueueArn = arn:aws:sqs:ap-northeast-1:123456789012:slackai-verification-dev-execution-response-queue
 ```
 
 **ExecutionStack の出力**:
 ```
-SlackAI-Execution.ExecutionApiUrl = https://xxxxxxxxxx.execute-api.ap-northeast-1.amazonaws.com/prod/
-SlackAI-Execution.ExecutionApiArn = arn:aws:execute-api:ap-northeast-1:123456789012:xxx/*/*/*
+SlackAI-Execution-Dev.ExecutionApiUrl = https://xxxxxxxxxx.execute-api.ap-northeast-1.amazonaws.com/prod/
+SlackAI-Execution-Dev.ExecutionApiArn = arn:aws:execute-api:ap-northeast-1:123456789012:xxx/*/*/*
+SlackAI-Execution-Dev.BedrockProcessorArn = arn:aws:lambda:ap-northeast-1:123456789012:function:...
 ```
 
 **重要**: `SlackEventHandlerUrl` をコピーして、Slack App の Event Subscriptions に設定してください。
@@ -278,9 +310,10 @@ SlackAI-Execution.ExecutionApiArn = arn:aws:execute-api:ap-northeast-1:123456789
 #### 方法 1: DynamoDB（推奨）
 
 ```bash
+# 開発環境の場合
 # team_id の追加
 aws dynamodb put-item \
-  --table-name slack-whitelist-config \
+  --table-name SlackAI-Verification-Dev-whitelist-config \
   --item '{
     "entity_type": {"S": "team_id"},
     "entity_id": {"S": "T01234567"}
@@ -288,7 +321,7 @@ aws dynamodb put-item \
 
 # user_id の追加
 aws dynamodb put-item \
-  --table-name slack-whitelist-config \
+  --table-name SlackAI-Verification-Dev-whitelist-config \
   --item '{
     "entity_type": {"S": "user_id"},
     "entity_id": {"S": "U01234567"}
@@ -296,24 +329,46 @@ aws dynamodb put-item \
 
 # channel_id の追加
 aws dynamodb put-item \
-  --table-name slack-whitelist-config \
+  --table-name SlackAI-Verification-Dev-whitelist-config \
   --item '{
     "entity_type": {"S": "channel_id"},
     "entity_id": {"S": "C01234567"}
   }'
+
+# 本番環境の場合（テーブル名に -Prod が含まれます）
+aws dynamodb put-item \
+  --table-name SlackAI-Verification-Prod-whitelist-config \
+  --item '{
+    "entity_type": {"S": "team_id"},
+    "entity_id": {"S": "T01234567"}
+  }'
 ```
+
+**注意**: DynamoDBテーブル名は`{StackName}-whitelist-config`の形式で、スタック名には環境サフィックス（`-Dev`または`-Prod`）が含まれます。
 
 #### 方法 2: Secrets Manager
 
 ```bash
+# 開発環境の場合
 aws secretsmanager create-secret \
-  --name SlackAI-Verification/slack/whitelist-config \
+  --name SlackAI-Verification-Dev/slack/whitelist-config \
+  --secret-string '{
+    "team_ids": ["T01234567"],
+    "user_ids": ["U01234567"],
+    "channel_ids": ["C01234567"]
+  }'
+
+# 本番環境の場合
+aws secretsmanager create-secret \
+  --name SlackAI-Verification-Prod/slack/whitelist-config \
   --secret-string '{
     "team_ids": ["T01234567"],
     "user_ids": ["U01234567"],
     "channel_ids": ["C01234567"]
   }'
 ```
+
+**注意**: Secrets Managerの名前は`{StackName}/slack/whitelist-config`の形式で、スタック名には環境サフィックス（`-Dev`または`-Prod`）が含まれます。
 
 #### 方法 3: 環境変数（開発環境のみ）
 
@@ -433,12 +488,21 @@ aws logs tail /aws/lambda/SlackAI-Execution-BedrockProcessor-XXXXX --follow
 1. **ホワイトリストが設定されているか確認**:
 
    ```bash
-   # DynamoDB テーブルの内容を確認
-   aws dynamodb scan --table-name slack-whitelist-config
+   # DynamoDB テーブルの内容を確認（環境サフィックス付き）
+   # 開発環境の場合
+   aws dynamodb scan --table-name SlackAI-Verification-Dev-whitelist-config
+   
+   # 本番環境の場合
+   aws dynamodb scan --table-name SlackAI-Verification-Prod-whitelist-config
 
-   # または Secrets Manager のシークレットを確認
+   # または Secrets Manager のシークレットを確認（環境サフィックス付き）
+   # 開発環境の場合
    aws secretsmanager get-secret-value \
-     --secret-id SlackAI-Verification/slack/whitelist-config
+     --secret-id SlackAI-Verification-Dev/slack/whitelist-config
+   
+   # 本番環境の場合
+   aws secretsmanager get-secret-value \
+     --secret-id SlackAI-Verification-Prod/slack/whitelist-config
    ```
 
 2. **すべてのエンティティタイプが設定されているか確認**:
@@ -502,22 +566,45 @@ aws iam get-role-policy \
 - **メッセージ保持期間**: 14日
 - **最大受信回数**: 3回（DLQ に送信）
 
-### クロスアカウント設定
+### SQS キュー URL の設定
 
-実行ゾーンと検証ゾーンを異なる AWS アカウントにデプロイする場合:
+**重要**: `ExecutionStack` が `VerificationStack` の SQS キューにメッセージを送信できるように、`executionResponseQueueUrl` を設定する必要があります。
+
+#### 自動設定（推奨）
+
+デプロイスクリプト（`scripts/deploy-split-stacks.sh`）を使用する場合、`executionResponseQueueUrl` は自動的に取得され、`cdk.config.{env}.json` に設定されます。
+
+#### 手動設定
 
 1. **Verification Stack デプロイ後**:
-   - `ExecutionResponseQueueArn` をスタック出力から取得
-   - `ExecutionResponseQueueUrl` をスタック出力から取得
+   ```bash
+   # ExecutionResponseQueueUrl を取得
+   aws cloudformation describe-stacks \
+     --stack-name SlackAI-Verification-Dev \
+     --region ap-northeast-1 \
+     --query 'Stacks[0].Outputs[?OutputKey==`ExecutionResponseQueueUrl`].OutputValue' \
+     --output text
+   ```
 
-2. **Execution Stack の環境変数**:
-   - `EXECUTION_RESPONSE_QUEUE_URL` に SQS キュー URL を設定
+2. **`cdk.config.{env}.json` を更新**:
+   ```json
+   {
+     "executionResponseQueueUrl": "https://sqs.ap-northeast-1.amazonaws.com/123456789012/slackai-verification-dev-execution-response-queue"
+   }
+   ```
 
-3. **IAM 権限**:
-   - Execution Stack の BedrockProcessor Lambda ロールに `sqs:SendMessage` 権限を付与
-   - Verification Stack の SQS キューリソースポリシーで Execution Stack の Lambda ロールを許可
+3. **Execution Stack を再デプロイ**:
+   ```bash
+   npx cdk deploy SlackAI-Execution-Dev --profile YOUR_PROFILE
+   ```
 
-詳細は [CDK README](cdk/README.md) のクロスアカウントデプロイセクションを参照してください。
+**注意**: `ExecutionStack` は `executionResponseQueueUrl` が設定されている場合、自動的に SQS 送信権限を追加します。手動で IAM 権限を設定する必要はありません。
+
+### クロスアカウント設定
+
+実行ゾーンと検証ゾーンを異なる AWS アカウントにデプロイする場合も、上記の手順に従って `executionResponseQueueUrl` を設定してください。`ExecutionStack` が自動的に適切な IAM 権限を設定します。
+
+詳細は [CDK README](../cdk/README.md) のクロスアカウントデプロイセクションを参照してください。
 
 ## 次のステップ
 

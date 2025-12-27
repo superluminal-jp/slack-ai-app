@@ -9,12 +9,14 @@
 #   3. Update ExecutionStack with resource policy
 #
 # Usage:
+#   export DEPLOYMENT_ENV=dev  # or 'prod'
 #   ./scripts/deploy-split-stacks.sh
 #
 # Prerequisites:
 #   - AWS CLI configured with appropriate credentials
 #   - SLACK_BOT_TOKEN environment variable set
 #   - SLACK_SIGNING_SECRET environment variable set
+#   - DEPLOYMENT_ENV environment variable set (dev or prod)
 #   - Node.js and npm installed
 #
 
@@ -32,10 +34,43 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CDK_DIR="${PROJECT_ROOT}/cdk"
-EXECUTION_STACK_NAME="${EXECUTION_STACK_NAME:-SlackAI-Execution}"
-VERIFICATION_STACK_NAME="${VERIFICATION_STACK_NAME:-SlackAI-Verification}"
 AWS_REGION="${AWS_REGION:-ap-northeast-1}"
 AWS_PROFILE="${AWS_PROFILE:-}"
+
+# Get deployment environment
+DEPLOYMENT_ENV="${DEPLOYMENT_ENV:-}"
+if [[ -z "${DEPLOYMENT_ENV}" ]]; then
+    # Try to get from cdk.json context
+    if command -v jq &> /dev/null; then
+        DEPLOYMENT_ENV=$(jq -r '.context.deploymentEnv // "dev"' "${CDK_DIR}/cdk.json" 2>/dev/null || echo "dev")
+    else
+        DEPLOYMENT_ENV="dev"
+    fi
+    log_warning "DEPLOYMENT_ENV not set. Using default: ${DEPLOYMENT_ENV}"
+fi
+
+# Normalize environment name (lowercase, trim)
+DEPLOYMENT_ENV=$(echo "${DEPLOYMENT_ENV}" | tr '[:upper:]' '[:lower:]' | xargs)
+
+# Validate deployment environment
+VALID_ENVIRONMENTS=("dev" "prod")
+if [[ ! " ${VALID_ENVIRONMENTS[@]} " =~ " ${DEPLOYMENT_ENV} " ]]; then
+    log_error "Invalid deployment environment '${DEPLOYMENT_ENV}'. Must be one of: ${VALID_ENVIRONMENTS[*]}"
+    exit 1
+fi
+
+# Set stack names based on environment
+ENVIRONMENT_SUFFIX=""
+if [[ "${DEPLOYMENT_ENV}" == "prod" ]]; then
+    ENVIRONMENT_SUFFIX="Prod"
+else
+    ENVIRONMENT_SUFFIX="Dev"
+fi
+
+BASE_EXECUTION_STACK_NAME="${EXECUTION_STACK_NAME:-SlackAI-Execution}"
+BASE_VERIFICATION_STACK_NAME="${VERIFICATION_STACK_NAME:-SlackAI-Verification}"
+EXECUTION_STACK_NAME="${BASE_EXECUTION_STACK_NAME}-${ENVIRONMENT_SUFFIX}"
+VERIFICATION_STACK_NAME="${BASE_VERIFICATION_STACK_NAME}-${ENVIRONMENT_SUFFIX}"
 
 # Functions
 log_info() {
@@ -56,6 +91,9 @@ log_error() {
 
 check_prerequisites() {
     log_info "Checking prerequisites..."
+    log_info "Deployment environment: ${DEPLOYMENT_ENV}"
+    log_info "Execution Stack: ${EXECUTION_STACK_NAME}"
+    log_info "Verification Stack: ${VERIFICATION_STACK_NAME}"
 
     # Check for required environment variables
     if [[ -z "${SLACK_BOT_TOKEN:-}" ]]; then
@@ -92,19 +130,32 @@ check_prerequisites() {
 update_cdk_context() {
     local key=$1
     local value=$2
-    local cdk_json="${CDK_DIR}/cdk.json"
+    local config_file="${CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
 
-    log_info "Updating cdk.json: ${key}=${value}"
+    log_info "Updating ${config_file}: ${key}=${value}"
+
+    # Ensure config file exists
+    if [[ ! -f "${config_file}" ]]; then
+        log_error "Configuration file not found: ${config_file}"
+        log_info "Please create it using cdk.config.json.example as a template"
+        exit 1
+    fi
 
     # Use jq if available, otherwise use sed
     if command -v jq &> /dev/null; then
         local tmp_file=$(mktemp)
-        jq ".context.\"${key}\" = \"${value}\"" "${cdk_json}" > "${tmp_file}"
-        mv "${tmp_file}" "${cdk_json}"
+        jq ".\"${key}\" = \"${value}\"" "${config_file}" > "${tmp_file}"
+        mv "${tmp_file}" "${config_file}"
     else
         # Fallback to sed (less reliable)
-        sed -i.bak "s/\"${key}\": \"[^\"]*\"/\"${key}\": \"${value}\"/" "${cdk_json}"
-        rm -f "${cdk_json}.bak"
+        if grep -q "\"${key}\"" "${config_file}"; then
+            sed -i.bak "s/\"${key}\": \"[^\"]*\"/\"${key}\": \"${value}\"/" "${config_file}"
+            rm -f "${config_file}.bak"
+        else
+            # Add new key if it doesn't exist (add before closing brace)
+            sed -i.bak "s/}$/  \"${key}\": \"${value}\"\n}/" "${config_file}"
+            rm -f "${config_file}.bak"
+        fi
     fi
 }
 
@@ -135,21 +186,34 @@ deploy_execution_stack() {
 
     # Ensure deployment mode is split
     update_cdk_context "deploymentMode" "split"
+    
+    # Set deployment environment in context
+    update_cdk_context "deploymentEnv" "${DEPLOYMENT_ENV}"
 
     # Deploy Execution Stack
     local profile_args=""
     if [[ -n "${AWS_PROFILE}" ]]; then
         profile_args="--profile ${AWS_PROFILE}"
     fi
-    npx cdk deploy "${EXECUTION_STACK_NAME}" ${profile_args} --require-approval never
+    
+    log_info "Deploying ${EXECUTION_STACK_NAME}..."
+    if ! npx cdk deploy "${EXECUTION_STACK_NAME}" ${profile_args} --require-approval never --context deploymentEnv="${DEPLOYMENT_ENV}"; then
+        log_error "Failed to deploy ${EXECUTION_STACK_NAME}"
+        exit 1
+    fi
 
     cd "${PROJECT_ROOT}"
+
+    # Wait a moment for CloudFormation to update stack outputs
+    log_info "Waiting for stack outputs to be available..."
+    sleep 5
 
     # Get API URL from stack outputs
     local api_url=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionApiUrl")
 
     if [[ -z "${api_url}" ]]; then
         log_error "Failed to get ExecutionApiUrl from stack outputs"
+        log_info "Stack may still be updating. Please check CloudFormation console."
         exit 1
     fi
 
@@ -175,9 +239,18 @@ deploy_verification_stack() {
     if [[ -n "${AWS_PROFILE}" ]]; then
         profile_args="--profile ${AWS_PROFILE}"
     fi
-    npx cdk deploy "${VERIFICATION_STACK_NAME}" ${profile_args} --require-approval never
+    
+    log_info "Deploying ${VERIFICATION_STACK_NAME}..."
+    if ! npx cdk deploy "${VERIFICATION_STACK_NAME}" ${profile_args} --require-approval never --context deploymentEnv="${DEPLOYMENT_ENV}"; then
+        log_error "Failed to deploy ${VERIFICATION_STACK_NAME}"
+        exit 1
+    fi
 
     cd "${PROJECT_ROOT}"
+
+    # Wait a moment for CloudFormation to update stack outputs
+    log_info "Waiting for stack outputs to be available..."
+    sleep 5
 
     # Get Lambda Role ARN from stack outputs
     local role_arn=$(get_stack_output "${VERIFICATION_STACK_NAME}" "VerificationLambdaRoleArn")
@@ -185,6 +258,7 @@ deploy_verification_stack() {
 
     if [[ -z "${role_arn}" ]]; then
         log_error "Failed to get VerificationLambdaRoleArn from stack outputs"
+        log_info "Stack may still be updating. Please check CloudFormation console."
         exit 1
     fi
 
@@ -211,7 +285,7 @@ update_execution_stack() {
     if [[ -n "${AWS_PROFILE}" ]]; then
         profile_args="--profile ${AWS_PROFILE}"
     fi
-    npx cdk deploy "${EXECUTION_STACK_NAME}" ${profile_args} --require-approval never
+    npx cdk deploy "${EXECUTION_STACK_NAME}" ${profile_args} --require-approval never --context deploymentEnv="${DEPLOYMENT_ENV}"
 
     cd "${PROJECT_ROOT}"
 
