@@ -13,6 +13,22 @@ import { BedrockProcessor } from "./constructs/bedrock-processor";
 import { ExecutionApi } from "./constructs/execution-api";
 import { ApiGatewayMonitoring } from "./constructs/api-gateway-monitoring";
 
+/**
+ * @deprecated This single-stack deployment is deprecated.
+ * Use the split-stack deployment instead:
+ * - ExecutionStack (cdk/lib/execution-stack.ts)
+ * - VerificationStack (cdk/lib/verification-stack.ts)
+ *
+ * Set "deploymentMode": "split" in cdk.json to use the new architecture.
+ *
+ * Migration guide: docs/how-to/migration-guide.md
+ *
+ * This stack is maintained for backward compatibility with existing deployments.
+ * New deployments should use the split-stack architecture which supports:
+ * - Cross-account deployment
+ * - Independent lifecycle management
+ * - Better security isolation
+ */
 export class SlackBedrockStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);

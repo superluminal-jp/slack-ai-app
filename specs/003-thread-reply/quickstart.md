@@ -137,7 +137,7 @@ This guide provides step-by-step instructions for testing the thread reply featu
 
 ### 1. Verify Timestamp Extraction
 
-**File**: `lambda/slack-event-handler/handler.py`
+**File**: `lambda/verification-stack/slack-event-handler/handler.py`
 
 **Check**:
 
@@ -159,7 +159,7 @@ payload = {
 
 ### 2. Verify Thread Reply Posting
 
-**File**: `lambda/bedrock-processor/slack_poster.py`
+**File**: `lambda/execution-stack/bedrock-processor/slack_poster.py`
 
 **Check**:
 
@@ -180,7 +180,7 @@ if thread_ts and _is_valid_timestamp(thread_ts):
 
 ### 3. Verify Error Handling
 
-**File**: `lambda/bedrock-processor/slack_poster.py`
+**File**: `lambda/execution-stack/bedrock-processor/slack_poster.py`
 
 **Check**:
 

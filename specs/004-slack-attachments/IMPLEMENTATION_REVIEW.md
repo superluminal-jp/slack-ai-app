@@ -18,7 +18,7 @@ All core attachment processing features have been successfully implemented and v
 
 ## ✅ **Implemented Components**
 
-### 1. **Slack Event Handler** (`lambda/slack-event-handler`)
+### 1. **Slack Event Handler** (`lambda/verification-stack/slack-event-handler`)
 
 #### `attachment_extractor.py`
 - ✅ Extracts attachment metadata from Slack events (`event.files`)
@@ -45,7 +45,7 @@ if not is_valid and not attachments:
 
 ---
 
-### 2. **Bedrock Processor** (`lambda/bedrock-processor`)
+### 2. **Bedrock Processor** (`lambda/execution-stack/bedrock-processor`)
 
 #### `file_downloader.py`
 - ✅ Downloads files from Slack CDN using bot token authentication
@@ -114,7 +114,7 @@ def prepare_image_content(base64_image: str, mime_type: str = "image/png"):
 
 ### 3. **Dependencies** (`requirements.txt`)
 
-#### `lambda/bedrock-processor/requirements.txt`
+#### `lambda/execution-stack/bedrock-processor/requirements.txt`
 ```
 slack-sdk>=3.27.0
 boto3>=1.34.0
@@ -125,7 +125,7 @@ openpyxl>=3.1.0
 python-pptx>=0.6.21
 ```
 
-#### `lambda/slack-event-handler/requirements.txt`
+#### `lambda/verification-stack/slack-event-handler/requirements.txt`
 ```
 slack-sdk>=3.27.0
 boto3>=1.34.0
@@ -170,7 +170,7 @@ const bedrockProcessor = new BedrockProcessor(this, "BedrockProcessor", {
 ## 🔧 **Fixes Applied**
 
 ### 1. **Validation Logic for Attachments-Only Messages**
-**File**: `lambda/slack-event-handler/handler.py`  
+**File**: `lambda/verification-stack/slack-event-handler/handler.py`  
 **Line**: 362  
 **Issue**: Validation rejected empty text even when attachments were present  
 **Fix**: Added `and not attachments` condition to allow empty text with attachments
@@ -186,7 +186,7 @@ if not is_valid and not attachments:
 ```
 
 ### 2. **Conversation History Format for Claude API**
-**File**: `lambda/bedrock-processor/bedrock_client.py`  
+**File**: `lambda/execution-stack/bedrock-processor/bedrock_client.py`  
 **Lines**: 145-158  
 **Issue**: Conversation history content was not consistently in array format  
 **Fix**: Convert all history messages to array format for Claude API compatibility
@@ -200,7 +200,7 @@ elif isinstance(hist_content, list):
 ```
 
 ### 3. **Image Data Validation**
-**File**: `lambda/bedrock-processor/bedrock_client.py`  
+**File**: `lambda/execution-stack/bedrock-processor/bedrock_client.py`  
 **Lines**: 24-61, 261-283  
 **Issue**: No validation of base64 image data before sending to Bedrock  
 **Fix**: Added comprehensive validation in `prepare_image_content()` and pre-send validation
@@ -220,7 +220,7 @@ if len(decoded) == 0:
 ```
 
 ### 4. **Enhanced Error Logging**
-**File**: `lambda/bedrock-processor/bedrock_client.py`  
+**File**: `lambda/execution-stack/bedrock-processor/bedrock_client.py`  
 **Lines**: 312-344  
 **Issue**: Insufficient debug information for ValidationException errors  
 **Fix**: Added detailed logging for image data and request structure

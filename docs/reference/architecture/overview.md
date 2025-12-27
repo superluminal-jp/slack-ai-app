@@ -170,11 +170,52 @@
 
 ---
 
+## 2.4 デプロイメントアーキテクチャ
+
+### 単一スタック構成（レガシー）
+
+すべてのリソースを 1 つの CloudFormation スタックにデプロイ。シンプルだがクロスアカウント対応は不可。
+
+```
+SlackBedrockStack
+├── Verification Zone リソース
+└── Execution Zone リソース
+```
+
+### 分離スタック構成（推奨）
+
+Verification Zone と Execution Zone を独立したスタックに分離。クロスアカウントデプロイに対応。
+
+```
+┌─────────────────────────────┐    ┌─────────────────────────────┐
+│ VerificationStack           │    │ ExecutionStack              │
+│ (Account A)                 │    │ (Account B)                 │
+│                             │    │                             │
+│ - SlackEventHandler Lambda  │───▶│ - API Gateway (IAM auth)   │
+│ - Function URL              │    │ - BedrockProcessor Lambda  │
+│ - DynamoDB tables (5)       │    │ - CloudWatch Alarms        │
+│ - Secrets Manager           │    │                             │
+│ - CloudWatch Alarms         │    │                             │
+└─────────────────────────────┘    └─────────────────────────────┘
+```
+
+**利点**:
+- クロスアカウントデプロイ対応
+- 独立したライフサイクル管理
+- セキュリティ境界の強化
+- 個別のスタック更新が可能
+
+詳細は [クロスアカウントアーキテクチャ](./cross-account.md) を参照してください。
+
+---
+
 ## 関連ドキュメント
 
 - [機能要件](../requirements/functional-requirements.md) - ビジネス要件と機能仕様
 - [ユーザー体験](./user-experience.md) - エンドユーザーフローと UX
 - [実装詳細](./implementation-details.md) - Lambda 構成とデータフロー
+- [クロスアカウントアーキテクチャ](./cross-account.md) - 分離スタック構成と IAM 認証
 - [セキュリティ要件](../security/requirements.md) - 機能的・非機能的セキュリティ要件
 - [脅威モデル](../security/threat-model.md) - リスク分析とアクター
 - [セキュリティ実装](../security/implementation.md) - 多層防御の実装詳細
+- [移行ガイド](../../how-to/migration-guide.md) - 単一スタックから分離スタックへの移行

@@ -72,7 +72,7 @@ npm install
 ### Lambda 依存関係
 
 ```bash
-cd ../lambda/slack-event-handler
+cd ../lambda/verification-stack/slack-event-handler
 pip install -r requirements.txt
 ```
 

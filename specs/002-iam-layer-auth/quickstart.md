@@ -129,7 +129,7 @@ aws apigateway get-rest-api --rest-api-id <API_ID> --query "policy"
 
 **2.1 Create API Gateway Client Module**
 
-Create `lambda/slack-event-handler/api_gateway_client.py`:
+Create `lambda/verification-stack/slack-event-handler/api_gateway_client.py`:
 
 ```python
 """
@@ -203,7 +203,7 @@ def invoke_execution_api(
 
 **2.2 Update Requirements**
 
-Add to `lambda/slack-event-handler/requirements.txt`:
+Add to `lambda/verification-stack/slack-event-handler/requirements.txt`:
 
 ```
 requests>=2.31.0
@@ -215,7 +215,7 @@ requests>=2.31.0
 
 **3.1 Modify Handler with Feature Flag**
 
-Update `lambda/slack-event-handler/handler.py`:
+Update `lambda/verification-stack/slack-event-handler/handler.py`:
 
 ```python
 # Add import

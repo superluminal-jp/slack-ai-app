@@ -93,6 +93,14 @@
     "@aws-cdk/aws-s3:publicAccessBlockedByDefault": true,
     "@aws-cdk/aws-lambda:useCdkManagedLogGroup": true,
     "awsRegion": "ap-northeast-1",
-    "bedrockModelId": "jp.anthropic.claude-haiku-4-5-20251001-v1:0"
+    "bedrockModelId": "jp.anthropic.claude-haiku-4-5-20251001-v1:0",
+
+    "deploymentMode": "single",
+    "verificationStackName": "SlackAI-Verification",
+    "executionStackName": "SlackAI-Execution",
+    "verificationAccountId": "",
+    "executionAccountId": "",
+    "verificationLambdaRoleArn": "",
+    "executionApiUrl": ""
   }
 }

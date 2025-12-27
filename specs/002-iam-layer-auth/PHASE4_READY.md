@@ -38,14 +38,14 @@ Follow `PHASE4_TESTING_CHECKLIST.md` for detailed manual steps.
 
 ### Code Changes
 
-1. **Handler Logic** (`lambda/slack-event-handler/handler.py`):
+1. **Handler Logic** (`lambda/verification-stack/slack-event-handler/handler.py`):
    - Feature flag support (`USE_API_GATEWAY`)
    - Percentage-based rollout support (`USE_API_GATEWAY_PERCENTAGE`)
    - API Gateway client integration
    - Fallback to Lambda invocation on error
    - Structured logging for all invocation types
 
-2. **API Gateway Client** (`lambda/slack-event-handler/api_gateway_client.py`):
+2. **API Gateway Client** (`lambda/verification-stack/slack-event-handler/api_gateway_client.py`):
    - SigV4 signing implementation
    - Error handling
    - Timeout handling

@@ -57,7 +57,7 @@ DynamoDB Table: slack-workspace-tokens
 **Implementation**:
 ```
 Tests required for MVP:
-1. lambda/slack-event-handler/tests/test_slack_verifier.py
+1. lambda/verification-stack/slack-event-handler/tests/test_slack_verifier.py
    - Valid signature verification
    - Invalid signature rejection
    - Timestamp validation (±5 minutes window)
@@ -103,7 +103,7 @@ Feature: Prompt Injection Protection
 
 **Implementation**:
 ```python
-# lambda/bedrock-processor/bedrock_client.py
+# lambda/execution-stack/bedrock-processor/bedrock_client.py
 MODEL_ID = "anthropic.claude-3-haiku-20240307-v1:0"
 MAX_TOKENS = 1024  # Sufficient for typical Slack responses
 TEMPERATURE = 1.0  # Default conversational temperature
@@ -227,7 +227,7 @@ event_subscriptions:
 
 **Implementation**:
 ```python
-# lambda/bedrock-processor/handler.py
+# lambda/execution-stack/bedrock-processor/handler.py
 ERROR_MESSAGES = {
     "bedrock_timeout": "Sorry, the AI service is taking longer than usual...",
     "bedrock_throttling": "The AI service is currently busy...",

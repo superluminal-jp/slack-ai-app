@@ -117,7 +117,7 @@ specs/007-whitelist-auth/
 ### Source Code (repository root)
 
 ```text
-lambda/slack-event-handler/
+lambda/verification-stack/slack-event-handler/
 ├── handler.py              # Main Lambda handler (add whitelist authorization call)
 ├── authorization.py        # NEW: Whitelist authorization module
 ├── whitelist_loader.py     # NEW: Whitelist configuration loader
@@ -133,7 +133,7 @@ lambda/slack-event-handler/
     └── test_handler.py              # Update: Add whitelist authorization tests
 ```
 
-**Structure Decision**: 既存の `lambda/slack-event-handler/` ディレクトリ構造に新しいモジュールを追加。`authorization.py` でホワイトリスト認可ロジックを実装し、`whitelist_loader.py` で設定読み込みを実装する。`handler.py` は既存の Existence Check の後にホワイトリスト認可を呼び出すように更新する。
+**Structure Decision**: 既存の `lambda/verification-stack/slack-event-handler/` ディレクトリ構造に新しいモジュールを追加。`authorization.py` でホワイトリスト認可ロジックを実装し、`whitelist_loader.py` で設定読み込みを実装する。`handler.py` は既存の Existence Check の後にホワイトリスト認可を呼び出すように更新する。
 
 ## Complexity Tracking
 

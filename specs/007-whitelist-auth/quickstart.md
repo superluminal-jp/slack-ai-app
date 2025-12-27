@@ -110,11 +110,11 @@ Lambda 実行ロールに以下の権限を追加：
 
 ### Step 1: モジュールの作成
 
-1. `lambda/slack-event-handler/whitelist_loader.py` を作成
+1. `lambda/verification-stack/slack-event-handler/whitelist_loader.py` を作成
    - DynamoDB、Secrets Manager、環境変数からホワイトリストを読み込む
    - メモリ内キャッシュ（5 分 TTL）を実装
 
-2. `lambda/slack-event-handler/authorization.py` を作成
+2. `lambda/verification-stack/slack-event-handler/authorization.py` を作成
    - `authorize_request(team_id, user_id, channel_id)` 関数を実装
    - ホワイトリストチェックロジック
    - AuthorizationResult の生成
@@ -171,7 +171,7 @@ except AuthorizationError as e:
 ### Unit Tests
 
 ```bash
-cd lambda/slack-event-handler
+cd lambda/verification-stack/slack-event-handler
 pytest tests/test_authorization.py -v
 pytest tests/test_whitelist_loader.py -v
 ```
@@ -208,12 +208,12 @@ pytest tests/test_authorization.feature -v
 ```bash
 # 認可失敗のログを確認
 aws logs filter-log-events \
-  --log-group-name /aws/lambda/slack-event-handler \
+  --log-group-name /aws/lambda/verification-stack/slack-event-handler \
   --filter-pattern "whitelist_authorization_failed"
 
 # 設定読み込みエラーのログを確認
 aws logs filter-log-events \
-  --log-group-name /aws/lambda/slack-event-handler \
+  --log-group-name /aws/lambda/verification-stack/slack-event-handler \
   --filter-pattern "whitelist_config_load_failed"
 ```
 

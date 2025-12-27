@@ -15,7 +15,7 @@
 
 ## Path Conventions
 
-- **Single project**: `lambda/slack-event-handler/` at repository root
+- **Single project**: `lambda/verification-stack/slack-event-handler/` at repository root
 - Paths shown below are relative to repository root
 
 ## Phase 1: User Story 1 - ホワイトリスト未設定時の全許可 (Priority: P1) 🎯 MVP
@@ -28,17 +28,17 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [x] T001 [P] [US1] Add test for empty whitelist allowing all requests in lambda/slack-event-handler/tests/test_authorization.py
-- [x] T002 [P] [US1] Add test for empty whitelist from DynamoDB in lambda/slack-event-handler/tests/test_whitelist_loader.py
-- [x] T003 [P] [US1] Add test for empty whitelist from Secrets Manager in lambda/slack-event-handler/tests/test_whitelist_loader.py
-- [x] T004 [P] [US1] Add test for empty whitelist from environment variables in lambda/slack-event-handler/tests/test_whitelist_loader.py
+- [x] T001 [P] [US1] Add test for empty whitelist allowing all requests in lambda/verification-stack/slack-event-handler/tests/test_authorization.py
+- [x] T002 [P] [US1] Add test for empty whitelist from DynamoDB in lambda/verification-stack/slack-event-handler/tests/test_whitelist_loader.py
+- [x] T003 [P] [US1] Add test for empty whitelist from Secrets Manager in lambda/verification-stack/slack-event-handler/tests/test_whitelist_loader.py
+- [x] T004 [P] [US1] Add test for empty whitelist from environment variables in lambda/verification-stack/slack-event-handler/tests/test_whitelist_loader.py
 
 ### Implementation for User Story 1
 
-- [x] T005 [US1] Remove empty whitelist check from get_whitelist_from_dynamodb() in lambda/slack-event-handler/whitelist_loader.py (remove lines 157-160)
-- [x] T006 [US1] Remove empty whitelist check from get_whitelist_from_secrets_manager() in lambda/slack-event-handler/whitelist_loader.py
-- [x] T007 [US1] Remove empty whitelist check from get_whitelist_from_env() in lambda/slack-event-handler/whitelist_loader.py (remove lines 292-295)
-- [x] T008 [US1] Modify authorize_request() to allow all requests when whitelist is empty in lambda/slack-event-handler/authorization.py (add check before entity validation loop)
+- [x] T005 [US1] Remove empty whitelist check from get_whitelist_from_dynamodb() in lambda/verification-stack/slack-event-handler/whitelist_loader.py (remove lines 157-160)
+- [x] T006 [US1] Remove empty whitelist check from get_whitelist_from_secrets_manager() in lambda/verification-stack/slack-event-handler/whitelist_loader.py
+- [x] T007 [US1] Remove empty whitelist check from get_whitelist_from_env() in lambda/verification-stack/slack-event-handler/whitelist_loader.py (remove lines 292-295)
+- [x] T008 [US1] Modify authorize_request() to allow all requests when whitelist is empty in lambda/verification-stack/slack-event-handler/authorization.py (add check before entity validation loop)
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently. Empty whitelist should allow all requests.
 
@@ -52,17 +52,17 @@
 
 ### Tests for User Story 2
 
-- [x] T009 [P] [US2] Add test for channel_id-only whitelist allowing any team_id and user_id in lambda/slack-event-handler/tests/test_authorization.py
-- [x] T010 [P] [US2] Add test for channel_id-only whitelist rejecting unauthorized channel_id in lambda/slack-event-handler/tests/test_authorization.py
-- [x] T011 [P] [US2] Add test for team_id-only whitelist in lambda/slack-event-handler/tests/test_authorization.py
-- [x] T012 [P] [US2] Add test for user_id-only whitelist in lambda/slack-event-handler/tests/test_authorization.py
+- [x] T009 [P] [US2] Add test for channel_id-only whitelist allowing any team_id and user_id in lambda/verification-stack/slack-event-handler/tests/test_authorization.py
+- [x] T010 [P] [US2] Add test for channel_id-only whitelist rejecting unauthorized channel_id in lambda/verification-stack/slack-event-handler/tests/test_authorization.py
+- [x] T011 [P] [US2] Add test for team_id-only whitelist in lambda/verification-stack/slack-event-handler/tests/test_authorization.py
+- [x] T012 [P] [US2] Add test for user_id-only whitelist in lambda/verification-stack/slack-event-handler/tests/test_authorization.py
 
 ### Implementation for User Story 2
 
-- [x] T013 [US2] Modify authorize_request() to check if whitelist set is empty before validating entity in lambda/slack-event-handler/authorization.py (modify team_id check at lines 147-151)
-- [x] T014 [US2] Modify authorize_request() to check if whitelist set is empty before validating entity in lambda/slack-event-handler/authorization.py (modify user_id check at lines 153-157)
-- [x] T015 [US2] Modify authorize_request() to check if whitelist set is empty before validating entity in lambda/slack-event-handler/authorization.py (modify channel_id check at lines 159-163)
-- [x] T016 [US2] Update docstring for authorize_request() to reflect new flexible whitelist behavior in lambda/slack-event-handler/authorization.py
+- [x] T013 [US2] Modify authorize_request() to check if whitelist set is empty before validating entity in lambda/verification-stack/slack-event-handler/authorization.py (modify team_id check at lines 147-151)
+- [x] T014 [US2] Modify authorize_request() to check if whitelist set is empty before validating entity in lambda/verification-stack/slack-event-handler/authorization.py (modify user_id check at lines 153-157)
+- [x] T015 [US2] Modify authorize_request() to check if whitelist set is empty before validating entity in lambda/verification-stack/slack-event-handler/authorization.py (modify channel_id check at lines 159-163)
+- [x] T016 [US2] Update docstring for authorize_request() to reflect new flexible whitelist behavior in lambda/verification-stack/slack-event-handler/authorization.py
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently. Partial whitelist configuration should work correctly.
 
@@ -76,15 +76,15 @@
 
 ### Tests for User Story 3
 
-- [x] T017 [P] [US3] Add test for team_id and channel_id combination allowing any user_id in lambda/slack-event-handler/tests/test_authorization.py
-- [x] T018 [P] [US3] Add test for team_id and user_id combination allowing any channel_id in lambda/slack-event-handler/tests/test_authorization.py
-- [x] T019 [P] [US3] Add test for user_id and channel_id combination allowing any team_id in lambda/slack-event-handler/tests/test_authorization.py
-- [x] T020 [P] [US3] Add test for rejecting when one configured entity is unauthorized in lambda/slack-event-handler/tests/test_authorization.py
+- [x] T017 [P] [US3] Add test for team_id and channel_id combination allowing any user_id in lambda/verification-stack/slack-event-handler/tests/test_authorization.py
+- [x] T018 [P] [US3] Add test for team_id and user_id combination allowing any channel_id in lambda/verification-stack/slack-event-handler/tests/test_authorization.py
+- [x] T019 [P] [US3] Add test for user_id and channel_id combination allowing any team_id in lambda/verification-stack/slack-event-handler/tests/test_authorization.py
+- [x] T020 [P] [US3] Add test for rejecting when one configured entity is unauthorized in lambda/verification-stack/slack-event-handler/tests/test_authorization.py
 
 ### Implementation for User Story 3
 
-- [x] T021 [US3] Add logging for skipped entities (when whitelist set is empty) in lambda/slack-event-handler/authorization.py
-- [x] T022 [US3] Update log messages to indicate which entities were checked vs skipped in lambda/slack-event-handler/authorization.py
+- [x] T021 [US3] Add logging for skipped entities (when whitelist set is empty) in lambda/verification-stack/slack-event-handler/authorization.py
+- [x] T022 [US3] Update log messages to indicate which entities were checked vs skipped in lambda/verification-stack/slack-event-handler/authorization.py
 
 **Checkpoint**: At this point, User Stories 1, 2, AND 3 should all work independently. Multiple entity combinations should work correctly.
 
@@ -98,14 +98,14 @@
 
 ### Tests for User Story 4
 
-- [x] T023 [P] [US4] Add test for all entities configured maintaining AND condition behavior in lambda/slack-event-handler/tests/test_authorization.py
-- [x] T024 [P] [US4] Add test for all entities configured rejecting when one entity is unauthorized in lambda/slack-event-handler/tests/test_authorization.py
-- [x] T025 [P] [US4] Update existing BDD test scenarios to verify backward compatibility in lambda/slack-event-handler/tests/test_authorization.feature
+- [x] T023 [P] [US4] Add test for all entities configured maintaining AND condition behavior in lambda/verification-stack/slack-event-handler/tests/test_authorization.py
+- [x] T024 [P] [US4] Add test for all entities configured rejecting when one entity is unauthorized in lambda/verification-stack/slack-event-handler/tests/test_authorization.py
+- [x] T025 [P] [US4] Update existing BDD test scenarios to verify backward compatibility in lambda/verification-stack/slack-event-handler/tests/test_authorization.feature
 
 ### Implementation for User Story 4
 
-- [x] T026 [US4] Verify existing authorization logic works correctly when all entities are configured in lambda/slack-event-handler/authorization.py
-- [x] T027 [US4] Update module docstring to document flexible whitelist behavior and backward compatibility in lambda/slack-event-handler/authorization.py
+- [x] T026 [US4] Verify existing authorization logic works correctly when all entities are configured in lambda/verification-stack/slack-event-handler/authorization.py
+- [x] T027 [US4] Update module docstring to document flexible whitelist behavior and backward compatibility in lambda/verification-stack/slack-event-handler/authorization.py
 
 **Checkpoint**: All user stories should now be independently functional. Backward compatibility is maintained for existing users with all entities configured.
 
@@ -117,11 +117,11 @@
 
 - [x] T028 [P] Update documentation in docs/security/authentication-authorization.md to reflect flexible whitelist behavior
 - [x] T029 [P] Update quickstart.md validation scenarios in specs/008-flexible-whitelist/quickstart.md
-- [x] T030 [P] Add integration tests for end-to-end whitelist scenarios in lambda/slack-event-handler/tests/test_authorization.py
-- [x] T031 [P] Update error handling to maintain fail-closed behavior on configuration load failure in lambda/slack-event-handler/authorization.py
+- [x] T030 [P] Add integration tests for end-to-end whitelist scenarios in lambda/verification-stack/slack-event-handler/tests/test_authorization.py
+- [x] T031 [P] Update error handling to maintain fail-closed behavior on configuration load failure in lambda/verification-stack/slack-event-handler/authorization.py
 - [x] T032 Verify all existing tests pass (backward compatibility check)
-- [x] T033 [P] Code cleanup and refactoring in lambda/slack-event-handler/authorization.py
-- [x] T034 [P] Code cleanup and refactoring in lambda/slack-event-handler/whitelist_loader.py
+- [x] T033 [P] Code cleanup and refactoring in lambda/verification-stack/slack-event-handler/authorization.py
+- [x] T034 [P] Code cleanup and refactoring in lambda/verification-stack/slack-event-handler/whitelist_loader.py
 - [x] T035 Performance validation: ensure authorization latency remains ≤10ms (p95)
 
 ---
@@ -163,10 +163,10 @@
 
 ```bash
 # Launch all tests for User Story 1 together:
-Task: "Add test for empty whitelist allowing all requests in lambda/slack-event-handler/tests/test_authorization.py"
-Task: "Add test for empty whitelist from DynamoDB in lambda/slack-event-handler/tests/test_whitelist_loader.py"
-Task: "Add test for empty whitelist from Secrets Manager in lambda/slack-event-handler/tests/test_whitelist_loader.py"
-Task: "Add test for empty whitelist from environment variables in lambda/slack-event-handler/tests/test_whitelist_loader.py"
+Task: "Add test for empty whitelist allowing all requests in lambda/verification-stack/slack-event-handler/tests/test_authorization.py"
+Task: "Add test for empty whitelist from DynamoDB in lambda/verification-stack/slack-event-handler/tests/test_whitelist_loader.py"
+Task: "Add test for empty whitelist from Secrets Manager in lambda/verification-stack/slack-event-handler/tests/test_whitelist_loader.py"
+Task: "Add test for empty whitelist from environment variables in lambda/verification-stack/slack-event-handler/tests/test_whitelist_loader.py"
 ```
 
 ---

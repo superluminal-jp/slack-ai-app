@@ -4,6 +4,8 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import { Construct } from "constructs";
 import * as path from "path";
+import { execSync } from "child_process";
+import * as fs from "fs";
 
 export interface SlackEventHandlerProps {
   slackSigningSecret: secretsmanager.ISecret; // Slack app signing secret from Secrets Manager
@@ -25,23 +27,52 @@ export class SlackEventHandler extends Construct {
   constructor(scope: Construct, id: string, props: SlackEventHandlerProps) {
     super(scope, id);
 
+    const lambdaPath = path.join(__dirname, "../../../lambda/verification-stack/slack-event-handler");
+    
     // Create Lambda function for Slack event handling
     this.function = new lambda.Function(this, "Handler", {
       runtime: lambda.Runtime.PYTHON_3_11,
       handler: "handler.lambda_handler",
-      code: lambda.Code.fromAsset(
-        path.join(__dirname, "../../../lambda/slack-event-handler"),
-        {
-          bundling: {
-            image: lambda.Runtime.PYTHON_3_11.bundlingImage,
-            command: [
-              "bash",
-              "-c",
-              "pip install --no-cache-dir -r requirements.txt -t /asset-output && cp -au . /asset-output",
-            ],
+      code: lambda.Code.fromAsset(lambdaPath, {
+        bundling: {
+          image: lambda.Runtime.PYTHON_3_11.bundlingImage,
+          command: [
+            "bash",
+            "-c",
+            "pip install --no-cache-dir -r requirements.txt -t /asset-output && cp -au . /asset-output",
+          ],
+          // Local bundling for faster builds and Colima compatibility
+          local: {
+            tryBundle(outputDir: string): boolean {
+              try {
+                // Check if pip is available locally
+                execSync("pip --version", { stdio: "pipe" });
+                // Install requirements locally
+                execSync(
+                  `pip install --no-cache-dir -r ${path.join(lambdaPath, "requirements.txt")} -t ${outputDir} --quiet`,
+                  { stdio: "pipe" }
+                );
+                // Copy source files (using fs for cross-platform compatibility)
+                const files = fs.readdirSync(lambdaPath);
+                for (const file of files) {
+                  const srcPath = path.join(lambdaPath, file);
+                  const destPath = path.join(outputDir, file);
+                  const stat = fs.statSync(srcPath);
+                  if (stat.isFile()) {
+                    fs.copyFileSync(srcPath, destPath);
+                  } else if (stat.isDirectory() && file !== "__pycache__") {
+                    fs.cpSync(srcPath, destPath, { recursive: true });
+                  }
+                }
+                return true;
+              } catch {
+                // Fall back to Docker bundling
+                return false;
+              }
+            },
           },
-        }
-      ),
+        },
+      }),
       timeout: cdk.Duration.seconds(10),
       environment: {
         TOKEN_TABLE_NAME: props.tokenTableName,

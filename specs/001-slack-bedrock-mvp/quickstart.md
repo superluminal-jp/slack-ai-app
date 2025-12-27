@@ -129,7 +129,7 @@ cdk bootstrap aws://ACCOUNT-ID/REGION
 
 ```bash
 # Install dependencies for Slack Event Handler (slack-event-handler)
-cd ../lambda/slack-event-handler
+cd ../lambda/verification-stack/slack-event-handler
 pip install --upgrade pip
 pip install -r requirements.txt -t .
 
@@ -268,10 +268,10 @@ Send an empty message or trigger an error to verify graceful handling:
 
 ```bash
 # Slack Event Handler logs
-aws logs tail /aws/lambda/slack-event-handler --follow --region us-east-1
+aws logs tail /aws/lambda/verification-stack/slack-event-handler --follow --region us-east-1
 
 # Bedrock Processor logs
-aws logs tail /aws/lambda/bedrock-processor --follow --region us-east-1
+aws logs tail /aws/lambda/execution-stack/bedrock-processor --follow --region us-east-1
 ```
 
 ### 6.2 Check DynamoDB
@@ -317,7 +317,7 @@ cat response.json
 
 **Solutions**:
 1. Check Lambda Function URL is correct in Slack Event Subscriptions
-2. Verify HMAC signature verification code in `lambda/slack-event-handler/slack_verifier.py`
+2. Verify HMAC signature verification code in `lambda/verification-stack/slack-event-handler/slack_verifier.py`
 3. Check CloudWatch Logs for errors
 4. Ensure Lambda has internet access (check VPC settings if applicable)
 

@@ -97,7 +97,7 @@ specs/[###-feature]/
 ### Source Code (repository root)
 
 ```text
-lambda/slack-event-handler/
+lambda/verification-stack/slack-event-handler/
 ├── authorization.py          # 修正: authorize_request()関数のロジック変更
 ├── whitelist_loader.py       # 修正: 空のホワイトリスト時のエラー処理変更
 └── tests/

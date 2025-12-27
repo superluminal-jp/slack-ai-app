@@ -5,7 +5,7 @@
 
 ## Changes Made
 
-### 1. Handler Code Cleanup (`lambda/slack-event-handler/handler.py`)
+### 1. Handler Code Cleanup (`lambda/verification-stack/slack-event-handler/handler.py`)
 
 **Removed**:
 - ✅ Feature flag logic (`USE_API_GATEWAY`, `USE_API_GATEWAY_PERCENTAGE`)

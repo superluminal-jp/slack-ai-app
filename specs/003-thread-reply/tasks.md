@@ -18,8 +18,8 @@
 
 Per plan.md structure:
 
-- **Slack Event Handler**: `lambda/slack-event-handler/` (Python 3.11)
-- **Bedrock Processor**: `lambda/bedrock-processor/` (Python 3.11)
+- **Slack Event Handler**: `lambda/verification-stack/slack-event-handler/` (Python 3.11)
+- **Bedrock Processor**: `lambda/execution-stack/bedrock-processor/` (Python 3.11)
 - **Tests**: `lambda/*/tests/` (pytest)
 
 ---
@@ -64,7 +64,7 @@ Per plan.md structure:
   - Return False if None or empty string
   - Add docstring explaining Slack timestamp format
 
-- [x] T008 [P] [US1] Add unit test for timestamp validation in lambda/slack-event-handler/tests/test_handler.py
+- [x] T008 [P] [US1] Add unit test for timestamp validation in lambda/verification-stack/slack-event-handler/tests/test_handler.py
   - Test valid timestamp: `"1234567890.123456"`
   - Test invalid formats: `"invalid"`, `"1234567890"`, `""`, `None`
   - Verify function returns correct boolean
@@ -139,7 +139,7 @@ Per plan.md structure:
 
 ### Unit Tests
 
-- [x] T017 [P] [US1] Add unit test for thread reply posting in lambda/bedrock-processor/tests/test_slack_poster.py
+- [x] T017 [P] [US1] Add unit test for thread reply posting in lambda/execution-stack/bedrock-processor/tests/test_slack_poster.py
 
   - Mock WebClient and chat_postMessage
   - Test successful thread reply with valid thread_ts
@@ -147,7 +147,7 @@ Per plan.md structure:
   - Test fallback when thread_ts is invalid format
   - Test error handling: message_not_found → fallback to channel message
 
-- [x] T018 [P] [US1] Add unit test for timestamp extraction in lambda/slack-event-handler/tests/test_handler.py
+- [x] T018 [P] [US1] Add unit test for timestamp extraction in lambda/verification-stack/slack-event-handler/tests/test_handler.py
   - Mock Slack event payload with event.ts
   - Test extraction of thread_ts from event
   - Test handling of missing event.ts (should be None)
@@ -194,7 +194,7 @@ Per plan.md structure:
 
 ### Testing
 
-- [x] T022 [P] [US2] Add unit test for thread context preservation in lambda/slack-event-handler/tests/test_handler.py
+- [x] T022 [P] [US2] Add unit test for thread context preservation in lambda/verification-stack/slack-event-handler/tests/test_handler.py
   - Test event with thread_ts field (reply in thread)
   - Test event without thread_ts field (new message)
   - Verify correct thread_ts is extracted in each case

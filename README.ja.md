@@ -23,8 +23,8 @@ export SLACK_BOT_TOKEN=xoxb-your-bot-token
 
 # 2. 依存関係をインストール
 cd cdk && npm install
-cd ../lambda/slack-event-handler && pip install -r requirements.txt -t .
-cd ../bedrock-processor && pip install -r requirements.txt -t .
+cd ../lambda/verification-stack/slack-event-handler && pip install -r requirements.txt -t .
+cd ../../execution-stack/bedrock-processor && pip install -r requirements.txt -t .
 
 # 3. デプロイ
 cd ../../cdk && cdk deploy
@@ -105,8 +105,10 @@ Slack → Lambda① (検証) → API Gateway → Lambda② (Bedrock) → Slack
 slack-ai-app/
 ├── cdk/                    # AWS CDK インフラストラクチャ
 ├── lambda/
-│   ├── slack-event-handler/  # 検証レイヤー
-│   └── bedrock-processor/    # 実行レイヤー
+│   ├── verification-stack/  # Verification Zone (検証層)
+│   │   └── slack-event-handler/
+│   └── execution-stack/     # Execution Zone (実行層)
+│       └── bedrock-processor/
 ├── docs/                   # ドキュメント
 │   ├── reference/          # アーキテクチャ、セキュリティ、運用
 │   ├── explanation/        # 設計原則、ADR
@@ -119,8 +121,8 @@ slack-ai-app/
 
 ```bash
 # テスト実行
-cd lambda/slack-event-handler && pytest tests/
-cd ../bedrock-processor && pytest tests/
+cd lambda/verification-stack/slack-event-handler && pytest tests/
+cd ../../execution-stack/bedrock-processor && pytest tests/
 
 # ログ確認
 aws logs tail /aws/lambda/slack-event-handler --follow

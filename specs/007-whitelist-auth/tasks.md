@@ -15,8 +15,8 @@
 
 ## Path Conventions
 
-- **Lambda function**: `lambda/slack-event-handler/` at repository root
-- **Tests**: `lambda/slack-event-handler/tests/`
+- **Lambda function**: `lambda/verification-stack/slack-event-handler/` at repository root
+- **Tests**: `lambda/verification-stack/slack-event-handler/tests/`
 
 ---
 
@@ -37,15 +37,15 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [x] T005 Create `lambda/slack-event-handler/whitelist_loader.py` with function `load_whitelist_config()` that reads from DynamoDB, Secrets Manager, or environment variables (priority order)
-- [x] T006 Implement in-memory cache with 5-minute TTL in `lambda/slack-event-handler/whitelist_loader.py` for whitelist configuration
-- [x] T007 Implement `get_whitelist_from_dynamodb()` function in `lambda/slack-event-handler/whitelist_loader.py` to query DynamoDB table
-- [x] T008 Implement `get_whitelist_from_secrets_manager()` function in `lambda/slack-event-handler/whitelist_loader.py` to read from Secrets Manager
-- [x] T009 Implement `get_whitelist_from_env()` function in `lambda/slack-event-handler/whitelist_loader.py` to parse environment variables
-- [x] T010 Implement fail-closed error handling in `lambda/slack-event-handler/whitelist_loader.py` (raise AuthorizationError when config load fails or whitelist is empty)
-- [x] T011 [P] Create `lambda/slack-event-handler/tests/test_whitelist_loader.py` with unit tests for DynamoDB, Secrets Manager, and environment variable loading
-- [x] T012 [P] Create `lambda/slack-event-handler/tests/test_whitelist_loader.py` with unit tests for cache TTL and invalidation logic
-- [x] T013 [P] Create `lambda/slack-event-handler/tests/test_whitelist_loader.py` with unit tests for fail-closed error handling
+- [x] T005 Create `lambda/verification-stack/slack-event-handler/whitelist_loader.py` with function `load_whitelist_config()` that reads from DynamoDB, Secrets Manager, or environment variables (priority order)
+- [x] T006 Implement in-memory cache with 5-minute TTL in `lambda/verification-stack/slack-event-handler/whitelist_loader.py` for whitelist configuration
+- [x] T007 Implement `get_whitelist_from_dynamodb()` function in `lambda/verification-stack/slack-event-handler/whitelist_loader.py` to query DynamoDB table
+- [x] T008 Implement `get_whitelist_from_secrets_manager()` function in `lambda/verification-stack/slack-event-handler/whitelist_loader.py` to read from Secrets Manager
+- [x] T009 Implement `get_whitelist_from_env()` function in `lambda/verification-stack/slack-event-handler/whitelist_loader.py` to parse environment variables
+- [x] T010 Implement fail-closed error handling in `lambda/verification-stack/slack-event-handler/whitelist_loader.py` (raise AuthorizationError when config load fails or whitelist is empty)
+- [x] T011 [P] Create `lambda/verification-stack/slack-event-handler/tests/test_whitelist_loader.py` with unit tests for DynamoDB, Secrets Manager, and environment variable loading
+- [x] T012 [P] Create `lambda/verification-stack/slack-event-handler/tests/test_whitelist_loader.py` with unit tests for cache TTL and invalidation logic
+- [x] T013 [P] Create `lambda/verification-stack/slack-event-handler/tests/test_whitelist_loader.py` with unit tests for fail-closed error handling
 
 **Checkpoint**: Foundation ready - whitelist configuration loading is complete and tested. User story implementation can now begin.
 
@@ -61,19 +61,19 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [x] T014 [P] [US1] Create BDD scenario for authorized user request in `lambda/slack-event-handler/tests/test_authorization.feature` with Given-When-Then for authorized team_id, user_id, channel_id
-- [x] T015 [P] [US1] Create unit test for `authorize_request()` with all entities authorized in `lambda/slack-event-handler/tests/test_authorization.py`
-- [x] T016 [P] [US1] Create integration test for end-to-end authorized request flow in `lambda/slack-event-handler/tests/test_handler.py`
+- [x] T014 [P] [US1] Create BDD scenario for authorized user request in `lambda/verification-stack/slack-event-handler/tests/test_authorization.feature` with Given-When-Then for authorized team_id, user_id, channel_id
+- [x] T015 [P] [US1] Create unit test for `authorize_request()` with all entities authorized in `lambda/verification-stack/slack-event-handler/tests/test_authorization.py`
+- [x] T016 [P] [US1] Create integration test for end-to-end authorized request flow in `lambda/verification-stack/slack-event-handler/tests/test_handler.py`
 
 ### Implementation for User Story 1
 
-- [x] T017 [P] [US1] Create `AuthorizationResult` dataclass in `lambda/slack-event-handler/authorization.py` with fields: authorized, team_id, user_id, channel_id, unauthorized_entities, error_message, timestamp
-- [x] T018 [US1] Create `AuthorizationError` exception class in `lambda/slack-event-handler/authorization.py` for configuration load failures
-- [x] T019 [US1] Implement `authorize_request(team_id, user_id, channel_id)` function in `lambda/slack-event-handler/authorization.py` that checks all three entities against whitelist (AND condition)
-- [x] T020 [US1] Implement whitelist lookup logic using sets for O(1) lookup in `lambda/slack-event-handler/authorization.py`
-- [x] T021 [US1] Add success logging for authorized requests in `lambda/slack-event-handler/authorization.py` using existing logger module
-- [x] T022 [US1] Integrate whitelist authorization call in `lambda/slack-event-handler/handler.py` after Existence Check (3b) succeeds and before Execution API invocation
-- [x] T023 [US1] Update `lambda/slack-event-handler/handler.py` to continue processing when authorization succeeds (authorized=True)
+- [x] T017 [P] [US1] Create `AuthorizationResult` dataclass in `lambda/verification-stack/slack-event-handler/authorization.py` with fields: authorized, team_id, user_id, channel_id, unauthorized_entities, error_message, timestamp
+- [x] T018 [US1] Create `AuthorizationError` exception class in `lambda/verification-stack/slack-event-handler/authorization.py` for configuration load failures
+- [x] T019 [US1] Implement `authorize_request(team_id, user_id, channel_id)` function in `lambda/verification-stack/slack-event-handler/authorization.py` that checks all three entities against whitelist (AND condition)
+- [x] T020 [US1] Implement whitelist lookup logic using sets for O(1) lookup in `lambda/verification-stack/slack-event-handler/authorization.py`
+- [x] T021 [US1] Add success logging for authorized requests in `lambda/verification-stack/slack-event-handler/authorization.py` using existing logger module
+- [x] T022 [US1] Integrate whitelist authorization call in `lambda/verification-stack/slack-event-handler/handler.py` after Existence Check (3b) succeeds and before Execution API invocation
+- [x] T023 [US1] Update `lambda/verification-stack/slack-event-handler/handler.py` to continue processing when authorization succeeds (authorized=True)
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently. Authorized users can successfully use the AI feature.
 
@@ -87,22 +87,22 @@
 
 ### Tests for User Story 2
 
-- [x] T024 [P] [US2] Create BDD scenario for unauthorized team_id request in `lambda/slack-event-handler/tests/test_authorization.feature` with Given-When-Then for 403 response and security log
-- [x] T025 [P] [US2] Create BDD scenario for unauthorized user_id request in `lambda/slack-event-handler/tests/test_authorization.feature` with Given-When-Then for 403 response and security log
-- [x] T026 [P] [US2] Create BDD scenario for unauthorized channel_id request in `lambda/slack-event-handler/tests/test_authorization.feature` with Given-When-Then for 403 response and security log
-- [x] T027 [P] [US2] Create unit test for `authorize_request()` with unauthorized team_id in `lambda/slack-event-handler/tests/test_authorization.py`
-- [x] T028 [P] [US2] Create unit test for `authorize_request()` with unauthorized user_id in `lambda/slack-event-handler/tests/test_authorization.py`
-- [x] T029 [P] [US2] Create unit test for `authorize_request()` with unauthorized channel_id in `lambda/slack-event-handler/tests/test_authorization.py`
-- [x] T030 [P] [US2] Create unit test for `authorize_request()` with missing entity IDs (treated as unauthorized) in `lambda/slack-event-handler/tests/test_authorization.py`
-- [x] T031 [P] [US2] Create integration test for end-to-end unauthorized request flow returning 403 in `lambda/slack-event-handler/tests/test_handler.py`
+- [x] T024 [P] [US2] Create BDD scenario for unauthorized team_id request in `lambda/verification-stack/slack-event-handler/tests/test_authorization.feature` with Given-When-Then for 403 response and security log
+- [x] T025 [P] [US2] Create BDD scenario for unauthorized user_id request in `lambda/verification-stack/slack-event-handler/tests/test_authorization.feature` with Given-When-Then for 403 response and security log
+- [x] T026 [P] [US2] Create BDD scenario for unauthorized channel_id request in `lambda/verification-stack/slack-event-handler/tests/test_authorization.feature` with Given-When-Then for 403 response and security log
+- [x] T027 [P] [US2] Create unit test for `authorize_request()` with unauthorized team_id in `lambda/verification-stack/slack-event-handler/tests/test_authorization.py`
+- [x] T028 [P] [US2] Create unit test for `authorize_request()` with unauthorized user_id in `lambda/verification-stack/slack-event-handler/tests/test_authorization.py`
+- [x] T029 [P] [US2] Create unit test for `authorize_request()` with unauthorized channel_id in `lambda/verification-stack/slack-event-handler/tests/test_authorization.py`
+- [x] T030 [P] [US2] Create unit test for `authorize_request()` with missing entity IDs (treated as unauthorized) in `lambda/verification-stack/slack-event-handler/tests/test_authorization.py`
+- [x] T031 [P] [US2] Create integration test for end-to-end unauthorized request flow returning 403 in `lambda/verification-stack/slack-event-handler/tests/test_handler.py`
 
 ### Implementation for User Story 2
 
-- [x] T032 [US2] Update `authorize_request()` in `lambda/slack-event-handler/authorization.py` to populate `unauthorized_entities` list when authorization fails
-- [x] T033 [US2] Add error logging for unauthorized requests in `lambda/slack-event-handler/authorization.py` with unauthorized_entities details using existing logger module
-- [x] T034 [US2] Update `lambda/slack-event-handler/handler.py` to return 403 Forbidden when authorization fails (authorized=False)
-- [x] T035 [US2] Add security event logging in `lambda/slack-event-handler/handler.py` when authorization fails with event type "whitelist_authorization_failed"
-- [x] T036 [US2] Implement fail-closed handling in `lambda/slack-event-handler/handler.py` when AuthorizationError is raised (config load failure)
+- [x] T032 [US2] Update `authorize_request()` in `lambda/verification-stack/slack-event-handler/authorization.py` to populate `unauthorized_entities` list when authorization fails
+- [x] T033 [US2] Add error logging for unauthorized requests in `lambda/verification-stack/slack-event-handler/authorization.py` with unauthorized_entities details using existing logger module
+- [x] T034 [US2] Update `lambda/verification-stack/slack-event-handler/handler.py` to return 403 Forbidden when authorization fails (authorized=False)
+- [x] T035 [US2] Add security event logging in `lambda/verification-stack/slack-event-handler/handler.py` when authorization fails with event type "whitelist_authorization_failed"
+- [x] T036 [US2] Implement fail-closed handling in `lambda/verification-stack/slack-event-handler/handler.py` when AuthorizationError is raised (config load failure)
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently. Unauthorized requests are properly rejected with 403 and security logs are recorded.
 
@@ -116,16 +116,16 @@
 
 ### Tests for User Story 3
 
-- [x] T037 [P] [US3] Create integration test for DynamoDB whitelist update (add team_id) and immediate authorization success in `lambda/slack-event-handler/tests/test_whitelist_loader.py`
-- [x] T038 [P] [US3] Create integration test for DynamoDB whitelist update (remove user_id) and immediate authorization failure in `lambda/slack-event-handler/tests/test_whitelist_loader.py`
-- [x] T039 [P] [US3] Create integration test for cache TTL expiration and whitelist update reflection in `lambda/slack-event-handler/tests/test_whitelist_loader.py`
-- [x] T040 [P] [US3] Create integration test for Secrets Manager whitelist update reflection in `lambda/slack-event-handler/tests/test_whitelist_loader.py`
-- [x] T041 [P] [US3] Create integration test for environment variable whitelist update (requires redeploy) in `lambda/slack-event-handler/tests/test_whitelist_loader.py`
+- [x] T037 [P] [US3] Create integration test for DynamoDB whitelist update (add team_id) and immediate authorization success in `lambda/verification-stack/slack-event-handler/tests/test_whitelist_loader.py`
+- [x] T038 [P] [US3] Create integration test for DynamoDB whitelist update (remove user_id) and immediate authorization failure in `lambda/verification-stack/slack-event-handler/tests/test_whitelist_loader.py`
+- [x] T039 [P] [US3] Create integration test for cache TTL expiration and whitelist update reflection in `lambda/verification-stack/slack-event-handler/tests/test_whitelist_loader.py`
+- [x] T040 [P] [US3] Create integration test for Secrets Manager whitelist update reflection in `lambda/verification-stack/slack-event-handler/tests/test_whitelist_loader.py`
+- [x] T041 [P] [US3] Create integration test for environment variable whitelist update (requires redeploy) in `lambda/verification-stack/slack-event-handler/tests/test_whitelist_loader.py`
 
 ### Implementation for User Story 3
 
-- [x] T042 [US3] Update `load_whitelist_config()` in `lambda/slack-event-handler/whitelist_loader.py` to handle cache TTL expiration and reload from source
-- [x] T043 [US3] Add cache invalidation logic in `lambda/slack-event-handler/whitelist_loader.py` when TTL expires (5 minutes)
+- [x] T042 [US3] Update `load_whitelist_config()` in `lambda/verification-stack/slack-event-handler/whitelist_loader.py` to handle cache TTL expiration and reload from source
+- [x] T043 [US3] Add cache invalidation logic in `lambda/verification-stack/slack-event-handler/whitelist_loader.py` when TTL expires (5 minutes)
 - [x] T044 [US3] Document whitelist management procedures in `specs/007-whitelist-auth/quickstart.md` for DynamoDB, Secrets Manager, and environment variable updates
 
 **Note**: User Story 3 focuses on the ability to manage whitelist entries through configuration sources. The actual management UI/API is out of scope per spec. This phase ensures that whitelist updates are properly reflected when configuration sources are updated.
@@ -138,17 +138,17 @@
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [x] T045 [P] Add CloudWatch metrics for whitelist authorization (WhitelistAuthorizationSuccess, WhitelistAuthorizationFailed, WhitelistAuthorizationLatency) in `lambda/slack-event-handler/authorization.py`
-- [x] T046 [P] Add CloudWatch metrics for whitelist config loading (WhitelistConfigLoadErrors) in `lambda/slack-event-handler/whitelist_loader.py`
+- [x] T045 [P] Add CloudWatch metrics for whitelist authorization (WhitelistAuthorizationSuccess, WhitelistAuthorizationFailed, WhitelistAuthorizationLatency) in `lambda/verification-stack/slack-event-handler/authorization.py`
+- [x] T046 [P] Add CloudWatch metrics for whitelist config loading (WhitelistConfigLoadErrors) in `lambda/verification-stack/slack-event-handler/whitelist_loader.py`
 - [x] T047 [P] Create CloudWatch alarms for whitelist authorization failures (5 failures in 5 minutes) in `cdk/lib/slack-bedrock-stack.ts`
 - [x] T048 [P] Create CloudWatch alarms for whitelist config load errors in `cdk/lib/slack-bedrock-stack.ts`
 - [x] T049 Update documentation in `docs/security/implementation.md` to include whitelist authorization (3c) layer details
 - [x] T050 Update documentation in `docs/security/authentication-authorization.md` to include whitelist authorization flow
 - [x] T051 Update architecture diagram in `docs/architecture/overview.md` to show whitelist authorization layer
-- [x] T052 [P] Add performance tests to verify ≤50ms (p95) authorization latency in `lambda/slack-event-handler/tests/test_authorization.py`
-- [x] T053 [P] Add edge case tests for empty whitelist (fail-closed) in `lambda/slack-event-handler/tests/test_authorization.py`
-- [x] T054 [P] Add edge case tests for config load failure (fail-closed) in `lambda/slack-event-handler/tests/test_authorization.py`
-- [x] T055 [P] Add edge case tests for partial authorization (reject) in `lambda/slack-event-handler/tests/test_authorization.py`
+- [x] T052 [P] Add performance tests to verify ≤50ms (p95) authorization latency in `lambda/verification-stack/slack-event-handler/tests/test_authorization.py`
+- [x] T053 [P] Add edge case tests for empty whitelist (fail-closed) in `lambda/verification-stack/slack-event-handler/tests/test_authorization.py`
+- [x] T054 [P] Add edge case tests for config load failure (fail-closed) in `lambda/verification-stack/slack-event-handler/tests/test_authorization.py`
+- [x] T055 [P] Add edge case tests for partial authorization (reject) in `lambda/verification-stack/slack-event-handler/tests/test_authorization.py`
 - [x] T056 Run quickstart.md validation to ensure all setup steps work correctly
 - [x] T057 Code cleanup and refactoring: ensure consistent error handling patterns across authorization.py and whitelist_loader.py
 - [x] T058 Security review: verify fail-closed principle is consistently applied, verify no PII in logs
@@ -192,13 +192,13 @@
 
 ```bash
 # Launch all tests for User Story 1 together:
-Task: "Create BDD scenario for authorized user request in lambda/slack-event-handler/tests/test_authorization.feature"
-Task: "Create unit test for authorize_request() with all entities authorized in lambda/slack-event-handler/tests/test_authorization.py"
-Task: "Create integration test for end-to-end authorized request flow in lambda/slack-event-handler/tests/test_handler.py"
+Task: "Create BDD scenario for authorized user request in lambda/verification-stack/slack-event-handler/tests/test_authorization.feature"
+Task: "Create unit test for authorize_request() with all entities authorized in lambda/verification-stack/slack-event-handler/tests/test_authorization.py"
+Task: "Create integration test for end-to-end authorized request flow in lambda/verification-stack/slack-event-handler/tests/test_handler.py"
 
 # Launch model/exception creation:
-Task: "Create AuthorizationResult dataclass in lambda/slack-event-handler/authorization.py"
-Task: "Create AuthorizationError exception class in lambda/slack-event-handler/authorization.py"
+Task: "Create AuthorizationResult dataclass in lambda/verification-stack/slack-event-handler/authorization.py"
+Task: "Create AuthorizationError exception class in lambda/verification-stack/slack-event-handler/authorization.py"
 ```
 
 ---
@@ -207,14 +207,14 @@ Task: "Create AuthorizationError exception class in lambda/slack-event-handler/a
 
 ```bash
 # Launch all BDD scenarios together:
-Task: "Create BDD scenario for unauthorized team_id request in lambda/slack-event-handler/tests/test_authorization.feature"
-Task: "Create BDD scenario for unauthorized user_id request in lambda/slack-event-handler/tests/test_authorization.feature"
-Task: "Create BDD scenario for unauthorized channel_id request in lambda/slack-event-handler/tests/test_authorization.feature"
+Task: "Create BDD scenario for unauthorized team_id request in lambda/verification-stack/slack-event-handler/tests/test_authorization.feature"
+Task: "Create BDD scenario for unauthorized user_id request in lambda/verification-stack/slack-event-handler/tests/test_authorization.feature"
+Task: "Create BDD scenario for unauthorized channel_id request in lambda/verification-stack/slack-event-handler/tests/test_authorization.feature"
 
 # Launch all unit tests together:
-Task: "Create unit test for authorize_request() with unauthorized team_id in lambda/slack-event-handler/tests/test_authorization.py"
-Task: "Create unit test for authorize_request() with unauthorized user_id in lambda/slack-event-handler/tests/test_authorization.py"
-Task: "Create unit test for authorize_request() with unauthorized channel_id in lambda/slack-event-handler/tests/test_authorization.py"
+Task: "Create unit test for authorize_request() with unauthorized team_id in lambda/verification-stack/slack-event-handler/tests/test_authorization.py"
+Task: "Create unit test for authorize_request() with unauthorized user_id in lambda/verification-stack/slack-event-handler/tests/test_authorization.py"
+Task: "Create unit test for authorize_request() with unauthorized channel_id in lambda/verification-stack/slack-event-handler/tests/test_authorization.py"
 ```
 
 ---

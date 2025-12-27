@@ -23,8 +23,8 @@ export SLACK_BOT_TOKEN=xoxb-your-bot-token
 
 # 2. Install dependencies
 cd cdk && npm install
-cd ../lambda/slack-event-handler && pip install -r requirements.txt -t .
-cd ../bedrock-processor && pip install -r requirements.txt -t .
+cd ../lambda/verification-stack/slack-event-handler && pip install -r requirements.txt -t .
+cd ../../execution-stack/bedrock-processor && pip install -r requirements.txt -t .
 
 # 3. Deploy
 cd ../../cdk && cdk deploy
@@ -86,6 +86,16 @@ For details, see [Architecture Overview](docs/reference/architecture/overview.md
 - AWS CDK (TypeScript)
 - DynamoDB (tokens, cache, deduplication)
 - AWS Secrets Manager
+- **Split-stack deployment** (cross-account ready)
+
+### 🔀 Deployment Options
+
+| Mode             | Description                     | Use Case                             |
+| ---------------- | ------------------------------- | ------------------------------------ |
+| **Single Stack** | All resources in one stack      | Simple deployments                   |
+| **Split Stack**  | Verification + Execution stacks | Cross-account, independent lifecycle |
+
+See [CDK README](cdk/README.md) for deployment options.
 
 ## Documentation
 
@@ -105,8 +115,10 @@ For details, see [Architecture Overview](docs/reference/architecture/overview.md
 slack-ai-app/
 ├── cdk/                    # AWS CDK infrastructure
 ├── lambda/
-│   ├── slack-event-handler/  # Verification Layer
-│   └── bedrock-processor/    # Execution Layer
+│   ├── verification-stack/  # Verification Zone (検証層)
+│   │   └── slack-event-handler/
+│   └── execution-stack/     # Execution Zone (実行層)
+│       └── bedrock-processor/
 ├── docs/                   # Documentation
 │   ├── reference/          # Architecture, Security, Operations
 │   ├── explanation/        # Design Principles, ADRs
@@ -119,8 +131,8 @@ slack-ai-app/
 
 ```bash
 # Run tests
-cd lambda/slack-event-handler && pytest tests/
-cd ../bedrock-processor && pytest tests/
+cd lambda/verification-stack/slack-event-handler && pytest tests/
+cd ../../execution-stack/bedrock-processor && pytest tests/
 
 # View logs
 aws logs tail /aws/lambda/slack-event-handler --follow

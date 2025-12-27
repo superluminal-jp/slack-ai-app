@@ -47,7 +47,7 @@
 
 ### ✅ Phase 2: API Gateway Client Implementation
 
-- **T005**: Created API Gateway client module (`lambda/slack-event-handler/api_gateway_client.py`)
+- **T005**: Created API Gateway client module (`lambda/verification-stack/slack-event-handler/api_gateway_client.py`)
 
   - SigV4 signing using boto3
   - Request formatting and error handling
@@ -57,7 +57,7 @@
 
   - Updated `requirements.txt` with `requests>=2.31.0`
 
-- **T007**: Created unit tests (`lambda/slack-event-handler/tests/test_api_gateway_client.py`)
+- **T007**: Created unit tests (`lambda/verification-stack/slack-event-handler/tests/test_api_gateway_client.py`)
 
   - Test SigV4 signing
   - Test request formatting
@@ -172,8 +172,8 @@
 ### New Files
 
 - `cdk/lib/constructs/execution-api.ts` - API Gateway construct
-- `lambda/slack-event-handler/api_gateway_client.py` - SigV4 signing client
-- `lambda/slack-event-handler/tests/test_api_gateway_client.py` - Unit tests
+- `lambda/verification-stack/slack-event-handler/api_gateway_client.py` - SigV4 signing client
+- `lambda/verification-stack/slack-event-handler/tests/test_api_gateway_client.py` - Unit tests
 - `specs/002-iam-layer-auth/scripts/enable-api-gateway.sh` - Feature flag script
 - `specs/002-iam-layer-auth/scripts/test-api-gateway-auth.sh` - Auth test script
 - `specs/002-iam-layer-auth/scripts/check-logs.sh` - Log checking script
@@ -184,8 +184,8 @@
 
 - `cdk/lib/slack-bedrock-stack.ts` - Added API Gateway integration
 - `cdk/lib/constructs/slack-event-handler.ts` - Added environment variables
-- `lambda/slack-event-handler/handler.py` - Added feature flag logic
-- `lambda/slack-event-handler/requirements.txt` - Added requests library
+- `lambda/verification-stack/slack-event-handler/handler.py` - Added feature flag logic
+- `lambda/verification-stack/slack-event-handler/requirements.txt` - Added requests library
 
 ## Success Criteria Status
 

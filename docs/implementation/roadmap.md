@@ -46,35 +46,35 @@
 1. **添付ファイルメタデータ抽出** (SlackEventHandler)
 
    - タスク: `event.files` から添付ファイル情報を抽出
-   - 成果物: `lambda/slack-event-handler/attachment_extractor.py`
+   - 成果物: `lambda/verification-stack/slack-event-handler/attachment_extractor.py`
    - 検証: 各種ファイル形式のメタデータ抽出テスト
    - 所要時間: 1 日
 
 2. **ファイルダウンロード機能** (BedrockProcessor)
 
    - タスク: Slack CDN からファイルをダウンロード（ボットトークン認証）
-   - 成果物: `lambda/bedrock-processor/file_downloader.py`
+   - 成果物: `lambda/execution-stack/bedrock-processor/file_downloader.py`
    - 検証: ダウンロード成功/失敗のテスト
    - 所要時間: 2 日
 
 3. **ドキュメントテキスト抽出** (BedrockProcessor)
 
    - タスク: PDF, DOCX, CSV, XLSX, PPTX, TXT からテキスト抽出
-   - 成果物: `lambda/bedrock-processor/document_extractor.py`
+   - 成果物: `lambda/execution-stack/bedrock-processor/document_extractor.py`
    - 検証: 各形式のテキスト抽出テスト
    - 所要時間: 3 日
 
 4. **画像処理統合** (BedrockProcessor)
 
    - タスク: 画像を Bedrock 視覚機能に送信
-   - 成果物: `lambda/bedrock-processor/bedrock_client.py` の更新
+   - 成果物: `lambda/execution-stack/bedrock-processor/bedrock_client.py` の更新
    - 検証: 画像分析のテスト
    - 所要時間: 2 日
 
 5. **添付ファイル処理オーケストレーション** (BedrockProcessor)
 
    - タスク: 複数添付ファイルの処理、エラーハンドリング
-   - 成果物: `lambda/bedrock-processor/attachment_processor.py`
+   - 成果物: `lambda/execution-stack/bedrock-processor/attachment_processor.py`
    - 検証: 複数ファイル、部分成功、エラーケースのテスト
    - 所要時間: 2 日
 
@@ -91,7 +91,7 @@
 4.5. **Slack API Existence Check (Two-Key Defense - 鍵2)**
 
    - タスク: team_id, user_id, channel_id の実在性を Slack API で動的に確認
-   - 成果物: `lambda/slack-event-handler/existence_check.py`
+   - 成果物: `lambda/verification-stack/slack-event-handler/existence_check.py`
    - DynamoDB キャッシュテーブル作成（5分TTL）
    - エラーハンドリング（タイムアウト、レート制限、リトライ）
    - CloudWatch メトリクスとアラーム
@@ -184,14 +184,14 @@
 17. **スレッド返信機能実装** ✅ 完了
 
     - タスク: Slack API `thread_ts` パラメータを使用したスレッド返信機能
-    - 成果物: `lambda/bedrock-processor/slack_poster.py`、`lambda/slack-event-handler/handler.py`
+    - 成果物: `lambda/execution-stack/bedrock-processor/slack_poster.py`、`lambda/verification-stack/slack-event-handler/handler.py`
     - 検証: スレッド返信テスト、エラーハンドリングテスト
     - 完了日: 2025-12-06
 
 18. **スレッド履歴取得機能実装** ✅ 完了
 
     - タスク: Slack API `conversations.replies` を使用したスレッド履歴取得
-    - 成果物: `lambda/bedrock-processor/thread_history.py`
+    - 成果物: `lambda/execution-stack/bedrock-processor/thread_history.py`
     - 検証: スレッド履歴取得テスト、会話コンテキストテスト
     - 完了日: 2025-12-06
 

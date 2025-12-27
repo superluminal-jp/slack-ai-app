@@ -105,8 +105,8 @@ lambda/
 **Structure Decision**: 
 - **cdk/lib/constructs/execution-api.ts**: New construct for API Gateway REST API with IAM authentication
 - **cdk/lib/constructs/bedrock-processor.ts**: Modified to integrate with API Gateway instead of direct Lambda URL
-- **lambda/slack-event-handler/api_gateway_client.py**: New module for API Gateway IAM authentication using boto3 SigV4 signing
-- **lambda/slack-event-handler/handler.py**: Modified to use API Gateway client instead of Lambda invoke
+- **lambda/verification-stack/slack-event-handler/api_gateway_client.py**: New module for API Gateway IAM authentication using boto3 SigV4 signing
+- **lambda/verification-stack/slack-event-handler/handler.py**: Modified to use API Gateway client instead of Lambda invoke
 
 ## Complexity Tracking
 

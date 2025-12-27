@@ -15,9 +15,9 @@
 
 ## Path Conventions
 
-- Lambda functions: `lambda/slack-event-handler/`
+- Lambda functions: `lambda/verification-stack/slack-event-handler/`
 - CDK infrastructure: `cdk/lib/constructs/`
-- Tests: `lambda/slack-event-handler/tests/`
+- Tests: `lambda/verification-stack/slack-event-handler/tests/`
 
 ---
 
@@ -29,7 +29,7 @@
 - [x] T002 Modify CDK stack to instantiate ExistenceCheckCache construct in `cdk/lib/slack-bedrock-stack.ts`
 - [x] T003 Grant SlackEventHandler Lambda read/write permissions to ExistenceCheckCache table in `cdk/lib/slack-bedrock-stack.ts`
 - [x] T004 Update SlackEventHandler Lambda environment variable for cache table name in `cdk/lib/constructs/slack-event-handler.ts` (add `EXISTENCE_CHECK_CACHE_TABLE`)
-- [x] T005 [P] Verify slack-sdk dependency exists in `lambda/slack-event-handler/requirements.txt` (should already be present)
+- [x] T005 [P] Verify slack-sdk dependency exists in `lambda/verification-stack/slack-event-handler/requirements.txt` (should already be present)
 
 ---
 
@@ -39,10 +39,10 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [x] T006 Create ExistenceCheckError exception class in `lambda/slack-event-handler/existence_check.py`
-- [x] T007 Create cache helper functions `get_from_cache()` and `save_to_cache()` in `lambda/slack-event-handler/existence_check.py` for DynamoDB cache operations
-- [x] T008 Create `check_entity_existence()` function skeleton in `lambda/slack-event-handler/existence_check.py` with Bot Token parameter and team_id, user_id, channel_id parameters
-- [x] T009 Implement cache key generation function `_generate_cache_key()` in `lambda/slack-event-handler/existence_check.py` using format `{team_id}#{user_id}#{channel_id}`
+- [x] T006 Create ExistenceCheckError exception class in `lambda/verification-stack/slack-event-handler/existence_check.py`
+- [x] T007 Create cache helper functions `get_from_cache()` and `save_to_cache()` in `lambda/verification-stack/slack-event-handler/existence_check.py` for DynamoDB cache operations
+- [x] T008 Create `check_entity_existence()` function skeleton in `lambda/verification-stack/slack-event-handler/existence_check.py` with Bot Token parameter and team_id, user_id, channel_id parameters
+- [x] T009 Implement cache key generation function `_generate_cache_key()` in `lambda/verification-stack/slack-event-handler/existence_check.py` using format `{team_id}#{user_id}#{channel_id}`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 
@@ -56,27 +56,27 @@
 
 ### Implementation for User Story 1
 
-- [x] T010 [US1] Implement team_id verification using `client.team_info(team=team_id)` in `lambda/slack-event-handler/existence_check.py`
-- [x] T011 [US1] Implement user_id verification using `client.users_info(user=user_id)` in `lambda/slack-event-handler/existence_check.py`
-- [x] T012 [US1] Implement channel_id verification using `client.conversations_info(channel=channel_id)` in `lambda/slack-event-handler/existence_check.py`
-- [x] T013 [US1] Add error handling for "team_not_found" error in `lambda/slack-event-handler/existence_check.py` (raise ExistenceCheckError)
-- [x] T014 [US1] Add error handling for "user_not_found" error in `lambda/slack-event-handler/existence_check.py` (raise ExistenceCheckError)
-- [x] T015 [US1] Add error handling for "channel_not_found" error in `lambda/slack-event-handler/existence_check.py` (raise ExistenceCheckError)
-- [x] T016 [US1] Integrate Existence Check into handler after signature verification in `lambda/slack-event-handler/handler.py` (call `check_entity_existence()` after signature verification succeeds)
-- [x] T017 [US1] Add 403 Forbidden response when ExistenceCheckError is raised in `lambda/slack-event-handler/handler.py`
-- [x] T018 [US1] Add security event logging for existence check failures in `lambda/slack-event-handler/handler.py` (log team_id, user_id, channel_id, error details)
-- [x] T019 [US1] Handle missing team_id, user_id, or channel_id gracefully in `lambda/slack-event-handler/handler.py` (skip existence check for missing fields, verify only available fields per FR-012)
-- [x] T020 [US1] Handle Bot Token unavailability gracefully in `lambda/slack-event-handler/handler.py` (skip existence check, log warning per FR-011)
-- [x] T021 [US1] Write BDD scenario for valid signature with fake team_id in `lambda/slack-event-handler/tests/test_existence_check.feature` (Given/When/Then format)
-- [x] T022 [US1] Write BDD scenario for valid signature with fake user_id in `lambda/slack-event-handler/tests/test_existence_check.feature`
-- [x] T023 [US1] Write BDD scenario for valid signature with fake channel_id in `lambda/slack-event-handler/tests/test_existence_check.feature`
-- [x] T024 [US1] Write unit test for team_id verification success in `lambda/slack-event-handler/tests/test_existence_check.py`
-- [x] T025 [US1] Write unit test for user_id verification success in `lambda/slack-event-handler/tests/test_existence_check.py`
-- [x] T026 [US1] Write unit test for channel_id verification success in `lambda/slack-event-handler/tests/test_existence_check.py`
-- [x] T027 [US1] Write unit test for team_id verification failure in `lambda/slack-event-handler/tests/test_existence_check.py`
-- [x] T028 [US1] Write unit test for user_id verification failure in `lambda/slack-event-handler/tests/test_existence_check.py`
-- [x] T029 [US1] Write unit test for channel_id verification failure in `lambda/slack-event-handler/tests/test_existence_check.py`
-- [x] T030 [US1] Write integration test for handler with Existence Check in `lambda/slack-event-handler/tests/test_handler.py` (mock Slack API calls)
+- [x] T010 [US1] Implement team_id verification using `client.team_info(team=team_id)` in `lambda/verification-stack/slack-event-handler/existence_check.py`
+- [x] T011 [US1] Implement user_id verification using `client.users_info(user=user_id)` in `lambda/verification-stack/slack-event-handler/existence_check.py`
+- [x] T012 [US1] Implement channel_id verification using `client.conversations_info(channel=channel_id)` in `lambda/verification-stack/slack-event-handler/existence_check.py`
+- [x] T013 [US1] Add error handling for "team_not_found" error in `lambda/verification-stack/slack-event-handler/existence_check.py` (raise ExistenceCheckError)
+- [x] T014 [US1] Add error handling for "user_not_found" error in `lambda/verification-stack/slack-event-handler/existence_check.py` (raise ExistenceCheckError)
+- [x] T015 [US1] Add error handling for "channel_not_found" error in `lambda/verification-stack/slack-event-handler/existence_check.py` (raise ExistenceCheckError)
+- [x] T016 [US1] Integrate Existence Check into handler after signature verification in `lambda/verification-stack/slack-event-handler/handler.py` (call `check_entity_existence()` after signature verification succeeds)
+- [x] T017 [US1] Add 403 Forbidden response when ExistenceCheckError is raised in `lambda/verification-stack/slack-event-handler/handler.py`
+- [x] T018 [US1] Add security event logging for existence check failures in `lambda/verification-stack/slack-event-handler/handler.py` (log team_id, user_id, channel_id, error details)
+- [x] T019 [US1] Handle missing team_id, user_id, or channel_id gracefully in `lambda/verification-stack/slack-event-handler/handler.py` (skip existence check for missing fields, verify only available fields per FR-012)
+- [x] T020 [US1] Handle Bot Token unavailability gracefully in `lambda/verification-stack/slack-event-handler/handler.py` (skip existence check, log warning per FR-011)
+- [x] T021 [US1] Write BDD scenario for valid signature with fake team_id in `lambda/verification-stack/slack-event-handler/tests/test_existence_check.feature` (Given/When/Then format)
+- [x] T022 [US1] Write BDD scenario for valid signature with fake user_id in `lambda/verification-stack/slack-event-handler/tests/test_existence_check.feature`
+- [x] T023 [US1] Write BDD scenario for valid signature with fake channel_id in `lambda/verification-stack/slack-event-handler/tests/test_existence_check.feature`
+- [x] T024 [US1] Write unit test for team_id verification success in `lambda/verification-stack/slack-event-handler/tests/test_existence_check.py`
+- [x] T025 [US1] Write unit test for user_id verification success in `lambda/verification-stack/slack-event-handler/tests/test_existence_check.py`
+- [x] T026 [US1] Write unit test for channel_id verification success in `lambda/verification-stack/slack-event-handler/tests/test_existence_check.py`
+- [x] T027 [US1] Write unit test for team_id verification failure in `lambda/verification-stack/slack-event-handler/tests/test_existence_check.py`
+- [x] T028 [US1] Write unit test for user_id verification failure in `lambda/verification-stack/slack-event-handler/tests/test_existence_check.py`
+- [x] T029 [US1] Write unit test for channel_id verification failure in `lambda/verification-stack/slack-event-handler/tests/test_existence_check.py`
+- [x] T030 [US1] Write integration test for handler with Existence Check in `lambda/verification-stack/slack-event-handler/tests/test_handler.py` (mock Slack API calls)
 
 **Checkpoint**: ✅ User Story 1 is fully functional - system verifies entities exist in Slack and rejects invalid requests
 
@@ -90,18 +90,18 @@
 
 ### Implementation for User Story 2
 
-- [x] T031 [US2] Implement cache lookup before Slack API calls in `lambda/slack-event-handler/existence_check.py` (check cache using `get_from_cache()`)
-- [x] T032 [US2] Return early if cache hit found in `lambda/slack-event-handler/existence_check.py` (skip Slack API calls)
-- [x] T033 [US2] Implement cache write after successful verification in `lambda/slack-event-handler/existence_check.py` (call `save_to_cache()` with TTL 300 seconds)
-- [x] T034 [US2] Add cache hit logging in `lambda/slack-event-handler/existence_check.py` (log "existence_check_cache_hit" event)
-- [x] T035 [US2] Add cache miss logging in `lambda/slack-event-handler/existence_check.py` (log "existence_check_cache_miss" event)
-- [x] T036 [US2] Handle cache read failures gracefully in `lambda/slack-event-handler/existence_check.py` (log warning, proceed to Slack API call)
-- [x] T037 [US2] Handle cache write failures gracefully in `lambda/slack-event-handler/existence_check.py` (log warning, continue processing)
-- [x] T038 [US2] Write unit test for cache hit scenario in `lambda/slack-event-handler/tests/test_existence_check.py` (mock DynamoDB get_item returning valid cache entry)
-- [x] T039 [US2] Write unit test for cache miss scenario in `lambda/slack-event-handler/tests/test_existence_check.py` (mock DynamoDB get_item returning None)
-- [x] T040 [US2] Write unit test for cache write after verification in `lambda/slack-event-handler/tests/test_existence_check.py` (verify put_item called with correct TTL)
-- [x] T041 [US2] Write unit test for expired cache entry in `lambda/slack-event-handler/tests/test_existence_check.py` (cache entry with ttl < current_time)
-- [x] T042 [US2] Write integration test for cache hit in `lambda/slack-event-handler/tests/test_handler.py` (send two identical requests, verify second uses cache)
+- [x] T031 [US2] Implement cache lookup before Slack API calls in `lambda/verification-stack/slack-event-handler/existence_check.py` (check cache using `get_from_cache()`)
+- [x] T032 [US2] Return early if cache hit found in `lambda/verification-stack/slack-event-handler/existence_check.py` (skip Slack API calls)
+- [x] T033 [US2] Implement cache write after successful verification in `lambda/verification-stack/slack-event-handler/existence_check.py` (call `save_to_cache()` with TTL 300 seconds)
+- [x] T034 [US2] Add cache hit logging in `lambda/verification-stack/slack-event-handler/existence_check.py` (log "existence_check_cache_hit" event)
+- [x] T035 [US2] Add cache miss logging in `lambda/verification-stack/slack-event-handler/existence_check.py` (log "existence_check_cache_miss" event)
+- [x] T036 [US2] Handle cache read failures gracefully in `lambda/verification-stack/slack-event-handler/existence_check.py` (log warning, proceed to Slack API call)
+- [x] T037 [US2] Handle cache write failures gracefully in `lambda/verification-stack/slack-event-handler/existence_check.py` (log warning, continue processing)
+- [x] T038 [US2] Write unit test for cache hit scenario in `lambda/verification-stack/slack-event-handler/tests/test_existence_check.py` (mock DynamoDB get_item returning valid cache entry)
+- [x] T039 [US2] Write unit test for cache miss scenario in `lambda/verification-stack/slack-event-handler/tests/test_existence_check.py` (mock DynamoDB get_item returning None)
+- [x] T040 [US2] Write unit test for cache write after verification in `lambda/verification-stack/slack-event-handler/tests/test_existence_check.py` (verify put_item called with correct TTL)
+- [x] T041 [US2] Write unit test for expired cache entry in `lambda/verification-stack/slack-event-handler/tests/test_existence_check.py` (cache entry with ttl < current_time)
+- [x] T042 [US2] Write integration test for cache hit in `lambda/verification-stack/slack-event-handler/tests/test_handler.py` (send two identical requests, verify second uses cache)
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently - system verifies entities and caches results
 
@@ -115,21 +115,21 @@
 
 ### Implementation for User Story 3
 
-- [x] T043 [US3] Add 2-second timeout to Slack API client in `lambda/slack-event-handler/existence_check.py` (set `timeout=2` in WebClient initialization)
-- [x] T044 [US3] Implement timeout error handling in `lambda/slack-event-handler/existence_check.py` (catch timeout exception, raise ExistenceCheckError)
-- [x] T045 [US3] Implement retry logic for rate limit errors (429) in `lambda/slack-event-handler/existence_check.py` (max 3 retries with exponential backoff: 1s, 2s, 4s)
-- [x] T046 [US3] Add retry attempt logging in `lambda/slack-event-handler/existence_check.py` (log retry attempt number and delay)
-- [x] T047 [US3] Implement fail-closed behavior for all Slack API errors in `lambda/slack-event-handler/existence_check.py` (reject request with 403 on any error after retries)
-- [x] T048 [US3] Add security event logging for timeout errors in `lambda/slack-event-handler/handler.py` (log "existence_check_timeout" event)
-- [x] T049 [US3] Add security event logging for rate limit errors in `lambda/slack-event-handler/handler.py` (log "existence_check_rate_limit" event)
-- [x] T050 [US3] Add security event logging for other Slack API errors in `lambda/slack-event-handler/handler.py` (log "existence_check_api_error" event)
-- [x] T051 [US3] Write unit test for timeout handling in `lambda/slack-event-handler/tests/test_existence_check.py` (mock timeout exception)
-- [x] T052 [US3] Write unit test for rate limit retry logic in `lambda/slack-event-handler/tests/test_existence_check.py` (mock 429 error, verify retries with backoff)
-- [x] T053 [US3] Write unit test for rate limit exhaustion in `lambda/slack-event-handler/tests/test_existence_check.py` (mock 429 error after 3 retries, verify ExistenceCheckError raised)
-- [x] T054 [US3] Write unit test for other Slack API errors in `lambda/slack-event-handler/tests/test_existence_check.py` (mock other error codes)
-- [x] T055 [US3] Write BDD scenario for Slack API timeout in `lambda/slack-event-handler/tests/test_existence_check.feature` (Given/When/Then format)
-- [x] T056 [US3] Write BDD scenario for Slack API rate limit in `lambda/slack-event-handler/tests/test_existence_check.feature`
-- [x] T057 [US3] Write BDD scenario for Slack API complete failure in `lambda/slack-event-handler/tests/test_existence_check.feature`
+- [x] T043 [US3] Add 2-second timeout to Slack API client in `lambda/verification-stack/slack-event-handler/existence_check.py` (set `timeout=2` in WebClient initialization)
+- [x] T044 [US3] Implement timeout error handling in `lambda/verification-stack/slack-event-handler/existence_check.py` (catch timeout exception, raise ExistenceCheckError)
+- [x] T045 [US3] Implement retry logic for rate limit errors (429) in `lambda/verification-stack/slack-event-handler/existence_check.py` (max 3 retries with exponential backoff: 1s, 2s, 4s)
+- [x] T046 [US3] Add retry attempt logging in `lambda/verification-stack/slack-event-handler/existence_check.py` (log retry attempt number and delay)
+- [x] T047 [US3] Implement fail-closed behavior for all Slack API errors in `lambda/verification-stack/slack-event-handler/existence_check.py` (reject request with 403 on any error after retries)
+- [x] T048 [US3] Add security event logging for timeout errors in `lambda/verification-stack/slack-event-handler/handler.py` (log "existence_check_timeout" event)
+- [x] T049 [US3] Add security event logging for rate limit errors in `lambda/verification-stack/slack-event-handler/handler.py` (log "existence_check_rate_limit" event)
+- [x] T050 [US3] Add security event logging for other Slack API errors in `lambda/verification-stack/slack-event-handler/handler.py` (log "existence_check_api_error" event)
+- [x] T051 [US3] Write unit test for timeout handling in `lambda/verification-stack/slack-event-handler/tests/test_existence_check.py` (mock timeout exception)
+- [x] T052 [US3] Write unit test for rate limit retry logic in `lambda/verification-stack/slack-event-handler/tests/test_existence_check.py` (mock 429 error, verify retries with backoff)
+- [x] T053 [US3] Write unit test for rate limit exhaustion in `lambda/verification-stack/slack-event-handler/tests/test_existence_check.py` (mock 429 error after 3 retries, verify ExistenceCheckError raised)
+- [x] T054 [US3] Write unit test for other Slack API errors in `lambda/verification-stack/slack-event-handler/tests/test_existence_check.py` (mock other error codes)
+- [x] T055 [US3] Write BDD scenario for Slack API timeout in `lambda/verification-stack/slack-event-handler/tests/test_existence_check.feature` (Given/When/Then format)
+- [x] T056 [US3] Write BDD scenario for Slack API rate limit in `lambda/verification-stack/slack-event-handler/tests/test_existence_check.feature`
+- [x] T057 [US3] Write BDD scenario for Slack API complete failure in `lambda/verification-stack/slack-event-handler/tests/test_existence_check.feature`
 
 **Checkpoint**: ✅ All user stories are fully functional - system verifies entities, caches results, and handles failures securely
 
@@ -139,13 +139,13 @@
 
 **Purpose**: Monitoring, documentation, and final integration
 
-- [x] T058 Add CloudWatch metric for ExistenceCheckFailed in `lambda/slack-event-handler/existence_check.py` (emit metric on failure)
-- [x] T059 Add CloudWatch metric for ExistenceCheckCacheHitRate in `lambda/slack-event-handler/existence_check.py` (calculate hit rate)
-- [x] T060 Add CloudWatch metric for SlackAPILatency in `lambda/slack-event-handler/existence_check.py` (measure API call duration)
+- [x] T058 Add CloudWatch metric for ExistenceCheckFailed in `lambda/verification-stack/slack-event-handler/existence_check.py` (emit metric on failure)
+- [x] T059 Add CloudWatch metric for ExistenceCheckCacheHitRate in `lambda/verification-stack/slack-event-handler/existence_check.py` (calculate hit rate)
+- [x] T060 Add CloudWatch metric for SlackAPILatency in `lambda/verification-stack/slack-event-handler/existence_check.py` (measure API call duration)
 - [x] T061 Create CloudWatch alarm for ExistenceCheckFailed in `cdk/lib/slack-bedrock-stack.ts` (alarm when 5+ failures in 5 minutes)
-- [x] T062 Update handler documentation with Existence Check flow in `lambda/slack-event-handler/handler.py` (add docstring explaining 2-key defense)
-- [x] T063 Update existence_check module documentation in `lambda/slack-event-handler/existence_check.py` (add module docstring explaining security model)
-- [x] T064 Verify all security events are logged with correlation IDs in `lambda/slack-event-handler/handler.py` (check all log_error calls include correlation context)
+- [x] T062 Update handler documentation with Existence Check flow in `lambda/verification-stack/slack-event-handler/handler.py` (add docstring explaining 2-key defense)
+- [x] T063 Update existence_check module documentation in `lambda/verification-stack/slack-event-handler/existence_check.py` (add module docstring explaining security model)
+- [x] T064 Verify all security events are logged with correlation IDs in `lambda/verification-stack/slack-event-handler/handler.py` (check all log_error calls include correlation context)
 - [ ] T065 Run end-to-end test: Send valid request, verify Existence Check passes and request is processed (MANUAL: Requires deployed environment)
 - [ ] T066 Run end-to-end test: Send request with fake team_id, verify 403 response and security event logged (MANUAL: Requires deployed environment)
 - [ ] T067 Run end-to-end test: Send two identical requests, verify second request uses cache (check logs for cache hit) (MANUAL: Requires deployed environment)

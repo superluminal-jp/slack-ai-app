@@ -36,7 +36,7 @@ This will create:
 The Existence Check module is integrated into `slack-event-handler` Lambda:
 
 ```python
-# lambda/slack-event-handler/existence_check.py
+# lambda/verification-stack/slack-event-handler/existence_check.py
 from existence_check import check_entity_existence, ExistenceCheckError
 
 # In handler.py, after signature verification:
@@ -56,7 +56,7 @@ if bot_token and team_id and user_id and channel_id:
 ### 3. Deploy Lambda
 
 ```bash
-cd lambda/slack-event-handler
+cd lambda/verification-stack/slack-event-handler
 pip install -r requirements.txt -t .
 zip -r function.zip .
 aws lambda update-function-code \
@@ -69,7 +69,7 @@ aws lambda update-function-code \
 ### Unit Tests
 
 ```bash
-cd lambda/slack-event-handler
+cd lambda/verification-stack/slack-event-handler
 pytest tests/test_existence_check.py -v
 ```
 

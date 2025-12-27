@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Cross-Account Zones Architecture** (010-cross-account-zones)
+  - Split-stack deployment (VerificationStack + ExecutionStack)
+  - Cross-account IAM authentication support
+  - Independent lifecycle management for each zone
+  - Deployment scripts for 3-phase deploy process
+  - Graceful error handling for API unavailability
 - Documentation reorganization based on Diátaxis framework (009-docs-reorganization)
 - CONTRIBUTING.md with contribution guidelines
 - CHANGELOG.md following Keep a Changelog format
@@ -19,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Restructured docs/ directory with tutorials/, how-to/, reference/, explanation/ categories
 - Simplified README.md to focus on overview and navigation
 - Converted docs/README.md to navigation hub
+- CDK entry point now supports multiple deployment modes (single, split, cross-account)
+
+### Deprecated
+
+- `SlackBedrockStack` single-stack deployment (use split-stack instead)
 
 ## [1.0.0] - 2025-12-27
 

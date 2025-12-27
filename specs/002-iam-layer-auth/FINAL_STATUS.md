@@ -167,15 +167,15 @@ Successfully implemented and deployed IAM authentication for internal communicat
 
 ### Created Files
 - `cdk/lib/constructs/execution-api.ts` - API Gateway construct
-- `lambda/slack-event-handler/api_gateway_client.py` - SigV4 client
-- `lambda/slack-event-handler/tests/test_api_gateway_client.py` - Unit tests
+- `lambda/verification-stack/slack-event-handler/api_gateway_client.py` - SigV4 client
+- `lambda/verification-stack/slack-event-handler/tests/test_api_gateway_client.py` - Unit tests
 - `specs/002-iam-layer-auth/scripts/*.sh` - Helper scripts (6 files)
 - `specs/002-iam-layer-auth/PHASE*.md` - Phase summaries
 - `specs/002-iam-layer-auth/IMPLEMENTATION_COMPLETE.md` - Final summary
 
 ### Modified Files
-- `lambda/slack-event-handler/handler.py` - API Gateway integration
-- `lambda/bedrock-processor/handler.py` - Return 202 status
+- `lambda/verification-stack/slack-event-handler/handler.py` - API Gateway integration
+- `lambda/execution-stack/bedrock-processor/handler.py` - Return 202 status
 - `cdk/lib/constructs/slack-event-handler.ts` - Removed bedrockProcessorArn
 - `cdk/lib/constructs/execution-api.ts` - Made verificationLambdaRoleArn optional
 - `cdk/lib/slack-bedrock-stack.ts` - Added ExecutionApi, removed grantInvoke

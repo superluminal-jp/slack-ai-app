@@ -45,7 +45,7 @@ aws lambda get-function --function-name slack-event-handler
 aws apigateway get-rest-apis
 
 # CloudWatch ログを確認
-aws logs tail /aws/lambda/slack-event-handler --follow
+aws logs tail /aws/lambda/verification-stack/slack-event-handler --follow
 ```
 
 ---
@@ -155,11 +155,11 @@ aws lambda update-function-configuration \
 
 ```bash
 # 最新のログを表示
-aws logs tail /aws/lambda/slack-event-handler --follow
+aws logs tail /aws/lambda/verification-stack/slack-event-handler --follow
 
 # 特定の時間範囲のログを検索
 aws logs filter-log-events \
-  --log-group-name /aws/lambda/slack-event-handler \
+  --log-group-name /aws/lambda/verification-stack/slack-event-handler \
   --start-time $(date -v-1H +%s000) \
   --filter-pattern "ERROR"
 ```

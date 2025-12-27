@@ -39,7 +39,7 @@ oauth_config:
 
 ### 2. Update Lambda Dependencies
 
-**File**: `lambda/bedrock-processor/requirements.txt`
+**File**: `lambda/execution-stack/bedrock-processor/requirements.txt`
 
 Add new dependencies:
 
@@ -64,7 +64,7 @@ python-pptx>=0.6.21       # PPTX text extraction
 
 ### 3. Modify Slack Event Handler
 
-**File**: `lambda/slack-event-handler/handler.py`
+**File**: `lambda/verification-stack/slack-event-handler/handler.py`
 
 **Change**: Extract `event.files` array and include in payload to Bedrock Processor.
 
@@ -99,7 +99,7 @@ payload = {
 
 ### 4. Create File Downloader Module
 
-**File**: `lambda/bedrock-processor/file_downloader.py` (NEW)
+**File**: `lambda/execution-stack/bedrock-processor/file_downloader.py` (NEW)
 
 ```python
 import requests
@@ -133,7 +133,7 @@ def download_file(download_url: str, bot_token: str, timeout: int = 30) -> Optio
 
 ### 5. Create Document Extractor Module
 
-**File**: `lambda/bedrock-processor/document_extractor.py` (NEW)
+**File**: `lambda/execution-stack/bedrock-processor/document_extractor.py` (NEW)
 
 ```python
 import PyPDF2
@@ -300,7 +300,7 @@ def extract_text_from_txt(txt_bytes: bytes) -> Optional[str]:
 
 ### 6. Create Attachment Processor Module
 
-**File**: `lambda/bedrock-processor/attachment_processor.py` (NEW)
+**File**: `lambda/execution-stack/bedrock-processor/attachment_processor.py` (NEW)
 
 ```python
 import base64
@@ -539,7 +539,7 @@ def process_attachments(attachments: List[Dict], bot_token: str) -> List[Dict]:
 
 ### 7. Modify Bedrock Client for Image Support
 
-**File**: `lambda/bedrock-processor/bedrock_client.py`
+**File**: `lambda/execution-stack/bedrock-processor/bedrock_client.py`
 
 **Change**: Support image content blocks in Bedrock API requests.
 
@@ -580,7 +580,7 @@ def invoke_bedrock(text: str, images: List[str] = None, image_mime_types: List[s
 
 ### 8. Modify Bedrock Processor Handler
 
-**File**: `lambda/bedrock-processor/handler.py`
+**File**: `lambda/execution-stack/bedrock-processor/handler.py`
 
 **Change**: Process attachments and include in Bedrock request.
 

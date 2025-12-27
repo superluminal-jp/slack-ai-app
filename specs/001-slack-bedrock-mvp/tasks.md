@@ -18,8 +18,8 @@
 Per plan.md structure:
 
 - **Infrastructure**: `cdk/` (TypeScript)
-- **Slack Event Handler**: `lambda/slack-event-handler/` (Python 3.11)
-- **Bedrock Processor**: `lambda/bedrock-processor/` (Python 3.11)
+- **Slack Event Handler**: `lambda/verification-stack/slack-event-handler/` (Python 3.11)
+- **Bedrock Processor**: `lambda/execution-stack/bedrock-processor/` (Python 3.11)
 - **Environment**: `.env` at repository root
 
 ---
@@ -30,9 +30,9 @@ Per plan.md structure:
 
 **Estimated Time**: 30 minutes
 
-- [x] T001 Create project structure per plan.md (cdk/, lambda/slack-event-handler/, lambda/bedrock-processor/)
+- [x] T001 Create project structure per plan.md (cdk/, lambda/verification-stack/slack-event-handler/, lambda/execution-stack/bedrock-processor/)
 - [x] T002 Initialize CDK project with TypeScript in cdk/ (`cdk init app --language typescript`)
-- [x] T003 [P] Create Python requirements.txt for lambda/slack-event-handler/ (slack-sdk only for now)
+- [x] T003 [P] Create Python requirements.txt for lambda/verification-stack/slack-event-handler/ (slack-sdk only for now)
 - [x] T004 [P] Create .env.example with SLACK_SIGNING_SECRET placeholder
 - [x] T005 [P] Create .gitignore for Python, Node.js, and AWS CDK artifacts
 - [x] T006 Install CDK dependencies (`npm install` in cdk/)
@@ -62,7 +62,7 @@ Per plan.md structure:
 
 ### Lambda Handler (Minimal)
 
-- [x] T011 Create minimal handler.py in lambda/slack-event-handler/
+- [x] T011 Create minimal handler.py in lambda/verification-stack/slack-event-handler/
   - Handle `url_verification` event only
   - Return challenge response: `{"challenge": event["challenge"]}`
   - No signature verification yet
@@ -100,7 +100,7 @@ Per plan.md structure:
 
 ### Event Handling
 
-- [x] T015 Extend handler.py in lambda/slack-event-handler/ to handle `event_callback`
+- [x] T015 Extend handler.py in lambda/verification-stack/slack-event-handler/ to handle `event_callback`
   - Extract `event` from payload
   - Check `event["type"]` for "message" or "app_mention"
   - For now, ignore event details
@@ -159,11 +159,11 @@ Per plan.md structure:
 
 ### Token Storage Implementation
 
-- [x] T026 [P] Create token_storage.py in lambda/slack-event-handler/
+- [x] T026 [P] Create token_storage.py in lambda/verification-stack/slack-event-handler/
   - Function: `store_token(team_id, bot_token)`
   - Function: `get_token(team_id)`
   - Use boto3 DynamoDB client
-- [x] T027 Add boto3 to requirements.txt in lambda/slack-event-handler/
+- [x] T027 Add boto3 to requirements.txt in lambda/verification-stack/slack-event-handler/
 - [x] T028 Update handler.py to store token on first event
   - Extract `team_id` from event
   - On first run, store current SLACK_BOT_TOKEN to DynamoDB
@@ -190,10 +190,10 @@ Per plan.md structure:
 
 ### Security Implementation
 
-- [x] T030 [P] Create test for valid HMAC SHA256 signature in lambda/slack-event-handler/tests/test_slack_verifier.py
-- [x] T031 [P] Create test for invalid signature rejection in lambda/slack-event-handler/tests/test_slack_verifier.py
-- [x] T032 [P] Create test for timestamp validation (±5 minutes) in lambda/slack-event-handler/tests/test_slack_verifier.py
-- [x] T033 Implement HMAC SHA256 signature verification in lambda/slack-event-handler/slack_verifier.py
+- [x] T030 [P] Create test for valid HMAC SHA256 signature in lambda/verification-stack/slack-event-handler/tests/test_slack_verifier.py
+- [x] T031 [P] Create test for invalid signature rejection in lambda/verification-stack/slack-event-handler/tests/test_slack_verifier.py
+- [x] T032 [P] Create test for timestamp validation (±5 minutes) in lambda/verification-stack/slack-event-handler/tests/test_slack_verifier.py
+- [x] T033 Implement HMAC SHA256 signature verification in lambda/verification-stack/slack-event-handler/slack_verifier.py
   - Function: `verify_signature(event, timestamp, signature, signing_secret)`
   - Use hmac.compare_digest for timing-safe comparison
 - [x] T034 Add SLACK_SIGNING_SECRET to .env and Slack Event Handler environment variables
@@ -209,7 +209,7 @@ Per plan.md structure:
   - Resources: `*` (AWS recommended approach)
 - [x] T037 Add AWS region to Slack Event Handler environment variables: `AWS_REGION_NAME=ap-northeast-1`
 - [x] T038 Configure CDK stack for ap-northeast-1 region deployment (ready to deploy with `cdk deploy`)
-- [x] T039 [P] Create bedrock_client.py in lambda/slack-event-handler/ (temporary - will move to Bedrock Processor later)
+- [x] T039 [P] Create bedrock_client.py in lambda/verification-stack/slack-event-handler/ (temporary - will move to Bedrock Processor later)
   - Function: `invoke_bedrock(prompt: str) -> str`
   - Model: Configurable via `BEDROCK_MODEL_ID` environment variable (default: `amazon.nova-pro-v1:0`)
   - Supports both Claude models (`anthropic.claude-*`) and Nova models (`amazon.nova-*`)
@@ -228,7 +228,7 @@ Per plan.md structure:
 
 ### Event Deduplication (Additional Implementation)
 
-- [x] T041a [P] Create event_dedupe.py in lambda/slack-event-handler/
+- [x] T041a [P] Create event_dedupe.py in lambda/verification-stack/slack-event-handler/
   - Function: `is_duplicate_event(event_id: str) -> bool`
   - Function: `mark_event_processed(event_id: str) -> bool`
   - Uses DynamoDB conditional writes to prevent race conditions
@@ -256,7 +256,7 @@ Per plan.md structure:
 
 **✅ CHECKPOINT Phase 5**: COMPLETED
 
-- **Test 1**: ✅ PASSED - Run pytest for signature verification tests (`pytest lambda/slack-event-handler/tests/`) - 14/14 tests passed
+- **Test 1**: ✅ PASSED - Run pytest for signature verification tests (`pytest lambda/verification-stack/slack-event-handler/tests/`) - 14/14 tests passed
 - **Test 2**: ✅ PASSED - Send message to bot → Receive AI-generated response (synchronous, may take 5-10 seconds)
 - **Test 3**: ✅ PASSED - Check CloudWatch Logs → Verify no signature verification errors
 - **Test 4**: ✅ PASSED - Event deduplication working (duplicate events return 200 OK immediately)
@@ -292,17 +292,17 @@ Per plan.md structure:
   - `bedrockProcessor.grantInvoke(slackEventHandler)`
 - [x] T045 Add Bedrock Processor ARN to Slack Event Handler environment variables
   - `BEDROCK_PROCESSOR_ARN: bedrockProcessor.functionArn`
-- [x] T046 Create Python requirements.txt for lambda/bedrock-processor/
+- [x] T046 Create Python requirements.txt for lambda/execution-stack/bedrock-processor/
   - slack-sdk, boto3
 - [ ] T047 Redeploy CDK stack (`cdk deploy`)
 
 ### Bedrock Processor Implementation
 
-- [x] T048 [P] Move bedrock_client.py from lambda/slack-event-handler/ to lambda/bedrock-processor/
-- [x] T049 [P] Create slack_poster.py in lambda/bedrock-processor/
+- [x] T048 [P] Move bedrock_client.py from lambda/verification-stack/slack-event-handler/ to lambda/execution-stack/bedrock-processor/
+- [x] T049 [P] Create slack_poster.py in lambda/execution-stack/bedrock-processor/
   - Function: `post_to_slack(channel: str, text: str, bot_token: str)`
   - Use slack_sdk.WebClient
-- [x] T050 Create handler.py in lambda/bedrock-processor/
+- [x] T050 Create handler.py in lambda/execution-stack/bedrock-processor/
   - Parse event payload: `{ "channel": "...", "text": "...", "bot_token": "..." }`
   - Call `invoke_bedrock(text)`
   - Call `post_to_slack(channel, ai_response, bot_token)`
@@ -310,7 +310,7 @@ Per plan.md structure:
 
 ### Slack Event Handler Update (Async Invocation)
 
-- [x] T051 Update handler.py in lambda/slack-event-handler/ to invoke Bedrock Processor asynchronously
+- [x] T051 Update handler.py in lambda/verification-stack/slack-event-handler/ to invoke Bedrock Processor asynchronously
   - Remove Bedrock call (moved to Bedrock Processor)
   - Retrieve bot_token from DynamoDB
   - Create payload: `{"channel": channel, "text": user_message, "bot_token": bot_token}`
@@ -342,7 +342,7 @@ Per plan.md structure:
 
 ### Error Message Catalog
 
-- [x] T053 Create ERROR_MESSAGES dictionary in lambda/bedrock-processor/handler.py (per research.md)
+- [x] T053 Create ERROR_MESSAGES dictionary in lambda/execution-stack/bedrock-processor/handler.py (per research.md)
   - bedrock_timeout: "Sorry, the AI service is taking longer than usual. Please try again in a moment."
   - bedrock_throttling: "The AI service is currently busy. Please try again in a minute."
   - bedrock_access_denied: "I'm having trouble connecting to the AI service. Please contact your administrator."
@@ -352,47 +352,47 @@ Per plan.md structure:
 
 ### Error Handlers
 
-- [x] T054 [P] Add timeout error handler in lambda/bedrock-processor/handler.py
+- [x] T054 [P] Add timeout error handler in lambda/execution-stack/bedrock-processor/handler.py
   - Catch `ReadTimeoutException` or timeout errors
   - Post ERROR_MESSAGES["bedrock_timeout"] to Slack
   - Log error to CloudWatch
   - **Note**: Already implemented in Phase 5 (handler.py). Move to Bedrock Processor.
-- [x] T055 [P] Add throttling error handler in lambda/bedrock-processor/handler.py
+- [x] T055 [P] Add throttling error handler in lambda/execution-stack/bedrock-processor/handler.py
   - Catch `ThrottlingException` from boto3
   - Post ERROR_MESSAGES["bedrock_throttling"] to Slack
   - **Note**: Already implemented in Phase 5 (handler.py). Move to Bedrock Processor.
-- [x] T056 [P] Add access denied error handler in lambda/bedrock-processor/handler.py
+- [x] T056 [P] Add access denied error handler in lambda/execution-stack/bedrock-processor/handler.py
   - Catch `AccessDeniedException`
   - Post ERROR_MESSAGES["bedrock_access_denied"] to Slack
   - **Note**: Already implemented in Phase 5 (handler.py). Move to Bedrock Processor.
-- [x] T057 [P] Add generic error handler in lambda/bedrock-processor/handler.py
+- [x] T057 [P] Add generic error handler in lambda/execution-stack/bedrock-processor/handler.py
   - Catch all other exceptions
   - Log full traceback to CloudWatch (no PII in logs)
   - Post ERROR_MESSAGES["generic"] to Slack
   - **Note**: Already implemented in Phase 5 (handler.py). Move to Bedrock Processor.
-- [x] T058 Add empty message validation to Slack Event Handler in lambda/slack-event-handler/handler.py
+- [x] T058 Add empty message validation to Slack Event Handler in lambda/verification-stack/slack-event-handler/handler.py
   - If text is empty after mention stripping: Don't invoke Bedrock Processor
   - Post friendly message: "Please send me a message and I'll respond! For example, 'Hello' or 'What can you do?'"
   - **Note**: Already implemented in Phase 5 (validate_prompt function). Ensure it works with Bedrock Processor invocation.
 
 **✅ CHECKPOINT Phase 7**: COMPLETED
 
-- **T053**: ✅ ERROR_MESSAGES dictionary created in lambda/bedrock-processor/handler.py
+- **T053**: ✅ ERROR_MESSAGES dictionary created in lambda/execution-stack/bedrock-processor/handler.py
 - **T054**: ✅ Timeout error handler added (ReadTimeoutError and ClientError timeout handling)
 - **T055**: ✅ Throttling error handler added (ThrottlingException)
 - **T056**: ✅ Access denied error handler added (AccessDeniedException)
 - **T057**: ✅ Generic error handler added (catches all other exceptions)
 - **T058**: ✅ Empty message validation in Slack Event Handler (uses validate_prompt function)
 - **Test 1**: ✅ PASSED - Simulate Bedrock error (invalid model ID) → Receive friendly error message
-  - Unit tests created: `lambda/bedrock-processor/tests/test_error_handling.py`
+  - Unit tests created: `lambda/execution-stack/bedrock-processor/tests/test_error_handling.py`
   - Tests cover: timeout, throttling, access denied, invalid response, generic errors
   - All 6 error handling tests passed
 - **Test 2**: ✅ PASSED - Send empty message → Receive "Please send me a message..." prompt
-  - Unit tests created: `lambda/slack-event-handler/tests/test_validation.py`
+  - Unit tests created: `lambda/verification-stack/slack-event-handler/tests/test_validation.py`
   - Tests cover: empty string, whitespace-only, newline-only messages
   - All 4 validation tests passed
 - **Test 3**: ✅ PASSED - Send very long message (>4000 chars) → Receive length error
-  - Unit tests created: `lambda/slack-event-handler/tests/test_validation.py`
+  - Unit tests created: `lambda/verification-stack/slack-event-handler/tests/test_validation.py`
   - Tests cover: 4000 chars (pass), 4001+ chars (fail), custom max_length
   - All validation tests passed
 - **Validation**: ✅ All error conditions handled gracefully with user-friendly messages
@@ -400,8 +400,8 @@ Per plan.md structure:
   - **Total Tests**: 10 (6 error handling + 4 validation)
   - **Passed**: 10/10 (100%)
   - **Test Files**:
-    - `lambda/bedrock-processor/tests/test_error_handling.py`
-    - `lambda/slack-event-handler/tests/test_validation.py`
+    - `lambda/execution-stack/bedrock-processor/tests/test_error_handling.py`
+    - `lambda/verification-stack/slack-event-handler/tests/test_validation.py`
 
 ---
 
@@ -413,12 +413,12 @@ Per plan.md structure:
 
 ### Logging
 
-- [x] T059 [P] Add structured logging to Slack Event Handler in lambda/slack-event-handler/handler.py
+- [x] T059 [P] Add structured logging to Slack Event Handler in lambda/verification-stack/slack-event-handler/handler.py
   - Log: Event received (team_id, channel, event_type)
   - Log: Signature verification result (success/failure)
   - Log: Bedrock Processor invocation (function ARN, async)
   - Use CloudWatch-friendly format (JSON if possible)
-- [x] T060 [P] Add structured logging to Bedrock Processor in lambda/bedrock-processor/handler.py
+- [x] T060 [P] Add structured logging to Bedrock Processor in lambda/execution-stack/bedrock-processor/handler.py
   - Log: Bedrock request (model, input length)
   - Log: Bedrock response (output length, stop_reason)
   - Log: Slack post result (success/failure)
@@ -449,7 +449,7 @@ Per plan.md structure:
   - Configure Event Subscriptions
   - Install to test workspace
   - Test all scenarios (DM, mention, errors)
-- [x] T065 Run signature verification tests (`pytest lambda/slack-event-handler/tests/`)
+- [x] T065 Run signature verification tests (`pytest lambda/verification-stack/slack-event-handler/tests/`)
   - ✅ All 18 tests passed (14 signature verification + 4 validation tests)
 - [ ] T066 Verify CloudWatch Logs are readable and useful for debugging
   - ✅ Structured JSON logging implemented in both handlers

@@ -42,7 +42,7 @@
 
 ## Code Changes Summary
 
-### Handler Code (`lambda/slack-event-handler/handler.py`)
+### Handler Code (`lambda/verification-stack/slack-event-handler/handler.py`)
 - **Before**: ~170 lines with feature flags and fallback logic
 - **After**: ~50 lines, always uses API Gateway
 - **Reduction**: ~70% code reduction
@@ -89,7 +89,7 @@
 
 ## Files Modified
 
-- `lambda/slack-event-handler/handler.py` - Simplified to always use API Gateway
+- `lambda/verification-stack/slack-event-handler/handler.py` - Simplified to always use API Gateway
 - `cdk/lib/constructs/slack-event-handler.ts` - Removed bedrockProcessorArn
 - `cdk/lib/constructs/execution-api.ts` - Made verificationLambdaRoleArn optional
 - `cdk/lib/slack-bedrock-stack.ts` - Removed grantInvoke() call

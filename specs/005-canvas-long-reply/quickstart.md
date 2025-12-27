@@ -291,40 +291,40 @@ def fallback_to_regular_message(
 
 ### Step 1: Create Formatting Detector
 
-1. Create `lambda/bedrock-processor/formatting_detector.py`
+1. Create `lambda/execution-stack/bedrock-processor/formatting_detector.py`
 2. Implement `detect_structured_formatting()` function
 3. Add unit tests
 
 ### Step 2: Create Reply Router
 
-1. Create `lambda/bedrock-processor/reply_router.py`
+1. Create `lambda/execution-stack/bedrock-processor/reply_router.py`
 2. Implement `should_use_canvas()` function
 3. Add unit tests
 
 ### Step 3: Create Canvas Creator
 
-1. Create `lambda/bedrock-processor/canvas_creator.py`
+1. Create `lambda/execution-stack/bedrock-processor/canvas_creator.py`
 2. Implement `create_canvas()` function
 3. Add error handling for API errors, permissions, rate limits
 4. Add unit tests (mock Slack API)
 
 ### Step 4: Create Canvas Sharer
 
-1. Create `lambda/bedrock-processor/canvas_sharer.py`
+1. Create `lambda/execution-stack/bedrock-processor/canvas_sharer.py`
 2. Implement `share_canvas()` function
 3. Add error handling
 4. Add unit tests (mock Slack API)
 
 ### Step 5: Modify Handler
 
-1. Modify `lambda/bedrock-processor/handler.py`
+1. Modify `lambda/execution-stack/bedrock-processor/handler.py`
 2. Add Canvas creation logic after Bedrock response
 3. Add fallback logic for Canvas failures
 4. Update logging
 
 ### Step 6: Update Slack Poster (Optional)
 
-1. Modify `lambda/bedrock-processor/slack_poster.py` if needed
+1. Modify `lambda/execution-stack/bedrock-processor/slack_poster.py` if needed
 2. Ensure thread_ts support is maintained
 
 ## Testing

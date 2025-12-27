@@ -112,14 +112,14 @@ Slack → SlackEventHandler Function URL → SlackEventHandler
 
 ### New Files
 - `cdk/lib/constructs/execution-api.ts` - API Gateway construct
-- `lambda/slack-event-handler/api_gateway_client.py` - SigV4 client
-- `lambda/slack-event-handler/tests/test_api_gateway_client.py` - Unit tests
+- `lambda/verification-stack/slack-event-handler/api_gateway_client.py` - SigV4 client
+- `lambda/verification-stack/slack-event-handler/tests/test_api_gateway_client.py` - Unit tests
 - `specs/002-iam-layer-auth/scripts/*.sh` - Helper scripts
 - `specs/002-iam-layer-auth/PHASE*.md` - Phase completion summaries
 
 ### Modified Files
-- `lambda/slack-event-handler/handler.py` - API Gateway integration
-- `lambda/bedrock-processor/handler.py` - Return 202 status code
+- `lambda/verification-stack/slack-event-handler/handler.py` - API Gateway integration
+- `lambda/execution-stack/bedrock-processor/handler.py` - Return 202 status code
 - `cdk/lib/constructs/slack-event-handler.ts` - Removed bedrockProcessorArn
 - `cdk/lib/slack-bedrock-stack.ts` - Added ExecutionApi, removed grantInvoke
 - `docs/**/*.md` - Updated resource names throughout

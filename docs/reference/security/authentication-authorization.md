@@ -134,7 +134,7 @@ Two-Key Defense は、2 つの独立した鍵（Signing Secret と Bot Token）�
 **コード例**:
 
 ```python
-# lambda/slack-event-handler/slack_verifier.py
+# lambda/verification-stack/slack-event-handler/slack_verifier.py
 def verify_signature(
     body: str,
     timestamp: str,
@@ -184,7 +184,7 @@ def verify_signature(
 **コード例**:
 
 ```python
-# lambda/slack-event-handler/existence_check.py
+# lambda/verification-stack/slack-event-handler/existence_check.py
 def check_entity_existence(
     bot_token: str,
     team_id: Optional[str] = None,
@@ -494,7 +494,7 @@ def check_entity_existence(
 
 ### 署名検証の実装
 
-**ファイル**: `lambda/slack-event-handler/slack_verifier.py`
+**ファイル**: `lambda/verification-stack/slack-event-handler/slack_verifier.py`
 
 ```python
 def verify_signature(
@@ -536,7 +536,7 @@ def verify_signature(
 
 ### Existence Check の実装
 
-**ファイル**: `lambda/slack-event-handler/existence_check.py`
+**ファイル**: `lambda/verification-stack/slack-event-handler/existence_check.py`
 
 ```python
 def check_entity_existence(

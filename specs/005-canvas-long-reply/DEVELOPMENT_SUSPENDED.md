@@ -87,12 +87,12 @@ All Canvas-related code remains in the codebase but is **not actively used** due
 
 The following files contain Canvas-related code:
 
-- `lambda/bedrock-processor/canvas_creator.py` - Canvas creation logic
-- `lambda/bedrock-processor/canvas_sharer.py` - Canvas sharing logic
-- `lambda/bedrock-processor/formatting_detector.py` - Formatting detection
-- `lambda/bedrock-processor/reply_router.py` - Routing logic
-- `lambda/bedrock-processor/handler.py` - Integration with fallback
-- `lambda/bedrock-processor/tests/test_canvas_*.py` - Test files
+- `lambda/execution-stack/bedrock-processor/canvas_creator.py` - Canvas creation logic
+- `lambda/execution-stack/bedrock-processor/canvas_sharer.py` - Canvas sharing logic
+- `lambda/execution-stack/bedrock-processor/formatting_detector.py` - Formatting detection
+- `lambda/execution-stack/bedrock-processor/reply_router.py` - Routing logic
+- `lambda/execution-stack/bedrock-processor/handler.py` - Integration with fallback
+- `lambda/execution-stack/bedrock-processor/tests/test_canvas_*.py` - Test files
 
 ## Decision
 

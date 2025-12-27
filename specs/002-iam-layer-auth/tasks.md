@@ -18,8 +18,8 @@
 Per plan.md structure:
 
 - **Infrastructure**: `cdk/` (TypeScript)
-- **Verification Layer**: `lambda/slack-event-handler/` (Python 3.11)
-- **Execution Layer**: `lambda/bedrock-processor/` (Python 3.11) - NO CHANGES
+- **Verification Layer**: `lambda/verification-stack/slack-event-handler/` (Python 3.11)
+- **Execution Layer**: `lambda/execution-stack/bedrock-processor/` (Python 3.11) - NO CHANGES
 - **Environment**: Environment variables via CDK
 
 ---
@@ -80,7 +80,7 @@ Per plan.md structure:
 
 ### API Gateway Client
 
-- [x] T005 Create API Gateway client module in `lambda/slack-event-handler/api_gateway_client.py`
+- [x] T005 Create API Gateway client module in `lambda/verification-stack/slack-event-handler/api_gateway_client.py`
 
   - Function: `invoke_execution_api(api_url, payload, region)`
   - Use boto3 Session to get credentials
@@ -90,12 +90,12 @@ Per plan.md structure:
   - Return requests.Response object
   - Reference: `research.md` RQ-02, `quickstart.md` Step 2.1
 
-- [x] T006 Add requests library to `lambda/slack-event-handler/requirements.txt`
+- [x] T006 Add requests library to `lambda/verification-stack/slack-event-handler/requirements.txt`
 
   - Add `requests>=2.31.0`
   - Reference: `quickstart.md` Step 2.2
 
-- [x] T007 [P] Create unit tests for API Gateway client in `lambda/slack-event-handler/tests/test_api_gateway_client.py`
+- [x] T007 [P] Create unit tests for API Gateway client in `lambda/verification-stack/slack-event-handler/tests/test_api_gateway_client.py`
 
   - Test SigV4 signing (mock boto3 credentials)
   - Test request formatting (headers, body)
@@ -103,7 +103,7 @@ Per plan.md structure:
   - Mock requests library responses
   - Reference: `plan.md` Testing Discipline
 
-- [x] T008 [P] Run unit tests (`pytest lambda/slack-event-handler/tests/test_api_gateway_client.py`)
+- [x] T008 [P] Run unit tests (`pytest lambda/verification-stack/slack-event-handler/tests/test_api_gateway_client.py`)
   - Verify all tests pass
   - Verify SigV4 signing works correctly
 
@@ -125,7 +125,7 @@ Per plan.md structure:
 
 ### Handler Updates
 
-- [x] T009 Update handler.py in `lambda/slack-event-handler/handler.py`
+- [x] T009 Update handler.py in `lambda/verification-stack/slack-event-handler/handler.py`
 
   - Import api_gateway_client module
   - Add feature flag check: `USE_API_GATEWAY` environment variable
@@ -254,7 +254,7 @@ Per plan.md structure:
 
 ### Gradual Rollout
 
-- [x] T018 Implement percentage-based feature flag in `lambda/slack-event-handler/handler.py`
+- [x] T018 Implement percentage-based feature flag in `lambda/verification-stack/slack-event-handler/handler.py`
 
   - Add `USE_API_GATEWAY_PERCENTAGE` environment variable (0-100)
   - Use random.random() to determine if request uses API Gateway
@@ -328,7 +328,7 @@ Per plan.md structure:
 
 ### Cleanup
 
-- [x] T023 Remove direct Lambda invocation code from `lambda/slack-event-handler/handler.py`
+- [x] T023 Remove direct Lambda invocation code from `lambda/verification-stack/slack-event-handler/handler.py`
 
   - ✅ Removed feature flag logic (USE_API_GATEWAY, USE_API_GATEWAY_PERCENTAGE)
   - ✅ Removed fallback to lambda_client.invoke()
