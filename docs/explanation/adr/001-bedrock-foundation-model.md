@@ -85,6 +85,6 @@ Slack 上でエンタープライズグレードの AI 機能を提供する必�
 
 ## 関連ドキュメント
 
-- [アーキテクチャ概要](../architecture/overview.md) - システム全体像
-- [実装詳細](../architecture/implementation-details.md) - Bedrock統合コード
-- [セキュリティ実装](../security/implementation.md) - Guardrails実装
+- [アーキテクチャ概要](../reference/architecture/overview.md) - システム全体像
+- [実装詳細](../reference/architecture/implementation-details.md) - Bedrock統合コード
+- [セキュリティ実装](../reference/security/implementation.md) - Guardrails実装

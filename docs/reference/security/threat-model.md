@@ -63,4 +63,4 @@ Slack API Existence Check により、署名シークレット漏洩時のリス
 - [セキュリティ実装](./implementation.md) - 多層防御の実装詳細
 - [アーキテクチャ概要](../architecture/overview.md) - セキュリティ設計の原則
 - [テストと検証](../operations/testing.md) - セキュリティ検証シナリオ
-- [ADR-004](../adr/004-slack-api-existence-check.md) - Existence Check の採用理由
+- [ADR-004](../explanation/adr/004-slack-api-existence-check.md) - Existence Check の採用理由

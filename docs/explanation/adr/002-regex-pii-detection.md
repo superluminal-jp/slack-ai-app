@@ -76,6 +76,6 @@ PII_PATTERNS = {
 
 ## 関連ドキュメント
 
-- [セキュリティ要件](../security/requirements.md) - PII保護要件
-- [実装詳細](../architecture/implementation-details.md) - PII検出実装コード
-- [テストと検証](../operations/testing.md) - PII保護テストシナリオ
+- [セキュリティ要件](../reference/security/requirements.md) - PII保護要件
+- [実装詳細](../reference/architecture/implementation-details.md) - PII検出実装コード
+- [テストと検証](../reference/operations/testing.md) - PII保護テストシナリオ

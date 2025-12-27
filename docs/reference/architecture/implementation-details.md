@@ -1149,4 +1149,4 @@ grep
 
 - [ユーザー体験](./user-experience.md) - UX設計とフロー
 - [セキュリティ実装](../security/implementation.md) - セキュリティコード実装
-- [ADR-003](../adr/003-response-url-async.md) - 非同期パターンの採用理由
+- [ADR-003](../explanation/adr/003-response-url-async.md) - 非同期パターンの採用理由

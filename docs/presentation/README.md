@@ -105,10 +105,10 @@
 
 ## 関連ドキュメント
 
-- [システムアーキテクチャ概要](../architecture/overview.md) - 技術的な詳細
-- [ユーザー体験](../architecture/user-experience.md) - ユーザーフロー
-- [機能要件](../requirements/functional-requirements.md) - 機能仕様
-- [セキュリティ要件](../security/requirements.md) - セキュリティ詳細
+- [システムアーキテクチャ概要](../reference/architecture/overview.md) - 技術的な詳細
+- [ユーザー体験](../reference/architecture/user-experience.md) - ユーザーフロー
+- [機能要件](../reference/requirements/functional-requirements.md) - 機能仕様
+- [セキュリティ要件](../reference/security/requirements.md) - セキュリティ詳細
 
 ---
 

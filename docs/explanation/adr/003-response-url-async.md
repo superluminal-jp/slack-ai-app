@@ -45,6 +45,6 @@ Bedrock の処理時間（5〜30 秒）が Slack の 3 秒タイムアウト制�
 
 ## 関連ドキュメント
 
-- [アーキテクチャ概要](../architecture/overview.md) - 非同期処理の全体像
-- [ユーザー体験](../architecture/user-experience.md) - 非同期処理のUX影響
-- [実装詳細](../architecture/implementation-details.md) - response_url実装コード
+- [アーキテクチャ概要](../reference/architecture/overview.md) - 非同期処理の全体像
+- [ユーザー体験](../reference/architecture/user-experience.md) - 非同期処理のUX影響
+- [実装詳細](../reference/architecture/implementation-details.md) - response_url実装コード

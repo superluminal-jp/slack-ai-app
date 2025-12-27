@@ -84,7 +84,7 @@ T-01（Signing Secret 漏洩）は「高」リスクとして評価されてい�
 
 ## 関連ドキュメント
 
-- [セキュリティ要件](../security/requirements.md) - Existence Check要件
-- [セキュリティ実装](../security/implementation.md) - 実装詳細とコード
-- [脅威モデル](../security/threat-model.md) - T-01脅威分析
-- [テストと検証](../operations/testing.md) - Existence Checkテストシナリオ
+- [セキュリティ要件](../reference/security/requirements.md) - Existence Check要件
+- [セキュリティ実装](../reference/security/implementation.md) - 実装詳細とコード
+- [脅威モデル](../reference/security/threat-model.md) - T-01脅威分析
+- [テストと検証](../reference/operations/testing.md) - Existence Checkテストシナリオ

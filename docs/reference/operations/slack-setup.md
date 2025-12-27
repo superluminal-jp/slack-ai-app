@@ -101,21 +101,28 @@ settings:
 2. **"Scopes"** セクションまでスクロール
 3. **"Bot Token Scopes"** に以下のスコープを追加：
 
-**必須スコープ（Existence Check 用）**:
+**必須スコープ**:
 
-- `team:read` - ワークスペース情報の取得（Existence Check で team_id 検証に使用）
-- `users:read` - ユーザー情報の取得（Existence Check で user_id 検証に使用）
-- `channels:read` - チャンネル情報の取得（Existence Check で channel_id 検証に使用）
+| スコープ            | 説明                         | 用途                                      |
+| ------------------- | ---------------------------- | ----------------------------------------- |
+| `app_mentions:read` | メンションを読み取り         | チャンネルでの @bot メンションを受信      |
+| `channels:history`  | チャンネルの履歴を読み取り   | スレッド履歴取得（conversations.replies） |
+| `channels:read`     | チャンネル情報を読み取り     | Existence Check で channel_id 検証        |
+| `chat:write`        | メッセージを送信             | Slack に AI レスポンスを投稿              |
+| `files:read`        | ファイルを読み取り           | 添付ファイル（画像・ドキュメント）処理    |
+| `team:read`         | ワークスペース情報を読み取り | Existence Check で team_id 検証           |
+| `users:read`        | ユーザー情報を読み取り       | Existence Check で user_id 検証           |
 
-**既存スコープ**:
+**オプションスコープ**（DM・プライベートチャンネル対応時に追加）:
 
-| スコープ            | 説明                                   | 用途                                      |
-| ------------------- | -------------------------------------- | ----------------------------------------- |
-| `chat:write`        | メッセージを送信                       | Slack に AI レスポンスを投稿              |
-| `im:history`        | ダイレクトメッセージの履歴を読み取り   | ダイレクトメッセージイベントを受信        |
-| `app_mentions:read` | メンションを読み取り                   | チャンネルでの @bot メンションを受信      |
-| `channels:history`  | パブリックチャンネルの履歴を読み取り   | スレッド履歴取得（conversations.replies） |
-| `groups:history`    | プライベートチャンネルの履歴を読み取り | プライベートチャンネルのスレッド履歴取得  |
+| スコープ         | 説明                                   | 用途                                     |
+| ---------------- | -------------------------------------- | ---------------------------------------- |
+| `groups:history` | プライベートチャンネルの履歴を読み取り | プライベートチャンネルのスレッド履歴     |
+| `groups:read`    | プライベートチャンネル情報を読み取り   | プライベートチャンネルの Existence Check |
+| `im:history`     | ダイレクトメッセージの履歴を読み取り   | DM のスレッド履歴取得                    |
+| `im:read`        | ダイレクトメッセージ情報を読み取り     | DM の Existence Check                    |
+| `mpim:history`   | グループ DM の履歴を読み取り           | グループ DM のスレッド履歴               |
+| `mpim:read`      | グループ DM 情報を読み取り             | グループ DM の Existence Check           |
 
 4. 各スコープを追加後、**"Save Changes"** をクリック
 

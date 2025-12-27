@@ -117,6 +117,6 @@ A: 用語集
 
 ## 関連ドキュメント
 
-- [機能要件](./requirements/functional-requirements.md) - 用語の定義と文脈
-- [アーキテクチャ概要](./architecture/overview.md) - システム全体の理解
+- [機能要件](./reference/requirements/functional-requirements.md) - 用語の定義と文脈
+- [アーキテクチャ概要](./reference/architecture/overview.md) - システム全体の理解
 - [エグゼクティブサマリー - 設計原則](../README.md#設計原則-行動心理学とネットワーク理論に基づく設計) - 理論的基盤の詳細

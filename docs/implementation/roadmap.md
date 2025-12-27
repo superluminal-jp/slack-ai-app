@@ -259,7 +259,7 @@
 
 ## 関連ドキュメント
 
-- [機能要件](../requirements/functional-requirements.md) - ビジネス要件と機能仕様
-- [アーキテクチャ概要](../architecture/overview.md) - システム全体像
-- [セキュリティ要件](../security/requirements.md) - セキュリティ実装要件
-- [テストと検証](../operations/testing.md) - テスト戦略
+- [機能要件](../reference/requirements/functional-requirements.md) - ビジネス要件と機能仕様
+- [アーキテクチャ概要](../reference/architecture/overview.md) - システム全体像
+- [セキュリティ要件](../reference/security/requirements.md) - セキュリティ実装要件
+- [テストと検証](../reference/operations/testing.md) - テスト戦略

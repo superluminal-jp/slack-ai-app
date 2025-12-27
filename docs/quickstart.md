@@ -129,19 +129,24 @@ cdk bootstrap aws://123456789012/ap-northeast-1
 
 1. 左メニューから「OAuth & Permissions」を選択
 2. 「Scopes」セクションで以下の Bot Token Scopes を追加：
+
+   **必須スコープ**:
    - `app_mentions:read` - メンションを読み取る
    - `channels:history` - チャンネルのメッセージ履歴を読み取る
-   - `channels:read` - チャンネル情報を読み取る
+   - `channels:read` - チャンネル情報を読み取る（Existence Check 用）
    - `chat:write` - メッセージを送信する
-   - `files:read` - ファイルを読み取る
+   - `files:read` - ファイルを読み取る（添付ファイル処理用）
+   - `team:read` - チーム情報を読み取る（Existence Check 用）
+   - `users:read` - ユーザー情報を読み取る（Existence Check 用）
+
+   **オプションスコープ**（DM・プライベートチャンネル対応時に追加）:
    - `groups:history` - プライベートチャンネルの履歴を読み取る
    - `groups:read` - プライベートチャンネル情報を読み取る
    - `im:history` - ダイレクトメッセージの履歴を読み取る
    - `im:read` - ダイレクトメッセージ情報を読み取る
    - `mpim:history` - グループ DM の履歴を読み取る
    - `mpim:read` - グループ DM 情報を読み取る
-   - `team:read` - チーム情報を読み取る
-   - `users:read` - ユーザー情報を読み取る
+
 3. 「Install to Workspace」をクリックしてワークスペースにインストール
 4. **Bot User OAuth Token**（`xoxb-...`）をコピーして環境変数に設定
 
@@ -166,7 +171,7 @@ cdk bootstrap aws://123456789012/ap-northeast-1
    - `message.groups` - プライベートチャンネルメッセージ（オプション）
    - `message.im` - ダイレクトメッセージ（オプション）
 
-詳細は [Slack 側設定作業ガイド](./operations/slack-setup.md) を参照してください。
+詳細は [Slack 側設定作業ガイド](./reference/operations/slack-setup.md) を参照してください。
 
 ---
 
@@ -428,27 +433,27 @@ aws iam get-role-policy \
 
 ### 基本機能の確認
 
-- ✅ [機能要件](./requirements/functional-requirements.md) - 実装済み機能の確認
-- ✅ [アーキテクチャ概要](./architecture/overview.md) - システム全体像の理解
-- ✅ [ユーザー体験](./architecture/user-experience.md) - エンドユーザーフローの確認
+- ✅ [機能要件](./reference/requirements/functional-requirements.md) - 実装済み機能の確認
+- ✅ [アーキテクチャ概要](./reference/architecture/overview.md) - システム全体像の理解
+- ✅ [ユーザー体験](./reference/architecture/user-experience.md) - エンドユーザーフローの確認
 
 ### セキュリティ設定
 
-- ✅ [セキュリティ要件](./security/requirements.md) - セキュリティ要件の確認
-- ✅ [認証・認可セキュリティ解説](./security/authentication-authorization.md) - Two-Key Defense の理解
+- ✅ [セキュリティ要件](./reference/security/requirements.md) - セキュリティ要件の確認
+- ✅ [認証・認可セキュリティ解説](./reference/security/authentication-authorization.md) - Two-Key Defense の理解
 - ✅ [ホワイトリスト認可の設定](../specs/007-whitelist-auth/quickstart.md) - アクセス制御の設定
 
 ### 運用とモニタリング
 
-- ✅ [モニタリング & インシデントレスポンス](./operations/monitoring.md) - CloudWatch ダッシュボードの設定
-- ✅ [テストと検証](./operations/testing.md) - テストシナリオの実行
-- ✅ [Slack 側設定作業ガイド](./operations/slack-setup.md) - 詳細な設定手順
+- ✅ [モニタリング & インシデントレスポンス](./reference/operations/monitoring.md) - CloudWatch ダッシュボードの設定
+- ✅ [テストと検証](./reference/operations/testing.md) - テストシナリオの実行
+- ✅ [Slack 側設定作業ガイド](./reference/operations/slack-setup.md) - 詳細な設定手順
 
 ### カスタマイズ
 
-- ✅ [アーキテクチャ詳細](./architecture/implementation-details.md) - Lambda 関数のカスタマイズ
+- ✅ [アーキテクチャ詳細](./reference/architecture/implementation-details.md) - Lambda 関数のカスタマイズ
 - ✅ [実装ロードマップ](./implementation/roadmap.md) - 追加機能の実装
-- ✅ [ADR インデックス](./adr/README.md) - 技術選択の理由とカスタマイズ指針
+- ✅ [ADR インデックス](./explanation/adr/README.md) - 技術選択の理由とカスタマイズ指針
 
 ---
 
