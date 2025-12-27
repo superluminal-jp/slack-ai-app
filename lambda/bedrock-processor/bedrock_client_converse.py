@@ -22,8 +22,51 @@ from botocore.exceptions import ClientError
 
 
 # Model configuration
-MAX_TOKENS = 1024
 TEMPERATURE = 1.0
+
+
+def get_max_tokens_for_model(model_id: str) -> int:
+    """
+    Get maximum tokens for a given Bedrock model.
+    
+    Returns the maximum output tokens supported by the model.
+    If model is not recognized, returns a safe default (4096).
+    
+    Args:
+        model_id: Bedrock model identifier (e.g., "jp.anthropic.claude-haiku-4-5-20251001-v1:0")
+        
+    Returns:
+        Maximum tokens for the model
+        
+    Model-specific limits:
+        - Claude 4.5 Sonnet/Haiku/Opus: 8192 tokens (all 4.5 series)
+        - Amazon Nova Pro: 8192 tokens
+        - Amazon Nova Lite: 4096 tokens
+        - Default: 4096 tokens (safe fallback)
+    """
+    # Check environment variable first (allows override)
+    env_max_tokens = os.environ.get("BEDROCK_MAX_TOKENS")
+    if env_max_tokens:
+        try:
+            return int(env_max_tokens)
+        except ValueError:
+            pass  # Fall through to model-based detection
+    
+    # Claude 4.5 series models (8192 tokens) - all variants
+    # Pattern: claude-sonnet-4-5, claude-haiku-4-5, claude-opus-4-5
+    if "claude-sonnet-4-5" in model_id or "claude-haiku-4-5" in model_id or "claude-opus-4-5" in model_id:
+        return 8192
+    
+    # Amazon Nova Pro (8192 tokens)
+    if "amazon.nova-pro" in model_id:
+        return 8192
+    
+    # Amazon Nova Lite (4096 tokens)
+    if "amazon.nova-lite" in model_id:
+        return 4096
+    
+    # Default: 4096 tokens (safe fallback for unknown models)
+    return 4096
 
 
 def prepare_image_content_converse(image_bytes: bytes, mime_type: str = "image/png") -> Dict[str, Any]:
@@ -159,6 +202,9 @@ def invoke_bedrock(
     aws_region = os.environ.get("AWS_REGION_NAME", "ap-northeast-1")
     model_id = os.environ.get("BEDROCK_MODEL_ID", "amazon.nova-pro-v1:0")
     
+    # Get maximum tokens for the model (model-specific limit)
+    max_tokens = get_max_tokens_for_model(model_id)
+    
     # Initialize Bedrock Runtime client
     bedrock_runtime = boto3.client(
         service_name="bedrock-runtime", region_name=aws_region
@@ -203,15 +249,16 @@ def invoke_bedrock(
         "content": content_parts
     })
     
-    # Build inference configuration
+    # Build inference configuration with model-specific max tokens
     inference_config = {
-        "maxTokens": MAX_TOKENS,
+        "maxTokens": max_tokens,
         "temperature": TEMPERATURE,
     }
     
     try:
         # Log request details
         print(f"Invoking Bedrock model (Converse API): {model_id}")
+        print(f"Max tokens: {max_tokens} (model-specific limit)")
         print(f"Prompt length: {len(prompt)} characters")
         if images:
             print(f"Image count: {len(images)}")
@@ -306,6 +353,52 @@ def invoke_bedrock(
         raise
 
 
+def _detect_prompt_injection(prompt: str) -> tuple[bool, Optional[str]]:
+    """
+    Detect potential prompt injection attacks.
+    
+    Checks for common prompt injection patterns:
+    - "ignore previous instructions"
+    - "system prompt"
+    - "forget everything"
+    - "new instructions"
+    - "override"
+    - "jailbreak"
+    
+    Args:
+        prompt: User message text
+        
+    Returns:
+        Tuple of (is_suspicious: bool, reason: Optional[str])
+        - is_suspicious: True if prompt injection pattern detected
+        - reason: Reason for suspicion (None if not suspicious)
+    """
+    if not prompt:
+        return False, None
+    
+    prompt_lower = prompt.lower()
+    
+    # Common prompt injection patterns (case-insensitive)
+    suspicious_patterns = [
+        ("ignore previous", "Attempt to ignore previous instructions"),
+        ("ignore all previous", "Attempt to ignore all previous instructions"),
+        ("system prompt", "Attempt to access system prompt"),
+        ("forget everything", "Attempt to reset context"),
+        ("new instructions", "Attempt to provide new instructions"),
+        ("override", "Attempt to override system behavior"),
+        ("jailbreak", "Attempt to jailbreak the model"),
+        ("you are now", "Attempt to change model behavior"),
+        ("act as", "Attempt to change model role"),
+        ("pretend to be", "Attempt to change model role"),
+    ]
+    
+    for pattern, reason in suspicious_patterns:
+        if pattern in prompt_lower:
+            return True, reason
+    
+    return False, None
+
+
 def validate_prompt(prompt: str, max_length: int = 4000) -> tuple[bool, Optional[str]]:
     """
     Validate user prompt before sending to Bedrock.
@@ -337,6 +430,16 @@ def validate_prompt(prompt: str, max_length: int = 4000) -> tuple[bool, Optional
         return (
             False,
             f"Your message is too long ({len(prompt)} characters). Please keep it under {max_length} characters.",
+        )
+    
+    # Check for prompt injection patterns
+    is_suspicious, reason = _detect_prompt_injection(prompt)
+    if is_suspicious:
+        # Log security event but don't reveal the specific pattern to user
+        # This prevents attackers from learning which patterns are detected
+        return (
+            False,
+            "Your message contains potentially harmful content. Please rephrase your request.",
         )
     
     # All validations passed

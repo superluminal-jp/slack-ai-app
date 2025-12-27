@@ -8,6 +8,7 @@ import { TokenStorage } from "./constructs/token-storage";
 import { EventDedupe } from "./constructs/event-dedupe";
 import { ExistenceCheckCache } from "./constructs/existence-check-cache";
 import { WhitelistConfig } from "./constructs/whitelist-config";
+import { RateLimit } from "./constructs/rate-limit";
 import { BedrockProcessor } from "./constructs/bedrock-processor";
 import { ExecutionApi } from "./constructs/execution-api";
 import { ApiGatewayMonitoring } from "./constructs/api-gateway-monitoring";
@@ -73,6 +74,9 @@ export class SlackBedrockStack extends cdk.Stack {
     // Create DynamoDB table for whitelist configuration
     const whitelistConfig = new WhitelistConfig(this, "WhitelistConfig");
 
+    // Create DynamoDB table for rate limiting
+    const rateLimit = new RateLimit(this, "RateLimit");
+
     // Create Bedrock processor Lambda (Lambda②)
     const bedrockProcessor = new BedrockProcessor(this, "BedrockProcessor", {
       awsRegion,
@@ -94,6 +98,7 @@ export class SlackBedrockStack extends cdk.Stack {
       dedupeTableName: eventDedupe.table.tableName,
       existenceCheckCacheTableName: existenceCheckCache.table.tableName,
       whitelistConfigTableName: whitelistConfig.table.tableName,
+      rateLimitTableName: rateLimit.table.tableName,
       awsRegion,
       bedrockModelId,
       executionApiUrl: executionApi.apiUrl,
@@ -120,6 +125,8 @@ export class SlackBedrockStack extends cdk.Stack {
     existenceCheckCache.table.grantReadWriteData(slackEventHandler.function);
     // Grant Lambda① read permissions to whitelist config table (read-only for security)
     whitelistConfig.table.grantReadData(slackEventHandler.function);
+    // Grant Lambda① read/write permissions to rate limit table
+    rateLimit.table.grantReadWriteData(slackEventHandler.function);
 
     // CloudWatch Alarms for Whitelist Authorization
     // Alarm for whitelist authorization failures (5 failures in 5 minutes)
@@ -207,6 +214,25 @@ export class SlackBedrockStack extends cdk.Stack {
         period: cdk.Duration.minutes(5),
       }),
       threshold: 5,
+      evaluationPeriods: 1,
+      comparisonOperator:
+        cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    // CloudWatch Alarm for Rate Limit exceeded (DDoS protection)
+    // Alarm triggers when 10+ rate limit exceeded events occur in 5 minutes
+    const rateLimitExceededAlarm = new cloudwatch.Alarm(this, "RateLimitExceededAlarm", {
+      alarmName: `${this.stackName}-rate-limit-exceeded`,
+      alarmDescription:
+        "Alert when rate limit exceeded events exceed threshold (potential DDoS attack)",
+      metric: new cloudwatch.Metric({
+        namespace: "SlackEventHandler",
+        metricName: "RateLimitExceeded",
+        statistic: "Sum",
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 10,
       evaluationPeriods: 1,
       comparisonOperator:
         cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,

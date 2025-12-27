@@ -9,6 +9,7 @@ from validation import validate_prompt
 from event_dedupe import is_duplicate_event, mark_event_processed
 from existence_check import check_entity_existence, ExistenceCheckError
 from authorization import authorize_request, AuthorizationError
+from rate_limiter import check_rate_limit, RateLimitExceededError
 from botocore.exceptions import ClientError
 from typing import Optional
 from api_gateway_client import invoke_execution_api
@@ -288,9 +289,18 @@ def lambda_handler(event, context):
                         "reason": "no_entity_ids",
                     })
             except Exception as e:
-                # Log error but continue processing (fail-open for handler errors)
-                # Existence Check errors are handled above, this catches unexpected errors
-                log_exception("existence_check_handler_error", {}, e)
+                # Unexpected error in Existence Check handler - fail-closed (security priority)
+                # This should not happen, but if it does, reject the request for security
+                log_exception("existence_check_handler_error", {
+                    "team_id": body.get("team_id"),
+                    "user_id": body.get("event", {}).get("user"),
+                    "channel_id": body.get("event", {}).get("channel"),
+                }, e)
+                return {
+                    "statusCode": 403,
+                    "headers": {"Content-Type": "application/json"},
+                    "body": json.dumps({"error": "Entity verification failed"}),
+                }
         
         # Whitelist Authorization (3c): Check if entities are in whitelist
         # This implements layer 3c in the multi-layer defense architecture
@@ -331,9 +341,78 @@ def lambda_handler(event, context):
                     "channel_id": channel_id,
                 })
             except Exception as e:
-                # Log error but continue processing (fail-open for handler errors)
-                # Authorization errors are handled above, this catches unexpected errors
-                log_exception("whitelist_authorization_handler_error", {}, e)
+                # Unexpected error in authorization handler - fail-closed (security priority)
+                # This should not happen, but if it does, reject the request for security
+                log_exception("whitelist_authorization_handler_error", {
+                    "team_id": team_id,
+                    "user_id": user_id,
+                    "channel_id": channel_id,
+                }, e)
+                return {
+                    "statusCode": 403,
+                    "headers": {"Content-Type": "application/json"},
+                    "body": json.dumps({"error": "Authorization failed"}),
+                }
+
+        # Rate Limiting: Check user-level rate limit (DDoS protection)
+        # Only perform rate limiting for event_callback (not url_verification)
+        if body.get("type") == "event_callback":
+            try:
+                slack_event = body.get("event", {})
+                team_id = body.get("team_id")
+                user_id = slack_event.get("user")
+                
+                # Perform rate limit check
+                if team_id or user_id:
+                    try:
+                        is_allowed, remaining = check_rate_limit(
+                            team_id=team_id,
+                            user_id=user_id,
+                        )
+                        
+                        if not is_allowed:
+                            # Rate limit exceeded - reject request
+                            log_error("rate_limit_exceeded", {
+                                "team_id": team_id,
+                                "user_id": user_id,
+                            })
+                            return {
+                                "statusCode": 429,
+                                "headers": {"Content-Type": "application/json"},
+                                "body": json.dumps({
+                                    "error": "Rate limit exceeded. Please try again in a moment."
+                                }),
+                            }
+                        
+                        # Rate limit check passed - continue processing
+                        if remaining is not None:
+                            log_info("rate_limit_check_passed", {
+                                "team_id": team_id,
+                                "user_id": user_id,
+                                "remaining_requests": remaining,
+                            })
+                    except RateLimitExceededError as e:
+                        # Rate limit exceeded - reject request
+                        log_error("rate_limit_exceeded", {
+                            "team_id": team_id,
+                            "user_id": user_id,
+                            "error": str(e),
+                        })
+                        return {
+                            "statusCode": 429,
+                            "headers": {"Content-Type": "application/json"},
+                            "body": json.dumps({
+                                "error": "Rate limit exceeded. Please try again in a moment."
+                            }),
+                        }
+            except Exception as e:
+                # Unexpected error in rate limiter - log but continue processing (graceful degradation)
+                # Rate limiting failures should not block legitimate requests
+                log_exception("rate_limit_handler_error", {
+                    "team_id": body.get("team_id"),
+                    "user_id": body.get("event", {}).get("user"),
+                }, e)
+                # Continue processing (fail-open for rate limiting errors)
 
         # Handle Slack's URL verification challenge
         if body.get("type") == "url_verification":

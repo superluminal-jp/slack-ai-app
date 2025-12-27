@@ -2,7 +2,7 @@
 Amazon Bedrock client for AI inference.
 
 This module provides a simple wrapper around the Bedrock Runtime API
-for invoking Claude 3 Haiku model for conversational AI responses.
+for invoking Claude models (primarily Claude 4.5 series) for conversational AI responses.
 
 Note: This is Phase 6 implementation (async processing in Bedrock Processor).
 """
@@ -17,8 +17,51 @@ from botocore.exceptions import ClientError
 
 # Model configuration
 # MODEL_ID is loaded from environment variable to allow flexible model selection
-MAX_TOKENS = 1024
 TEMPERATURE = 1.0
+
+
+def get_max_tokens_for_model(model_id: str) -> int:
+    """
+    Get maximum tokens for a given Bedrock model.
+    
+    Returns the maximum output tokens supported by the model.
+    If model is not recognized, returns a safe default (4096).
+    
+    Args:
+        model_id: Bedrock model identifier (e.g., "jp.anthropic.claude-haiku-4-5-20251001-v1:0")
+        
+    Returns:
+        Maximum tokens for the model
+        
+    Model-specific limits:
+        - Claude 4.5 Sonnet/Haiku/Opus: 8192 tokens (all 4.5 series)
+        - Amazon Nova Pro: 8192 tokens
+        - Amazon Nova Lite: 4096 tokens
+        - Default: 4096 tokens (safe fallback)
+    """
+    # Check environment variable first (allows override)
+    env_max_tokens = os.environ.get("BEDROCK_MAX_TOKENS")
+    if env_max_tokens:
+        try:
+            return int(env_max_tokens)
+        except ValueError:
+            pass  # Fall through to model-based detection
+    
+    # Claude 4.5 series models (8192 tokens) - all variants
+    # Pattern: claude-sonnet-4-5, claude-haiku-4-5, claude-opus-4-5
+    if "claude-sonnet-4-5" in model_id or "claude-haiku-4-5" in model_id or "claude-opus-4-5" in model_id:
+        return 8192
+    
+    # Amazon Nova Pro (8192 tokens)
+    if "amazon.nova-pro" in model_id:
+        return 8192
+    
+    # Amazon Nova Lite (4096 tokens)
+    if "amazon.nova-lite" in model_id:
+        return 4096
+    
+    # Default: 4096 tokens (safe fallback for unknown models)
+    return 4096
 
 
 def prepare_image_content(
@@ -121,6 +164,9 @@ def invoke_bedrock(
     # Get configuration from environment variables
     aws_region = os.environ.get("AWS_REGION_NAME", "ap-northeast-1")
     model_id = os.environ.get("BEDROCK_MODEL_ID", "amazon.nova-pro-v1:0")
+    
+    # Get maximum tokens for the model (model-specific limit)
+    max_tokens = get_max_tokens_for_model(model_id)
 
     # Initialize Bedrock Runtime client
     bedrock_runtime = boto3.client(
@@ -221,19 +267,12 @@ def invoke_bedrock(
                 )
 
         # Use anthropic_version based on model ID
-        # Claude 3.5 and newer models may require different version
-        if (
-            "claude-3-5" in model_id
-            or "claude-haiku-4" in model_id
-            or "claude-sonnet-4" in model_id
-        ):
-            anthropic_version = "bedrock-2023-05-31"  # Latest version for Claude 3.5+
-        else:
-            anthropic_version = "bedrock-2023-05-31"  # Standard version
+        # Claude 4.5 series uses bedrock-2023-05-31 API version
+        anthropic_version = "bedrock-2023-05-31"
 
         request_body = {
             "anthropic_version": anthropic_version,
-            "max_tokens": MAX_TOKENS,
+            "max_tokens": max_tokens,
             "temperature": TEMPERATURE,
             "messages": claude_messages,
         }
@@ -251,7 +290,7 @@ def invoke_bedrock(
         request_body = {
             "messages": nova_messages,
             "inferenceConfig": {
-                "max_new_tokens": MAX_TOKENS,
+                "max_new_tokens": max_tokens,
                 "temperature": TEMPERATURE,
             },
         }
@@ -266,7 +305,7 @@ def invoke_bedrock(
         request_body = {
             "messages": nova_messages,
             "inferenceConfig": {
-                "max_new_tokens": MAX_TOKENS,
+                "max_new_tokens": max_tokens,
                 "temperature": TEMPERATURE,
             },
         }
@@ -274,6 +313,7 @@ def invoke_bedrock(
     try:
         # Invoke Bedrock model
         print(f"Invoking Bedrock model: {model_id}")
+        print(f"Max tokens: {max_tokens} (model-specific limit)")
         print(f"Prompt length: {len(prompt)} characters")
         if images:
             print(f"Image count: {len(images)}")
@@ -445,6 +485,16 @@ def validate_prompt(prompt: str, max_length: int = 4000) -> tuple[bool, Optional
         return (
             False,
             f"Your message is too long ({len(prompt)} characters). Please keep it under {max_length} characters.",
+        )
+    
+    # Check for prompt injection patterns
+    is_suspicious, reason = _detect_prompt_injection(prompt)
+    if is_suspicious:
+        # Log security event but don't reveal the specific pattern to user
+        # This prevents attackers from learning which patterns are detected
+        return (
+            False,
+            "Your message contains potentially harmful content. Please rephrase your request.",
         )
 
     # All validations passed

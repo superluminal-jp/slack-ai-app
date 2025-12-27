@@ -32,6 +32,8 @@
 │ │ - タイムスタンプ検証 (±5分)                           │ │
 │ │ - ホワイトリスト認可 (3c)                             │ │
 │ │   * team_id, user_id, channel_id のホワイトリスト確認 │ │
+│ │   * 条件付きAND条件: 設定されているエンティティのみチェック │ │
+│ │   * 空のホワイトリスト: すべてのリクエストを許可（柔軟な設定） │ │
 │ │   * DynamoDB/Secrets Manager/環境変数から読み込み     │ │
 │ │   * メモリ内キャッシュ (5分TTL)                       │ │
 │ │ - イベント重複排除（DynamoDB: slack-event-dedupe）    │ │
@@ -108,7 +110,7 @@
 | レイヤー          | 主な機能                 | 技術スタック           | 責任範囲                                                                                                                                     |
 | ----------------- | ------------------------ | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | Slack             | ユーザーインターフェース | Slack API              | コマンド受付、メッセージ表示、スレッド管理                                                                                                   |
-| SlackEventHandler | 検証層処理               | Python 3.11            | 署名検証（鍵 1）、Existence Check（鍵 2）、API Gateway 呼び出し、即座応答、添付ファイルメタデータ抽出                                        |
+| SlackEventHandler | 検証層処理               | Python 3.11            | 署名検証（鍵 1）、Existence Check（鍵 2）、ホワイトリスト認可（3c）、API Gateway 呼び出し、即座応答、添付ファイルメタデータ抽出                                        |
 | Function URL      | パブリックエンドポイント | Lambda Function URL    | リクエスト受付、SlackEventHandler へのルーティング                                                                                           |
 | ExecutionApi      | 内部 API                 | API Gateway (IAM 認証) | 内部通信の保護（IAM 認証による）、Lambda Proxy 統合                                                                                          |
 | BedrockProcessor  | AI 処理                  | Python 3.11            | Bedrock Converse API 呼び出し、スレッド履歴取得、スレッド返信、添付ファイル処理                                                              |

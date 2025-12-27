@@ -12,6 +12,8 @@ Provides consistent logging across all modules with:
 import json
 import traceback
 import sys
+import hashlib
+import os
 from typing import Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -55,6 +57,86 @@ def _get_request_id() -> Optional[str]:
     return None
 
 
+def _mask_pii(value: Optional[str], log_level: str = "INFO") -> Optional[str]:
+    """
+    Mask or hash PII (Personally Identifiable Information) based on log level.
+    
+    PII fields: team_id, user_id, channel_id
+    
+    Masking strategy:
+    - DEBUG: Full value (for debugging only)
+    - INFO: Partial mask (e.g., "T123***" -> "T123***")
+    - WARN/ERROR/CRITICAL: SHA-256 hash (first 8 characters)
+    
+    Args:
+        value: PII value to mask (can be None)
+        log_level: Log level (DEBUG, INFO, WARN, ERROR, CRITICAL)
+        
+    Returns:
+        Masked value or None if input is None
+    """
+    if not value or not isinstance(value, str):
+        return value
+    
+    # DEBUG level: Return full value (for debugging)
+    if log_level == "DEBUG":
+        return value
+    
+    # INFO level: Partial mask (show first 3 characters, mask the rest)
+    if log_level == "INFO":
+        if len(value) <= 3:
+            return "***"  # Too short to mask partially
+        return value[:3] + "***"
+    
+    # WARN/ERROR/CRITICAL: SHA-256 hash (first 8 characters for readability)
+    # Use a salt from environment variable for additional security
+    salt = os.environ.get("PII_HASH_SALT", "default-salt-change-in-production")
+    hash_input = f"{salt}:{value}"
+    hash_value = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
+    return hash_value[:8]  # Return first 8 characters for readability
+
+
+def _sanitize_log_data(data: Dict[str, Any], log_level: str = "INFO") -> Dict[str, Any]:
+    """
+    Sanitize log data by masking PII fields.
+    
+    PII fields that are masked:
+    - team_id
+    - user_id
+    - channel_id
+    - bot_token (if present)
+    - signing_secret (if present)
+    
+    Args:
+        data: Log data dictionary
+        log_level: Log level (determines masking strategy)
+        
+    Returns:
+        Sanitized log data dictionary with PII masked
+    """
+    sanitized = data.copy()
+    
+    # PII fields to mask
+    pii_fields = ["team_id", "user_id", "channel_id", "bot_token", "signing_secret"]
+    
+    for field in pii_fields:
+        if field in sanitized:
+            sanitized[field] = _mask_pii(sanitized[field], log_level)
+    
+    # Recursively sanitize nested dictionaries
+    for key, value in sanitized.items():
+        if isinstance(value, dict):
+            sanitized[key] = _sanitize_log_data(value, log_level)
+        elif isinstance(value, list):
+            # Sanitize list items if they are dictionaries
+            sanitized[key] = [
+                _sanitize_log_data(item, log_level) if isinstance(item, dict) else item
+                for item in value
+            ]
+    
+    return sanitized
+
+
 def _build_log_entry(
     level: str,
     event_type: str,
@@ -75,11 +157,14 @@ def _build_log_entry(
     Returns:
         Structured log entry dictionary
     """
+    # Sanitize log data to remove PII (mask based on log level)
+    sanitized_data = _sanitize_log_data(data, level)
+    
     log_entry = {
         "level": level,
         "event": event_type,
         "timestamp": datetime.utcnow().isoformat() + "Z",
-        **data,
+        **sanitized_data,
     }
     
     # Add correlation ID if available

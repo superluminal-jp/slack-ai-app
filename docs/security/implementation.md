@@ -57,12 +57,13 @@
 **実装フロー**:
 
 1. Existence Check（3b）が成功した後、ホワイトリスト認可を実行
-2. 以下の3つのエンティティすべてがホワイトリストに含まれているか確認（AND条件）:
-   - `team_id`: ワークスペースID
-   - `user_id`: ユーザーID
-   - `channel_id`: チャンネルID
-3. すべてのエンティティが認可済みの場合のみ、Execution API に進む
-4. いずれかが未認可の場合、セキュリティイベントをログに記録し、403 を返す
+2. **条件付きAND条件**: 設定されているエンティティのみをチェック
+   - `team_id`: ワークスペースID（ホワイトリストに設定されている場合のみチェック）
+   - `user_id`: ユーザーID（ホワイトリストに設定されている場合のみチェック）
+   - `channel_id`: チャンネルID（ホワイトリストに設定されている場合のみチェック）
+3. **空のホワイトリスト**: すべてのエンティティが未設定（空）の場合、すべてのリクエストを許可（柔軟な設定）
+4. 設定されているエンティティがすべて認可済みの場合のみ、Execution API に進む
+5. 設定されているエンティティのいずれかが未認可の場合、セキュリティイベントをログに記録し、403 を返す
 
 **ホワイトリスト設定ソース（優先順位）**:
 
@@ -88,7 +89,7 @@
 **エラーハンドリング**:
 
 - **設定読み込み失敗: fail-closed（すべてのリクエストを拒否）** ← セキュリティ優先
-- **ホワイトリストが空: fail-closed（すべてのリクエストを拒否）** ← セキュリティ優先
+- **ホワイトリストが空: すべてのリクエストを許可（柔軟な設定）** ← 設定されていない場合は全許可
 - 未認可エンティティ: 403 Forbidden + セキュリティアラート
 
 **セキュリティメトリクス** (CloudWatch namespace: `SlackEventHandler`):
@@ -98,6 +99,109 @@
 - `WhitelistAuthorizationLatency`: 認可処理レイテンシ（Milliseconds, p95）
 - `WhitelistConfigLoadErrors`: 設定読み込みエラー回数（Sum）
 
+### レイヤー 3d: レート制限 実装詳細
+
+**目的**: DDoS攻撃やレート乱用を防止し、コストを制御する
+
+**実装フロー**:
+
+1. ホワイトリスト認可（3c）が成功した後、レート制限チェックを実行
+2. **ユーザー単位スロットリング**: `{team_id}#{user_id}` をキーとして DynamoDB で追跡
+3. **時間ウィンドウ**: 1分間（60秒）ごとにリセット
+4. **デフォルト制限**: 10リクエスト/分/ユーザー（環境変数 `RATE_LIMIT_PER_MINUTE` で設定可能）
+5. **トークンバケットアルゴリズム**: DynamoDB の条件付き更新を使用してアトミックにカウント
+6. 制限超過時は 429 Too Many Requests を返す
+
+**DynamoDB テーブル設計**:
+
+- テーブル名: `slack-rate-limit`
+- パーティションキー: `rate_limit_key` (形式: `{team_id}#{user_id}#{window_start}`)
+- TTL属性: `ttl` (自動クリーンアップ)
+- 属性:
+  - `request_count`: 現在のウィンドウでのリクエスト数
+  - `window_start`: ウィンドウ開始時刻（秒単位のエポックタイム）
+
+**エラーハンドリング**:
+
+- **DynamoDB エラー**: レート制限チェック失敗時は graceful degradation（リクエストを許可）
+- **レート制限超過**: 429 Too Many Requests + セキュリティログ
+- **予期しないエラー**: ログに記録し、リクエストを許可（fail-open for rate limiting）
+
+**セキュリティメトリクス** (CloudWatch namespace: `SlackEventHandler`):
+
+- `RateLimitExceeded`: レート制限超過回数（Sum）
+- `RateLimitRequests`: レート制限チェック回数（Sum）
+- CloudWatch アラーム: 5分間に10回以上のレート制限超過でアラート
+
+### レイヤー 3e: 入力検証とプロンプトインジェクション対策 実装詳細
+
+**目的**: プロンプトインジェクション攻撃を検出し、システムプロンプトの漏洩を防止する
+
+**実装フロー**:
+
+1. メッセージ長チェック（最大 4000 文字）
+2. **プロンプトインジェクションパターン検出**: 10種類の既知パターンをチェック
+   - "ignore previous instructions"
+   - "system prompt"
+   - "forget everything"
+   - "new instructions"
+   - "override"
+   - "jailbreak"
+   - "you are now"
+   - "act as"
+   - "pretend to be"
+3. 検出時はユーザーに一般的なエラーメッセージを返す（具体的なパターンは開示しない）
+
+**検出パターン**:
+
+- 大文字小文字を区別しない検索
+- 部分一致（パターンが含まれていれば検出）
+- 複数パターンの同時検出に対応
+
+**エラーハンドリング**:
+
+- **検出時**: 400 Bad Request + ユーザーフレンドリーなエラーメッセージ
+- **セキュリティログ**: 検出されたパターンと理由をログに記録（PII マスキング適用）
+
+**セキュリティメトリクス** (CloudWatch namespace: `SlackEventHandler`):
+
+- `PromptInjectionDetected`: プロンプトインジェクション検出回数（Sum）
+- セキュリティイベントログに詳細を記録
+
+### レイヤー 3f: PII マスキング 実装詳細
+
+**目的**: ログから個人識別情報（PII）を除去し、コンプライアンス要件を満たす
+
+**実装フロー**:
+
+1. すべてのログエントリを出力前に自動的にサニタイズ
+2. **マスキング戦略**（ログレベルに応じて）:
+   - **DEBUG**: 完全な値（デバッグ用）
+   - **INFO**: 部分マスキング（例: `T123***`）
+   - **WARN/ERROR/CRITICAL**: SHA-256 ハッシュ（最初の8文字）
+3. **マスキング対象フィールド**:
+   - `team_id`
+   - `user_id`
+   - `channel_id`
+   - `bot_token`
+   - `signing_secret`
+
+**ハッシュ化**:
+
+- SHA-256 アルゴリズムを使用
+- 環境変数 `PII_HASH_SALT` でソルトを設定（本番環境で変更推奨）
+- ハッシュ値の最初の8文字を返す（可読性のため）
+
+**再帰的サニタイゼーション**:
+
+- ネストされた辞書を再帰的にサニタイズ
+- リスト内の辞書もサニタイズ
+
+**セキュリティメトリクス**:
+
+- PII マスキングは自動的に適用され、メトリクスは不要
+- ログ監査で PII が含まれていないことを確認
+
 **CloudWatchアラーム**:
 
 - `WhitelistAuthorizationFailureAlarm`: 5分間に5回以上の認可失敗でトリガー
@@ -106,27 +210,52 @@
 **認可ロジック**:
 
 ```python
-def authorize_request(team_id, user_id, channel_id) -> AuthorizationResult:
+def authorize_request(
+    team_id: Optional[str],
+    user_id: Optional[str],
+    channel_id: Optional[str],
+) -> AuthorizationResult:
     """
-    AND条件: すべてのエンティティが認可済みである必要がある
-    - team_id がホワイトリストに含まれている AND
-    - user_id がホワイトリストに含まれている AND
-    - channel_id がホワイトリストに含まれている
-    """
-    whitelist = load_whitelist_config()  # キャッシュから読み込み
+    条件付きAND条件: 設定されているエンティティのみをチェック
     
+    - ホワイトリストが完全に空の場合: すべてのリクエストを許可
+    - エンティティがホワイトリストに設定されている場合のみチェック
+    - 設定されていないエンティティはスキップ（チェックしない）
+    - 設定されているエンティティがすべて認可済みの場合のみ許可
+    """
+    whitelist = load_whitelist_config()  # キャッシュから読み込み（5分TTL）
+    
+    # 空のホワイトリスト = すべてのリクエストを許可
+    total_entries = len(whitelist["team_ids"]) + len(whitelist["user_ids"]) + len(whitelist["channel_ids"])
+    if total_entries == 0:
+        return AuthorizationResult(authorized=True, ...)
+    
+    # 条件付きAND条件: 設定されているエンティティのみをチェック
     unauthorized_entities = []
-    if team_id not in whitelist["team_ids"]:
-        unauthorized_entities.append("team_id")
-    if user_id not in whitelist["user_ids"]:
-        unauthorized_entities.append("user_id")
-    if channel_id not in whitelist["channel_ids"]:
-        unauthorized_entities.append("channel_id")
+    
+    # team_id がホワイトリストに設定されている場合のみチェック
+    if len(whitelist["team_ids"]) > 0:
+        if not team_id or team_id not in whitelist["team_ids"]:
+            unauthorized_entities.append("team_id")
+    
+    # user_id がホワイトリストに設定されている場合のみチェック
+    if len(whitelist["user_ids"]) > 0:
+        if not user_id or user_id not in whitelist["user_ids"]:
+            unauthorized_entities.append("user_id")
+    
+    # channel_id がホワイトリストに設定されている場合のみチェック
+    if len(whitelist["channel_ids"]) > 0:
+        if not channel_id or channel_id not in whitelist["channel_ids"]:
+            unauthorized_entities.append("channel_id")
     
     if len(unauthorized_entities) == 0:
         return AuthorizationResult(authorized=True, ...)
     else:
-        return AuthorizationResult(authorized=False, unauthorized_entities=unauthorized_entities, ...)
+        return AuthorizationResult(
+            authorized=False,
+            unauthorized_entities=unauthorized_entities,
+            ...
+        )
 ```
 
 ## 6.2 Slack API Existence Check 実装コード

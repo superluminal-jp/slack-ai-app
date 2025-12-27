@@ -149,6 +149,10 @@ For complete architecture details, see [docs/architecture/overview.md](docs/arch
 
 - ✅ HMAC SHA256 signature verification for Slack requests
 - ✅ **Two-Key Defense Security Model** - Existence Check verifies entities via Slack API (Signing Secret + Bot Token)
+- ✅ **Whitelist authorization** - Flexible whitelist-based authorization for team_id, user_id, and channel_id (DynamoDB, Secrets Manager, or environment variables)
+- ✅ **Rate limiting** - User-level throttling (DynamoDB-based, configurable per minute)
+- ✅ **PII masking in logs** - Automatic masking/hashing of sensitive data (team_id, user_id, channel_id)
+- ✅ **Prompt injection detection** - Pattern-based detection of malicious prompts
 - ✅ Event deduplication to prevent duplicate processing
 - ✅ Async processing pattern (Slack Event Handler responds <3 seconds)
 - ✅ Structured JSON logging for CloudWatch
@@ -361,7 +365,7 @@ This MVP prioritizes basic functionality over production-grade features. The fol
 - ✅ Context retention within threads
 - ❌ Cross-thread context retention
 - ❌ Advanced prompt engineering or custom prompt templates
-- ❌ Rate limiting per user or workspace
+- ✅ Rate limiting per user (DynamoDB-based throttling)
 - ✅ File/image processing (images and documents supported)
 - ❌ Custom slash commands
 - ❌ Interactive Slack components (buttons, modals, etc.)
@@ -371,7 +375,6 @@ This MVP prioritizes basic functionality over production-grade features. The fol
 - ❌ Comprehensive monitoring and alerting (basic CloudWatch only)
 - ❌ Production-grade error handling with exponential backoff
 - ❌ Compliance certifications (SOC2, GDPR, HIPAA)
-- ❌ Advanced authorization checks (whitelist users/channels)
 - ❌ Bedrock Guardrails integration (deferred to post-MVP)
 
 ### Infrastructure

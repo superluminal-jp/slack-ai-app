@@ -12,6 +12,7 @@ export interface SlackEventHandlerProps {
   dedupeTableName: string; // DynamoDB table name for event deduplication
   existenceCheckCacheTableName: string; // DynamoDB table name for Existence Check cache
   whitelistConfigTableName: string; // DynamoDB table name for whitelist configuration
+  rateLimitTableName: string; // DynamoDB table name for rate limiting
   awsRegion: string; // AWS region (e.g., ap-northeast-1)
   bedrockModelId: string; // Bedrock model ID (e.g., amazon.nova-pro-v1:0)
   executionApiUrl: string; // API Gateway URL for Execution Layer (required)
@@ -47,6 +48,7 @@ export class SlackEventHandler extends Construct {
         DEDUPE_TABLE_NAME: props.dedupeTableName,
         EXISTENCE_CHECK_CACHE_TABLE: props.existenceCheckCacheTableName,
         WHITELIST_TABLE_NAME: props.whitelistConfigTableName,
+        RATE_LIMIT_TABLE_NAME: props.rateLimitTableName,
         AWS_REGION_NAME: props.awsRegion,
         BEDROCK_MODEL_ID: props.bedrockModelId,
         // Store secret names (not values) in environment variables

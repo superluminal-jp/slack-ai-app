@@ -62,7 +62,7 @@ Existence Check は Two-Key Defense モデルの第二の鍵として、Slack AP
 
 - 最小権限 IAM ロール（Bedrock 呼び出しのみ）
 - Bedrock Guardrails 適用（60 言語対応、Automated Reasoning 99%精度）
-- トークン数制限（4000 トークン/リクエスト）
+- トークン数制限（モデル最大値: Claude 4.5/Nova Pro は 8192 トークン）
 - コンテキスト履歴の暗号化（DynamoDB + KMS）
 - ユーザー単位のコンテキスト ID 分離
 - CloudTrail ログ（すべての Bedrock API 呼び出し）
@@ -232,36 +232,70 @@ def get_signing_secret() -> str:
         raise ValueError(f"署名シークレットの取得に失敗しました: {e}")
 
 
-def authorize_request(team_id: str, user_id: str, channel_id: str) -> bool:
+def authorize_request(
+    team_id: Optional[str],
+    user_id: Optional[str],
+    channel_id: Optional[str],
+) -> AuthorizationResult:
     """
-    Slackエンティティをホワイトリストに対して認可する。
+    柔軟なホワイトリストベースの認可を実行する。
+    
+    条件付きAND条件: 設定されているエンティティのみをチェック
+    - ホワイトリストが完全に空の場合: すべてのリクエストを許可
+    - エンティティがホワイトリストに設定されている場合のみチェック
+    - 設定されていないエンティティはスキップ（チェックしない）
+    - 設定されているエンティティがすべて認可済みの場合のみ許可
 
     Args:
-        team_id: Slackワークスペース/チームID
-        user_id: SlackユーザーID
-        channel_id: SlackチャネルID
+        team_id: Slackワークスペース/チームID（オプション）
+        user_id: SlackユーザーID（オプション）
+        channel_id: SlackチャネルID（オプション）
 
     Returns:
-        認可された場合はTrue
+        AuthorizationResult: 認可結果（authorized, unauthorized_entities等を含む）
 
-    Raises:
-        AuthorizationError: エンティティがホワイトリストにない場合
+    Note:
+        - ホワイトリスト設定は DynamoDB > Secrets Manager > 環境変数 の優先順位で読み込み
+        - 設定はメモリ内に5分間キャッシュ（TTL: 300秒）
     """
-    # 環境変数またはDynamoDBからホワイトリストを取得
-    ALLOWED_TEAMS = ["T123ABC", "T456DEF"]
-    ALLOWED_USERS = ["U111", "U222", "U333"]
-    ALLOWED_CHANNELS = ["C001", "C002"]
-
-    if team_id not in ALLOWED_TEAMS:
-        raise AuthorizationError(f"未認可のチーム: {team_id}")
-
-    if user_id not in ALLOWED_USERS:
-        raise AuthorizationError(f"未認可のユーザー: {user_id}")
-
-    if channel_id not in ALLOWED_CHANNELS:
-        raise AuthorizationError(f"未認可のチャネル: {channel_id}")
-
-    return True
+    from whitelist_loader import load_whitelist_config
+    
+    # ホワイトリスト設定を読み込み（キャッシュから）
+    whitelist = load_whitelist_config()
+    
+    # 空のホワイトリスト = すべてのリクエストを許可
+    total_entries = len(whitelist["team_ids"]) + len(whitelist["user_ids"]) + len(whitelist["channel_ids"])
+    if total_entries == 0:
+        return AuthorizationResult(authorized=True, team_id=team_id, user_id=user_id, channel_id=channel_id)
+    
+    # 条件付きAND条件: 設定されているエンティティのみをチェック
+    unauthorized_entities = []
+    
+    # team_id がホワイトリストに設定されている場合のみチェック
+    if len(whitelist["team_ids"]) > 0:
+        if not team_id or team_id not in whitelist["team_ids"]:
+            unauthorized_entities.append("team_id")
+    
+    # user_id がホワイトリストに設定されている場合のみチェック
+    if len(whitelist["user_ids"]) > 0:
+        if not user_id or user_id not in whitelist["user_ids"]:
+            unauthorized_entities.append("user_id")
+    
+    # channel_id がホワイトリストに設定されている場合のみチェック
+    if len(whitelist["channel_ids"]) > 0:
+        if not channel_id or channel_id not in whitelist["channel_ids"]:
+            unauthorized_entities.append("channel_id")
+    
+    if len(unauthorized_entities) == 0:
+        return AuthorizationResult(authorized=True, team_id=team_id, user_id=user_id, channel_id=channel_id)
+    else:
+        return AuthorizationResult(
+            authorized=False,
+            team_id=team_id,
+            user_id=user_id,
+            channel_id=channel_id,
+            unauthorized_entities=unauthorized_entities,
+        )
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -345,8 +379,40 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     "body": json.dumps({"text": "エンティティ検証に失敗しました"})
                 }
         
-        # 認可
-        authorize_request(team_id, user_id, channel_id)
+        # ホワイトリスト認可 (3c): エンティティがホワイトリストに含まれているか確認
+        from authorization import authorize_request, AuthorizationError
+        
+        auth_result = authorize_request(
+            team_id=team_id,
+            user_id=user_id,
+            channel_id=channel_id,
+        )
+        
+        if not auth_result.authorized:
+            # 認可失敗 - リクエストを拒否（fail-closed）
+            print(json.dumps({
+                "level": "ERROR",
+                "event": "whitelist_authorization_failed",
+                "correlation_id": correlation_id,
+                "team_id": team_id,
+                "user_id": user_id,
+                "channel_id": channel_id,
+                "unauthorized_entities": auth_result.unauthorized_entities,
+            }))
+            return {
+                "statusCode": 403,
+                "body": json.dumps({"text": "認可に失敗しました"})
+            }
+        
+        # 認可成功 - 処理を継続
+        print(json.dumps({
+            "level": "INFO",
+            "event": "whitelist_authorization_success",
+            "correlation_id": correlation_id,
+            "team_id": team_id,
+            "user_id": user_id,
+            "channel_id": channel_id,
+        }))
 
         # ExecutionApi (API Gateway) を呼び出し
         lambda_payload = {
@@ -954,7 +1020,7 @@ def invoke_bedrock(
         modelId=model_id,
         messages=messages,
         inferenceConfig={
-            "maxTokens": MAX_TOKENS,
+            "maxTokens": max_tokens,  # Model-specific limit (Claude: 4096, Nova Pro: 8192)
             "temperature": TEMPERATURE,
         }
     )
@@ -971,6 +1037,116 @@ def invoke_bedrock(
 ## 関連ドキュメント
 
 - [アーキテクチャ概要](./overview.md) - システム全体像
+## 7.5 レート制限の実装
+
+**ファイル**: `lambda/slack-event-handler/rate_limiter.py`
+
+レート制限は、DynamoDB ベースのトークンバケットアルゴリズムを使用して、ユーザー単位のスロットリングを実装します。
+
+**実装フロー**:
+
+1. **レート制限キー生成**: `{team_id}#{user_id}` をキーとして使用
+2. **時間ウィンドウ**: 1分間（60秒）ごとにリセット
+3. **DynamoDB 条件付き更新**: アトミックにリクエスト数をカウント
+4. **制限超過チェック**: 制限を超えた場合は `RateLimitExceededError` を発生
+
+**DynamoDB テーブル**: `slack-rate-limit`
+- Partition Key: `rate_limit_key` (String, 形式: `{team_id}#{user_id}#{window_start}`)
+- TTL Attribute: `ttl` (Number, Unix timestamp)
+- Billing Mode: PAY_PER_REQUEST
+
+**コード例**:
+
+```python
+from rate_limiter import check_rate_limit, RateLimitExceededError
+
+# レート制限チェック
+try:
+    is_allowed, remaining = check_rate_limit(
+        team_id=team_id,
+        user_id=user_id,
+        limit=10,  # デフォルト: 環境変数 RATE_LIMIT_PER_MINUTE
+        window_seconds=60,
+    )
+    
+    if not is_allowed:
+        return {
+            "statusCode": 429,
+            "body": json.dumps({"error": "Rate limit exceeded"}),
+        }
+except RateLimitExceededError as e:
+    return {
+        "statusCode": 429,
+        "body": json.dumps({"error": "Rate limit exceeded"}),
+    }
+```
+
+**CloudWatch メトリクス**:
+- `RateLimitExceeded`: レート制限超過回数（Sum）
+- `RateLimitRequests`: レート制限チェック回数（Sum）
+
+**CloudWatch アラーム**:
+- `RateLimitExceededAlarm`: 5分間に10回以上のレート制限超過でトリガー
+
+**環境変数**:
+- `RATE_LIMIT_PER_MINUTE`: レート制限値（デフォルト: 10）
+- `RATE_LIMIT_TABLE_NAME`: DynamoDB テーブル名（デフォルト: `slack-rate-limit`）
+
+## 7.6 トークン数制限の実装
+
+**ファイル**: `lambda/bedrock-processor/bedrock_client_converse.py`
+
+トークン数制限は、モデルごとの最大値を自動的に決定します。
+
+**実装フロー**:
+
+1. **モデルID検出**: 環境変数 `BEDROCK_MODEL_ID` からモデルIDを取得
+2. **最大トークン数決定**: `get_max_tokens_for_model()` 関数でモデルごとの最大値を決定
+   - Claude 4.5 Sonnet/Haiku/Opus: 8192 tokens (すべての4.5シリーズ)
+   - Amazon Nova Pro: 8192 tokens
+   - Amazon Nova Lite: 4096 tokens
+3. **環境変数上書き**: `BEDROCK_MAX_TOKENS` が設定されている場合は上書き
+
+**コード例**:
+
+```python
+def get_max_tokens_for_model(model_id: str) -> int:
+    """モデルごとの最大トークン数を取得"""
+    # 環境変数で上書き可能
+    env_max_tokens = os.environ.get("BEDROCK_MAX_TOKENS")
+    if env_max_tokens:
+        return int(env_max_tokens)
+    
+    # Claude 4.5 series models (8192 tokens) - all variants
+    if (
+        "claude-sonnet-4-5" in model_id
+        or "claude-haiku-4-5" in model_id
+        or "claude-opus-4-5" in model_id
+    ):
+        return 8192
+    
+    # Amazon Nova Pro (8192 tokens)
+    if "amazon.nova-pro" in model_id:
+        return 8192
+    
+    # Amazon Nova Lite (4096 tokens)
+    if "amazon.nova-lite" in model_id:
+        return 4096
+    
+    return 4096  # デフォルト
+
+# 使用例
+model_id = os.environ.get("BEDROCK_MODEL_ID", "jp.anthropic.claude-haiku-4-5-20251001-v1:0")
+max_tokens = get_max_tokens_for_model(model_id)
+
+inference_config = {
+    "maxTokens": max_tokens,
+    "temperature": TEMPERATURE,
+}
+```
+<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>
+grep
+
 - [ユーザー体験](./user-experience.md) - UX設計とフロー
 - [セキュリティ実装](../security/implementation.md) - セキュリティコード実装
 - [ADR-003](../adr/003-response-url-async.md) - 非同期パターンの採用理由
