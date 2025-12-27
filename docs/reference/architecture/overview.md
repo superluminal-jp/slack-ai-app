@@ -218,4 +218,3 @@ Verification Zone と Execution Zone を独立したスタックに分離。ク�
 - [セキュリティ要件](../security/requirements.md) - 機能的・非機能的セキュリティ要件
 - [脅威モデル](../security/threat-model.md) - リスク分析とアクター
 - [セキュリティ実装](../security/implementation.md) - 多層防御の実装詳細
-- [移行ガイド](../../how-to/migration-guide.md) - 単一スタックから分離スタックへの移行

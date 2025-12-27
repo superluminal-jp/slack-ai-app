@@ -16,7 +16,8 @@ const executionStackName =
   app.node.tryGetContext("executionStackName") || "SlackAI-Execution";
 
 // Cross-account configuration (optional)
-const verificationAccountId = app.node.tryGetContext("verificationAccountId") || "";
+const verificationAccountId =
+  app.node.tryGetContext("verificationAccountId") || "";
 const executionAccountId = app.node.tryGetContext("executionAccountId") || "";
 const verificationLambdaRoleArn =
   app.node.tryGetContext("verificationLambdaRoleArn") || "";
@@ -29,7 +30,11 @@ const defaultEnv = {
 };
 
 // Get execution API ARN from URL (for IAM policy)
-function getApiArnFromUrl(apiUrl: string, region: string, account?: string): string {
+function getApiArnFromUrl(
+  apiUrl: string,
+  region: string,
+  account?: string
+): string {
   if (!apiUrl) return "";
   // Extract API ID from URL: https://{api-id}.execute-api.{region}.amazonaws.com/prod/
   const match = apiUrl.match(/https:\/\/([^.]+)\.execute-api\./);

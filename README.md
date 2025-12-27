@@ -100,6 +100,7 @@ The application uses a **split-stack architecture** with two independent stacks:
 - **ExecutionStack**: BedrockProcessor + API Gateway
 
 This architecture supports:
+
 - ✅ Cross-account deployments
 - ✅ Independent lifecycle management
 - ✅ Enhanced security boundaries
