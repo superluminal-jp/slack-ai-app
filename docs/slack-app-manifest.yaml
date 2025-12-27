@@ -21,6 +21,7 @@ oauth_config:
       - channels:history
       - groups:history
       - files:read # Required for downloading attachments
+      - reactions:write # Required for adding/removing reactions (👀, ✅, ❌)
       - team:read # Required for Existence Check (team_id verification)
       - users:read # Required for Existence Check (user_id verification)
       - channels:read # Required for Existence Check (channel_id verification)

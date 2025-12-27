@@ -59,6 +59,14 @@ def parse_execution_response(response: Dict[str, Any]) -> Dict[str, Any]:
             raise ValueError("correlation_id must be a string")
         parsed["correlation_id"] = correlation_id
 
+    if "original_message_ts" in response and response["original_message_ts"]:
+        original_message_ts = response["original_message_ts"]
+        if not isinstance(original_message_ts, str):
+            raise ValueError("original_message_ts must be a string")
+        if not _is_valid_timestamp(original_message_ts):
+            raise ValueError("original_message_ts must be a valid Slack timestamp format")
+        parsed["original_message_ts"] = original_message_ts
+
     # Status-specific required fields
     if status == "success":
         response_text = response.get("response_text")

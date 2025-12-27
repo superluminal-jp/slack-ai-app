@@ -129,6 +129,52 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             "correlation_id": correlation_id,
                         },
                     )
+                    
+                    # Update reaction: Remove 👀 and add ✅ to indicate success
+                    if parsed_response.get("original_message_ts"):
+                        try:
+                            client = WebClient(token=parsed_response["bot_token"], timeout=2)
+                            # Remove 👀 reaction
+                            try:
+                                client.reactions_remove(
+                                    channel=parsed_response["channel"],
+                                    name="eyes",
+                                    timestamp=parsed_response["original_message_ts"]
+                                )
+                            except SlackApiError as e:
+                                # Ignore if reaction doesn't exist
+                                if e.response.get("error") != "no_reaction":
+                                    log_warn("reaction_remove_failed", {
+                                        "channel": parsed_response["channel"],
+                                        "timestamp": parsed_response["original_message_ts"],
+                                        "emoji": "eyes",
+                                        "error": e.response.get("error", ""),
+                                    })
+                            
+                            # Add ✅ reaction
+                            try:
+                                client.reactions_add(
+                                    channel=parsed_response["channel"],
+                                    name="white_check_mark",  # Slack API standard name for ✅ emoji
+                                    timestamp=parsed_response["original_message_ts"]
+                                )
+                                log_info("reaction_updated_success", {
+                                    "channel": parsed_response["channel"],
+                                    "timestamp": parsed_response["original_message_ts"],
+                                    "emoji": "white_check_mark",
+                                })
+                            except SlackApiError as e:
+                                log_warn("reaction_add_success_failed", {
+                                    "channel": parsed_response["channel"],
+                                    "timestamp": parsed_response["original_message_ts"],
+                                    "emoji": "white_check_mark",
+                                    "error": e.response.get("error", ""),
+                                })
+                        except Exception as e:
+                            log_exception("reaction_update_success_error", {
+                                "channel": parsed_response["channel"],
+                                "timestamp": parsed_response.get("original_message_ts"),
+                            }, e)
                 else:
                     # Post error response
                     post_to_slack(
@@ -148,6 +194,52 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             "correlation_id": correlation_id,
                         },
                     )
+                    
+                    # Update reaction: Remove 👀 and add ❌ to indicate failure
+                    if parsed_response.get("original_message_ts"):
+                        try:
+                            client = WebClient(token=parsed_response["bot_token"], timeout=2)
+                            # Remove 👀 reaction
+                            try:
+                                client.reactions_remove(
+                                    channel=parsed_response["channel"],
+                                    name="eyes",
+                                    timestamp=parsed_response["original_message_ts"]
+                                )
+                            except SlackApiError as e:
+                                # Ignore if reaction doesn't exist
+                                if e.response.get("error") != "no_reaction":
+                                    log_warn("reaction_remove_failed", {
+                                        "channel": parsed_response["channel"],
+                                        "timestamp": parsed_response["original_message_ts"],
+                                        "emoji": "eyes",
+                                        "error": e.response.get("error", ""),
+                                    })
+                            
+                            # Add ❌ reaction
+                            try:
+                                client.reactions_add(
+                                    channel=parsed_response["channel"],
+                                    name="x",  # Slack API standard name for ❌ emoji
+                                    timestamp=parsed_response["original_message_ts"]
+                                )
+                                log_info("reaction_updated_failure", {
+                                    "channel": parsed_response["channel"],
+                                    "timestamp": parsed_response["original_message_ts"],
+                                    "emoji": "x",
+                                })
+                            except SlackApiError as e:
+                                log_warn("reaction_add_failure_failed", {
+                                    "channel": parsed_response["channel"],
+                                    "timestamp": parsed_response["original_message_ts"],
+                                    "emoji": "x",
+                                    "error": e.response.get("error", ""),
+                                })
+                        except Exception as e:
+                            log_exception("reaction_update_failure_error", {
+                                "channel": parsed_response["channel"],
+                                "timestamp": parsed_response.get("original_message_ts"),
+                            }, e)
 
             except SlackApiError as e:
                 # Slack API error
