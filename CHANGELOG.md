@@ -35,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - DynamoDB table names now include stack name prefix to prevent conflicts
 - IAM policy for VerificationStack Lambda uses wildcard resource (access controlled by API Gateway resource policy)
 - Updated deployment documentation with `.env` file support and account ID configuration
-- All documentation updated to reflect split-stack architecture as the standard deployment method
+- All documentation updated to reflect two independent stacks (VerificationStack + ExecutionStack) as the standard deployment method
 
 ### Fixed
 
@@ -45,8 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- `SlackBedrockStack` single-stack deployment - コードベースから完全に削除されました。split-stack アーキテクチャが標準です。
-- Single-stack deployment mode - `cdk/bin/cdk.ts` から削除されました。デフォルトは split-stack です。
+- `SlackBedrockStack` single-stack deployment - コードベースから完全に削除されました。2 つの独立したスタック（VerificationStack + ExecutionStack）が標準です。
+- Single-stack deployment mode - `cdk/bin/cdk.ts` から削除されました。デフォルトは 2 つの独立したスタックのデプロイです。
 
 ## [1.0.0] - 2025-12-27
 

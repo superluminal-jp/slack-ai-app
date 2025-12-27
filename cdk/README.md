@@ -1,15 +1,15 @@
 # Slack AI App - CDK Infrastructure
 
-This CDK project deploys the Slack AI application infrastructure to AWS using a split-stack architecture.
+This CDK project deploys the Slack AI application infrastructure to AWS using two independent stacks.
 
 ## Deployment Architecture
 
-The application uses a split-stack architecture that supports both same-account and cross-account deployments:
+The application uses two independent stacks that can be deployed separately, supporting both same-account and cross-account deployments:
 
 - **ExecutionStack**: BedrockProcessor + API Gateway
 - **VerificationStack**: SlackEventHandler + DynamoDB + Secrets
 
-## Split Stack Deployment
+## Deployment
 
 Two independent stacks that can be deployed to separate accounts:
 - **ExecutionStack**: BedrockProcessor + API Gateway
