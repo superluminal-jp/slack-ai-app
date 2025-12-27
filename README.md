@@ -14,25 +14,9 @@ A serverless Slack bot that integrates with Amazon Bedrock to provide AI-generat
 - Node.js 18+ and Python 3.11+
 - Slack workspace admin permissions
 
-### Deploy (Single Stack - Legacy)
+### Deploy
 
-```bash
-# 1. Set credentials (first deployment only)
-export SLACK_SIGNING_SECRET=your-signing-secret
-export SLACK_BOT_TOKEN=xoxb-your-bot-token
-
-# 2. Install dependencies
-cd cdk && npm install
-cd ../lambda/verification-stack/slack-event-handler && pip install -r requirements.txt -t .
-cd ../../execution-stack/bedrock-processor && pip install -r requirements.txt -t .
-
-# 3. Deploy
-cd ../../cdk && cdk deploy --context deploymentMode=single
-```
-
-### Deploy (Split Stack - Recommended)
-
-For cross-account ready deployment, see [CDK README](cdk/README.md#2-split-stack-mode-recommended) for detailed instructions.
+This project uses a split-stack architecture (VerificationStack + ExecutionStack) that supports cross-account deployments. See [CDK README](cdk/README.md) for detailed deployment instructions.
 
 **Quick start with deployment script:**
 
@@ -108,14 +92,20 @@ For details, see [Architecture Overview](docs/reference/architecture/overview.md
 - AWS Secrets Manager
 - **Split-stack deployment** (cross-account ready)
 
-### 🔀 Deployment Options
+### 🔀 Deployment Architecture
 
-| Mode             | Description                     | Use Case                             |
-| ---------------- | ------------------------------- | ------------------------------------ |
-| **Single Stack** | All resources in one stack      | Simple deployments                   |
-| **Split Stack**  | Verification + Execution stacks | Cross-account, independent lifecycle |
+The application uses a **split-stack architecture** with two independent stacks:
 
-See [CDK README](cdk/README.md) for deployment options.
+- **VerificationStack**: SlackEventHandler + DynamoDB + Secrets Manager
+- **ExecutionStack**: BedrockProcessor + API Gateway
+
+This architecture supports:
+- ✅ Cross-account deployments
+- ✅ Independent lifecycle management
+- ✅ Enhanced security boundaries
+- ✅ Flexible deployment options
+
+See [CDK README](cdk/README.md) for deployment instructions.
 
 ## Documentation
 

@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import * as cdk from "aws-cdk-lib";
-import { SlackBedrockStack } from "../lib/slack-bedrock-stack";
 import { ExecutionStack } from "../lib/execution-stack";
 import { VerificationStack } from "../lib/verification-stack";
 import { DeploymentMode } from "../lib/types/stack-config";
@@ -10,7 +9,7 @@ const app = new cdk.App();
 // Get configuration from context
 const region = app.node.tryGetContext("awsRegion") || "ap-northeast-1";
 const deploymentMode: DeploymentMode =
-  app.node.tryGetContext("deploymentMode") || "single";
+  app.node.tryGetContext("deploymentMode") || "split";
 const verificationStackName =
   app.node.tryGetContext("verificationStackName") || "SlackAI-Verification";
 const executionStackName =
@@ -45,26 +44,17 @@ function getApiArnFromUrl(apiUrl: string, region: string, account?: string): str
 /**
  * Deployment Mode Selection:
  *
- * 1. "single" (default): Legacy single-stack deployment (SlackBedrockStack)
- *    - All resources in one stack
- *    - Simple but not cross-account ready
- *
- * 2. "split": Split-stack deployment (same account)
+ * 1. "split" (default): Split-stack deployment (same account)
  *    - ExecutionStack: BedrockProcessor + API Gateway
  *    - VerificationStack: SlackEventHandler + DynamoDB + Secrets
  *    - Deploy order: ExecutionStack → VerificationStack → ExecutionStack (update)
  *
- * 3. "cross-account": Cross-account deployment (future)
+ * 2. "cross-account": Cross-account deployment
  *    - Same as "split" but with different account IDs
  *    - Requires verificationAccountId and executionAccountId
  */
 
-if (deploymentMode === "single") {
-  // Legacy single-stack mode (backward compatible)
-  new SlackBedrockStack(app, "SlackBedrockStack", {
-    env: defaultEnv,
-  });
-} else if (deploymentMode === "split" || deploymentMode === "cross-account") {
+if (deploymentMode === "split" || deploymentMode === "cross-account") {
   // Split-stack mode
 
   // Determine environments for cross-account
@@ -123,6 +113,6 @@ Execution Stack will be created. After deployment:
   }
 } else {
   throw new Error(
-    `Invalid deploymentMode: ${deploymentMode}. Must be "single", "split", or "cross-account".`
+    `Invalid deploymentMode: ${deploymentMode}. Must be "split" or "cross-account".`
   );
 }

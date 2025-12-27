@@ -49,8 +49,7 @@ describe("VerificationStack", () => {
             Match.objectLike({
               Action: "execute-api:Invoke",
               Effect: "Allow",
-              Resource:
-                "arn:aws:execute-api:ap-northeast-1:123456789012:abc123/*",
+              Resource: "*", // Wildcard resource (access controlled by API Gateway resource policy)
             }),
           ]),
         },
@@ -80,7 +79,7 @@ describe("VerificationStack", () => {
 
     it("should create event dedupe table with TTL", () => {
       template.hasResourceProperties("AWS::DynamoDB::Table", {
-        TableName: "slack-event-dedupe",
+        TableName: "TestVerificationStack-event-dedupe",
         TimeToLiveSpecification: {
           AttributeName: "ttl",
           Enabled: true,

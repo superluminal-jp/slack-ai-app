@@ -95,7 +95,7 @@
     "awsRegion": "ap-northeast-1",
     "bedrockModelId": "jp.anthropic.claude-haiku-4-5-20251001-v1:0",
 
-    "deploymentMode": "single",
+    "deploymentMode": "split",
     "verificationStackName": "SlackAI-Verification",
     "executionStackName": "SlackAI-Execution",
     "verificationAccountId": "471112852670",

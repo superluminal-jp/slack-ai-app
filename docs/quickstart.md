@@ -179,21 +179,61 @@ cdk bootstrap aws://123456789012/ap-northeast-1
 
 ### ステップ 1: CDK スタックのデプロイ
 
+このプロジェクトは split-stack アーキテクチャを使用します。3段階のデプロイプロセスが必要です。
+
+#### 方法 1: デプロイスクリプトを使用（推奨）
+
+```bash
+# プロジェクトルートから
+cd scripts
+chmod +x deploy-split-stacks.sh
+./deploy-split-stacks.sh
+```
+
+#### 方法 2: 手動デプロイ
+
 ```bash
 cd cdk
 
-# スタックの確認（デプロイ前に確認）
-cdk diff
+# .env ファイルから環境変数を読み込む
+set -a && source ../.env && set +a
 
-# デプロイ実行
-cdk deploy
+# 1. Execution Stack をデプロイ
+npx cdk deploy SlackAI-Execution \
+  --context deploymentMode=split \
+  --profile YOUR_PROFILE \
+  --require-approval never
+
+# 出力から ExecutionApiUrl を取得
+
+# 2. Verification Stack をデプロイ
+npx cdk deploy SlackAI-Verification \
+  --context deploymentMode=split \
+  --context executionApiUrl=<ExecutionApiUrl from step 1> \
+  --profile YOUR_PROFILE \
+  --require-approval never
+
+# 出力から VerificationLambdaRoleArn を取得
+
+# 3. Execution Stack を更新（リソースポリシー追加）
+npx cdk deploy SlackAI-Execution \
+  --context deploymentMode=split \
+  --context verificationLambdaRoleArn=<VerificationLambdaRoleArn from step 2> \
+  --context verificationAccountId=YOUR_AWS_ACCOUNT_ID \
+  --profile YOUR_PROFILE \
+  --require-approval never
 ```
 
 デプロイ中に以下のリソースが作成されます：
 
-- Lambda 関数（SlackEventHandler, BedrockProcessor）
+**ExecutionStack**:
+- Lambda 関数（BedrockProcessor）
 - API Gateway（Execution API）
-- DynamoDB テーブル（Token Storage, Event Dedupe, Existence Check Cache, Whitelist Config）
+- CloudWatch アラームとメトリクス
+
+**VerificationStack**:
+- Lambda 関数（SlackEventHandler）
+- DynamoDB テーブル（Token Storage, Event Dedupe, Existence Check Cache, Whitelist Config, Rate Limit）
 - Secrets Manager シークレット（Slack Signing Secret, Bot Token）
 - CloudWatch アラームとメトリクス
 - IAM ロールとポリシー
@@ -202,10 +242,16 @@ cdk deploy
 
 デプロイ完了後、以下の出力が表示されます：
 
+**VerificationStack の出力**:
 ```
-Outputs:
-SlackBedrockStack.SlackEventHandlerUrl = https://xxxxxxxxxx.lambda-url.ap-northeast-1.on.aws/
-SlackBedrockStack.ExecutionApiUrl = https://xxxxxxxxxx.execute-api.ap-northeast-1.amazonaws.com/prod/
+SlackAI-Verification.SlackEventHandlerUrl = https://xxxxxxxxxx.lambda-url.ap-northeast-1.on.aws/
+SlackAI-Verification.VerificationLambdaRoleArn = arn:aws:iam::123456789012:role/...
+```
+
+**ExecutionStack の出力**:
+```
+SlackAI-Execution.ExecutionApiUrl = https://xxxxxxxxxx.execute-api.ap-northeast-1.amazonaws.com/prod/
+SlackAI-Execution.ExecutionApiArn = arn:aws:execute-api:ap-northeast-1:123456789012:xxx/*/*/*
 ```
 
 **重要**: `SlackEventHandlerUrl` をコピーして、Slack App の Event Subscriptions に設定してください。
@@ -248,7 +294,7 @@ aws dynamodb put-item \
 
 ```bash
 aws secretsmanager create-secret \
-  --name SlackBedrockStack/slack/whitelist-config \
+  --name SlackAI-Verification/slack/whitelist-config \
   --secret-string '{
     "team_ids": ["T01234567"],
     "user_ids": ["U01234567"],
@@ -289,10 +335,10 @@ CDK スタックの環境変数として設定（再デプロイが必要）。
 
 ```bash
 # SlackEventHandler のログを確認
-aws logs tail /aws/lambda/SlackBedrockStack-SlackEventHandler-XXXXX --follow
+aws logs tail /aws/lambda/SlackAI-Verification-SlackEventHandler-XXXXX --follow
 
 # BedrockProcessor のログを確認
-aws logs tail /aws/lambda/SlackBedrockStack-BedrockProcessor-XXXXX --follow
+aws logs tail /aws/lambda/SlackAI-Execution-BedrockProcessor-XXXXX --follow
 ```
 
 ### ステップ 3: メトリクスの確認
@@ -343,7 +389,7 @@ cdk bootstrap --show-template
 ```bash
 # ログでエラーを検索
 aws logs filter-log-events \
-  --log-group-name /aws/lambda/SlackBedrockStack-SlackEventHandler-XXXXX \
+  --log-group-name /aws/lambda/SlackAI-Verification-SlackEventHandler-XXXXX \
   --filter-pattern "ERROR"
 ```
 
@@ -362,7 +408,7 @@ aws logs filter-log-events \
 aws bedrock list-foundation-models --region ap-northeast-1
 
 # BedrockProcessor のログを確認
-aws logs tail /aws/lambda/SlackBedrockStack-BedrockProcessor-XXXXX --follow
+aws logs tail /aws/lambda/SlackAI-Execution-BedrockProcessor-XXXXX --follow
 ```
 
 ### 問題 4: すべてのリクエストが 403 で拒否される（ホワイトリスト関連）
@@ -379,7 +425,7 @@ aws logs tail /aws/lambda/SlackBedrockStack-BedrockProcessor-XXXXX --follow
 
    # または Secrets Manager のシークレットを確認
    aws secretsmanager get-secret-value \
-     --secret-id SlackBedrockStack/slack/whitelist-config
+     --secret-id SlackAI-Verification/slack/whitelist-config
    ```
 
 2. **すべてのエンティティタイプが設定されているか確認**:
@@ -391,7 +437,7 @@ aws logs tail /aws/lambda/SlackBedrockStack-BedrockProcessor-XXXXX --follow
 
    ```bash
    aws iam get-role-policy \
-     --role-name SlackBedrockStack-SlackEventHandler-XXXXX \
+     --role-name SlackAI-Verification-SlackEventHandler-XXXXX \
      --policy-name <policy-name>
    ```
 
@@ -403,7 +449,7 @@ aws logs tail /aws/lambda/SlackBedrockStack-BedrockProcessor-XXXXX --follow
 5. **CloudWatch ログでエラー詳細を確認**:
    ```bash
    aws logs filter-log-events \
-     --log-group-name /aws/lambda/SlackBedrockStack-SlackEventHandler-XXXXX \
+     --log-group-name /aws/lambda/SlackAI-Verification-SlackEventHandler-XXXXX \
      --filter-pattern "whitelist"
    ```
 

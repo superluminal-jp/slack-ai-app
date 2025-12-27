@@ -39,15 +39,14 @@ describe("Cross-Account IAM Authentication", () => {
 
       const verificationTemplate = Template.fromStack(verificationStack);
 
-      // Verification Lambda should have execute-api:Invoke permission
+      // Verification Lambda should have execute-api:Invoke permission (wildcard resource)
       verificationTemplate.hasResourceProperties("AWS::IAM::Policy", {
         PolicyDocument: {
           Statement: Match.arrayWith([
             Match.objectLike({
               Action: "execute-api:Invoke",
               Effect: "Allow",
-              Resource:
-                "arn:aws:execute-api:ap-northeast-1:123456789012:abc123/*",
+              Resource: "*", // Wildcard resource (access controlled by API Gateway resource policy)
             }),
           ]),
         },
@@ -108,15 +107,14 @@ describe("Cross-Account IAM Authentication", () => {
 
       const verificationTemplate = Template.fromStack(verificationStack);
 
-      // Verification Lambda should have cross-account execute-api:Invoke permission
+      // Verification Lambda should have cross-account execute-api:Invoke permission (wildcard resource)
       verificationTemplate.hasResourceProperties("AWS::IAM::Policy", {
         PolicyDocument: {
           Statement: Match.arrayWith([
             Match.objectLike({
               Action: "execute-api:Invoke",
               Effect: "Allow",
-              Resource:
-                "arn:aws:execute-api:ap-northeast-1:222222222222:xyz789/*",
+              Resource: "*", // Wildcard resource (access controlled by API Gateway resource policy)
             }),
           ]),
         },

@@ -16,18 +16,22 @@ Amazon Bedrock と統合して AI 生成レスポンスを提供するサーバ�
 
 ### デプロイ
 
+このプロジェクトは split-stack アーキテクチャ（VerificationStack + ExecutionStack）を使用します。詳細なデプロイ手順は [CDK README](cdk/README.md) を参照してください。
+
+**クイックスタート（デプロイスクリプト使用）**:
+
 ```bash
-# 1. 認証情報を設定（初回デプロイのみ）
-export SLACK_SIGNING_SECRET=your-signing-secret
-export SLACK_BOT_TOKEN=xoxb-your-bot-token
+# 1. .env ファイルを作成
+cat > .env << EOF
+SLACK_BOT_TOKEN=xoxb-your-bot-token
+SLACK_SIGNING_SECRET=your-signing-secret
+EOF
 
-# 2. 依存関係をインストール
-cd cdk && npm install
-cd ../lambda/verification-stack/slack-event-handler && pip install -r requirements.txt -t .
-cd ../../execution-stack/bedrock-processor && pip install -r requirements.txt -t .
+# 2. cdk.json にアカウントIDを設定
+# "verificationAccountId" と "executionAccountId" を追加
 
-# 3. デプロイ
-cd ../../cdk && cdk deploy
+# 3. デプロイスクリプトを実行
+cd scripts && ./deploy-split-stacks.sh
 ```
 
 **⚠️ 重要**: デプロイ後にホワイトリストを設定してください。[クイックスタートガイド](docs/quickstart.md)を参照。

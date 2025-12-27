@@ -1,12 +1,14 @@
 # 単一スタックから分離スタック構成への移行ガイド
 
+> **⚠️ 注意**: このプロジェクトは現在、split-stack アーキテクチャ（VerificationStack + ExecutionStack）を標準として使用しています。単一スタック（SlackBedrockStack）は非推奨となり、コードベースから削除されました。
+
 ## 概要
 
-このガイドでは、既存の単一スタック構成（SlackBedrockStack）から新しい分離スタック構成（ExecutionStack + VerificationStack）への移行手順を説明します。
+このガイドは、過去に単一スタック構成（SlackBedrockStack）を使用していた場合の移行手順を説明する参考資料です。新規デプロイの場合は、[CDK README](../../cdk/README.md) の split-stack デプロイ手順に従ってください。
 
 ## 前提条件
 
-- 既存の SlackBedrockStack がデプロイ済み
+- 既存の SlackBedrockStack がデプロイ済み（移行が必要な場合のみ）
 - AWS CLI が設定済み
 - Node.js と npm がインストール済み
 
@@ -51,7 +53,7 @@ EOF
 }
 ```
 
-**注意**: アカウントIDは `aws sts get-caller-identity --query Account --output text` で確認できます。
+**注意**: アカウント ID は `aws sts get-caller-identity --query Account --output text` で確認できます。
 
 ### Step 4: 新しいスタックをデプロイ
 
@@ -96,7 +98,7 @@ npx cdk deploy SlackAI-Execution \
   --require-approval never
 ```
 
-**または**、`scripts/deploy-split-stacks.sh` スクリプトを使用して3段階のデプロイを自動化できます：
+**または**、`scripts/deploy-split-stacks.sh` スクリプトを使用して 3 段階のデプロイを自動化できます：
 
 ```bash
 cd scripts
@@ -184,13 +186,13 @@ npx cdk destroy SlackAI-Execution
 
 ## 移行のメリット
 
-| 項目 | 単一スタック | 分離スタック |
-|------|-------------|-------------|
-| クロスアカウント対応 | ❌ | ✅ |
-| 独立したライフサイクル | ❌ | ✅ |
-| セキュリティ分離 | 部分的 | 完全 |
-| デプロイ時間 | 長い | 短い（個別更新） |
-| 障害の影響範囲 | 全体 | 該当スタックのみ |
+| 項目                   | 単一スタック | 分離スタック     |
+| ---------------------- | ------------ | ---------------- |
+| クロスアカウント対応   | ❌           | ✅               |
+| 独立したライフサイクル | ❌           | ✅               |
+| セキュリティ分離       | 部分的       | 完全             |
+| デプロイ時間           | 長い         | 短い（個別更新） |
+| 障害の影響範囲         | 全体         | 該当スタックのみ |
 
 ## トラブルシューティング
 
@@ -199,6 +201,7 @@ npx cdk destroy SlackAI-Execution
 **原因**: Execution Stack のリソースポリシーが設定されていない
 
 **解決策**:
+
 1. `verificationLambdaRoleArn` を cdk.json に設定
 2. `npx cdk deploy SlackAI-Execution` で再デプロイ
 
@@ -207,6 +210,7 @@ npx cdk destroy SlackAI-Execution
 **原因**: Slack 設定が更新されていない
 
 **解決策**:
+
 1. Slack API で新しい Function URL を設定
 2. Event Subscriptions を再検証
 
@@ -215,6 +219,7 @@ npx cdk destroy SlackAI-Execution
 **原因**: Execution API への接続に問題がある
 
 **解決策**:
+
 1. `executionApiUrl` が正しいことを確認
 2. IAM 権限を確認
 
@@ -225,6 +230,7 @@ npx cdk destroy SlackAI-Execution
 **エラーメッセージ**: `slack-workspace-tokens already exists in stack SlackBedrockStack`
 
 **解決策**:
+
 1. 新しいスタックは自動的にスタック名プレフィックス（`SlackAI-Verification-*`）を使用します
 2. このエラーが発生する場合は、既存の `SlackBedrockStack` を削除するか、新しいスタックのコードが最新であることを確認してください
 3. コードを最新化: `git pull` してから再デプロイ
@@ -236,6 +242,7 @@ npx cdk destroy SlackAI-Execution
 **症状**: Verification Stack の Lambda が Execution API を呼び出せない（403 Forbidden）
 
 **解決策**:
+
 1. `VerificationLambdaRoleArn` を取得: `aws cloudformation describe-stacks --stack-name SlackAI-Verification --query 'Stacks[0].Outputs[?OutputKey==`VerificationLambdaRoleArn`].OutputValue' --output text`
 2. Execution Stack を更新: `npx cdk deploy SlackAI-Execution --context verificationLambdaRoleArn=<ARN> --context verificationAccountId=<ACCOUNT_ID>`
 
@@ -244,4 +251,3 @@ npx cdk destroy SlackAI-Execution
 - [クロスアカウントアーキテクチャ](../reference/architecture/cross-account.md)
 - [CDK README](../../cdk/README.md)
 - [アーキテクチャ概要](../reference/architecture/overview.md)
-

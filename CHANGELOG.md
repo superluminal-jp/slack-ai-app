@@ -30,11 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Restructured docs/ directory with tutorials/, how-to/, reference/, explanation/ categories
 - Simplified README.md to focus on overview and navigation
 - Converted docs/README.md to navigation hub
-- CDK entry point now supports multiple deployment modes (single, split, cross-account)
+- CDK entry point now defaults to split-stack mode (single-stack mode removed)
 - Lambda folder structure reorganized: `lambda/verification-stack/` and `lambda/execution-stack/`
 - DynamoDB table names now include stack name prefix to prevent conflicts
 - IAM policy for VerificationStack Lambda uses wildcard resource (access controlled by API Gateway resource policy)
 - Updated deployment documentation with `.env` file support and account ID configuration
+- All documentation updated to reflect split-stack architecture as the standard deployment method
 
 ### Fixed
 
@@ -42,9 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed CloudFormation Early Validation errors for cross-stack resource references
 - Improved error handling for Execution API unavailability
 
-### Deprecated
+### Removed
 
-- `SlackBedrockStack` single-stack deployment (use split-stack instead)
+- `SlackBedrockStack` single-stack deployment - コードベースから完全に削除されました。split-stack アーキテクチャが標準です。
+- Single-stack deployment mode - `cdk/bin/cdk.ts` から削除されました。デフォルトは split-stack です。
 
 ## [1.0.0] - 2025-12-27
 

@@ -1,31 +1,21 @@
 # Slack AI App - CDK Infrastructure
 
-This CDK project deploys the Slack AI application infrastructure to AWS.
+This CDK project deploys the Slack AI application infrastructure to AWS using a split-stack architecture.
 
-## Deployment Modes
+## Deployment Architecture
 
-The application supports two deployment modes:
+The application uses a split-stack architecture that supports both same-account and cross-account deployments:
 
-### 1. Single Stack Mode (Legacy)
+- **ExecutionStack**: BedrockProcessor + API Gateway
+- **VerificationStack**: SlackEventHandler + DynamoDB + Secrets
 
-All resources in one stack. Simple but not cross-account ready.
-
-```bash
-# Set required environment variables
-export SLACK_BOT_TOKEN="xoxb-your-bot-token"
-export SLACK_SIGNING_SECRET="your-signing-secret"
-
-# Deploy
-npx cdk deploy SlackBedrockStack
-```
-
-### 2. Split Stack Mode (Recommended)
+## Split Stack Deployment
 
 Two independent stacks that can be deployed to separate accounts:
 - **ExecutionStack**: BedrockProcessor + API Gateway
 - **VerificationStack**: SlackEventHandler + DynamoDB + Secrets
 
-#### Step 1: Configure Environment Variables
+### Step 1: Configure Environment Variables
 
 Create a `.env` file in the project root:
 
@@ -37,7 +27,7 @@ SLACK_SIGNING_SECRET=your-signing-secret
 EOF
 ```
 
-#### Step 2: Update cdk.json
+### Step 2: Update cdk.json
 
 Add account IDs to `cdk.json`:
 
@@ -55,7 +45,7 @@ Add account IDs to `cdk.json`:
 
 **Note**: Get your account ID with: `aws sts get-caller-identity --query Account --output text`
 
-#### Step 3: Deploy Execution Stack
+### Step 3: Deploy Execution Stack
 
 ```bash
 # Load environment variables from .env
@@ -70,7 +60,7 @@ npx cdk deploy SlackAI-Execution \
 
 Note the `ExecutionApiUrl` from the outputs.
 
-#### Step 4: Deploy Verification Stack
+### Step 4: Deploy Verification Stack
 
 ```bash
 # Load environment variables from .env
@@ -86,7 +76,7 @@ npx cdk deploy SlackAI-Verification \
 
 Note the `VerificationLambdaRoleArn` from the outputs.
 
-#### Step 5: Update Execution Stack with Resource Policy
+### Step 5: Update Execution Stack with Resource Policy
 
 ```bash
 # Update Execution Stack to add API Gateway resource policy
@@ -98,7 +88,7 @@ npx cdk deploy SlackAI-Execution \
   --require-approval never
 ```
 
-#### Alternative: Use Deployment Script
+### Alternative: Use Deployment Script
 
 For automated 3-phase deployment, use the provided script:
 
@@ -114,7 +104,7 @@ This script automatically:
 2. Deploys Verification Stack with ExecutionApiUrl
 3. Updates Execution Stack with VerificationLambdaRoleArn
 
-### Cross-Account Deployment (Future)
+### Cross-Account Deployment
 
 For deploying to separate AWS accounts, set these in `cdk.json`:
 
@@ -128,7 +118,7 @@ For deploying to separate AWS accounts, set these in `cdk.json`:
 }
 ```
 
-Then follow the same steps as split-stack mode.
+Then follow the same steps as split-stack mode. The deployment script (`scripts/deploy-split-stacks.sh`) supports cross-account deployment.
 
 ## Stack Outputs
 
