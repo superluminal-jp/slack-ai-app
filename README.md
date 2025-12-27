@@ -2,7 +2,30 @@
 
 > **日本語版**: [README.ja.md](README.ja.md)
 
-A serverless Slack bot that integrates with Amazon Bedrock to provide AI-generated responses. Features multi-layered security, thread support, and attachment processing.
+A serverless Slack bot that integrates with Amazon Bedrock to provide AI-generated responses directly within your existing Slack workflow. This solution eliminates the need to learn new tools while delivering enterprise-grade security and performance.
+
+## What This System Does
+
+This application enables your team to use AI capabilities directly from Slack. Team members can ask questions, get AI-generated responses, and share knowledge—all without leaving the communication platform they already use daily.
+
+**Key Value**: Natural workflow integration that reduces barriers to AI adoption while maintaining strong security boundaries.
+
+## Why It Matters
+
+### Immediate Benefits
+
+- **Zero learning curve**: Use AI where your team already works—no new tools to learn
+- **Instant acknowledgment**: Get confirmation within 2 seconds that your request is being processed
+- **Fast responses**: Receive AI-generated answers in 5-30 seconds
+- **Team knowledge sharing**: See how colleagues effectively use AI, creating network effects
+- **Enterprise security**: Multi-layered defense protects against unauthorized access and data breaches
+
+### Business Impact
+
+- **Increased productivity**: Reduce context switching by keeping AI interactions within Slack
+- **Faster decision-making**: Get answers to questions without leaving your workflow
+- **Organizational learning**: Team members naturally discover effective AI usage patterns through observation
+- **Cost efficiency**: Pay-per-use model with built-in rate limiting and token management
 
 ## Quick Start
 
@@ -36,63 +59,64 @@ cd scripts && ./deploy-split-stacks.sh
 
 **⚠️ Important**: Configure whitelist after deployment. See [Quick Start Guide](docs/quickstart.md).
 
-## Overview
+## How It Works
 
-**Key Value Propositions**:
-
-- **Natural workflow integration**: Use AI on Slack without learning new tools
-- **Minimal actions**: One-click access (mention `@bot question`)
-- **Knowledge sharing**: Team members see effective usage patterns
-
-**Design Principles**: Leverages Nudge Theory and network effects. See [Design Principles](docs/explanation/design-principles.md).
-
-## Architecture
+The system processes requests through two independent zones that can be deployed separately for enhanced security:
 
 ```
-Slack → Lambda① (Verification) → API Gateway → Lambda② (Bedrock) → Slack
-          ↓                                        ↓
-    Two-Key Defense                         Converse API
-    (Signature + Existence Check)           Thread History
+Slack → Verification Zone → Execution Zone → Slack
+         (Validates)         (AI Processing)
 ```
 
-**Components**:
+**Verification Zone** ensures requests are legitimate:
+- Verifies Slack signatures to confirm requests come from Slack
+- Checks that users, channels, and workspaces actually exist
+- Enforces authorization rules (whitelist)
+- Prevents duplicate requests
 
-| Component               | Description                                                  |
-| ----------------------- | ------------------------------------------------------------ |
-| **Slack Event Handler** | Signature verification, Existence Check, event deduplication |
-| **Execution API**       | IAM-authenticated internal API                               |
-| **Bedrock Processor**   | Converse API, thread history, attachments                    |
+**Execution Zone** handles AI processing:
+- Calls Amazon Bedrock to generate responses
+- Manages conversation context and thread history
+- Processes attachments (images, documents)
+- Posts responses back to Slack
 
-For details, see [Architecture Overview](docs/reference/architecture/overview.md).
+This separation enables:
+- **Cross-account deployment**: Deploy verification and execution in different AWS accounts
+- **Independent updates**: Update one zone without affecting the other
+- **Enhanced security**: Stronger security boundaries between validation and processing
 
 ## Key Features
 
-### 🔒 Security
+### Security
 
-- Two-Key Defense (HMAC SHA256 + Slack API Existence Check)
+**Two-Key Defense Model**: Requires both Slack signing secret and bot token, so compromise of one key doesn't enable attacks.
+
+- HMAC SHA256 signature verification
+- Slack API existence checks (validates users, channels, workspaces are real)
 - Whitelist authorization (team_id, user_id, channel_id)
-- PII masking, prompt injection detection
+- PII masking in AI responses
+- Prompt injection detection
 
-### ⚡ Processing
+### Performance
 
-- Async processing (<3 second acknowledgment)
-- Event deduplication
-- Structured JSON logging
+- **Async processing**: Acknowledgment within 3 seconds, full response in 5-30 seconds
+- **Event deduplication**: Prevents processing the same request twice
+- **Structured logging**: Complete audit trail with correlation IDs
 
-### 🤖 AI & Integration
+### AI Capabilities
 
-- Multi-model support (Claude, Nova)
-- Thread replies with history context
-- Attachment processing (images, documents)
+- **Multi-model support**: Works with Claude, Nova, and other Bedrock models
+- **Thread context**: Maintains conversation history within Slack threads
+- **Attachment processing**: Handles images and documents in requests
 
-### 🏗️ Infrastructure
+### Infrastructure
 
-- AWS CDK (TypeScript)
-- DynamoDB (tokens, cache, deduplication)
-- AWS Secrets Manager
-- **Split-stack deployment** (cross-account ready)
+- **AWS CDK**: Infrastructure as code in TypeScript
+- **DynamoDB**: Stores tokens, caches verification results, prevents duplicates
+- **AWS Secrets Manager**: Securely stores Slack credentials
+- **Split-stack deployment**: Verification and execution zones can be deployed independently
 
-### 🔀 Deployment Architecture
+## Architecture
 
 The application uses a **split-stack architecture** with two independent stacks:
 
@@ -106,7 +130,7 @@ This architecture supports:
 - ✅ Enhanced security boundaries
 - ✅ Flexible deployment options
 
-See [CDK README](cdk/README.md) for deployment instructions.
+For technical details, see [Architecture Overview](docs/reference/architecture/overview.md).
 
 ## Documentation
 
