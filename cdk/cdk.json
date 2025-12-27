@@ -98,8 +98,8 @@
     "deploymentMode": "single",
     "verificationStackName": "SlackAI-Verification",
     "executionStackName": "SlackAI-Execution",
-    "verificationAccountId": "",
-    "executionAccountId": "",
+    "verificationAccountId": "471112852670",
+    "executionAccountId": "471112852670",
     "verificationLambdaRoleArn": "",
     "executionApiUrl": ""
   }

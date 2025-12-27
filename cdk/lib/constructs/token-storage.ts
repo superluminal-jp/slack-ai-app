@@ -9,8 +9,9 @@ export class TokenStorage extends Construct {
     super(scope, id);
 
     // Create DynamoDB table for workspace installation tokens
+    const stackName = cdk.Stack.of(this).stackName;
     this.table = new dynamodb.Table(this, "WorkspaceTokensTable", {
-      tableName: "slack-workspace-tokens",
+      tableName: `${stackName}-workspace-tokens`,
       partitionKey: {
         name: "team_id",
         type: dynamodb.AttributeType.STRING,
