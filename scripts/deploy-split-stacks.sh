@@ -89,20 +89,56 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+get_config_value() {
+    local key=$1
+    local config_file="${CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
+    
+    if [[ ! -f "${config_file}" ]]; then
+        echo ""
+        return
+    fi
+    
+    if command -v jq &> /dev/null; then
+        jq -r ".\"${key}\" // empty" "${config_file}" 2>/dev/null || echo ""
+    else
+        # Fallback to grep/sed (less reliable)
+        grep -o "\"${key}\": \"[^\"]*\"" "${config_file}" 2>/dev/null | sed 's/.*": "\([^"]*\)".*/\1/' || echo ""
+    fi
+}
+
 check_prerequisites() {
     log_info "Checking prerequisites..."
     log_info "Deployment environment: ${DEPLOYMENT_ENV}"
     log_info "Execution Stack: ${EXECUTION_STACK_NAME}"
     log_info "Verification Stack: ${VERIFICATION_STACK_NAME}"
 
-    # Check for required environment variables
+    # Load Slack credentials from config file if not set as environment variables
     if [[ -z "${SLACK_BOT_TOKEN:-}" ]]; then
-        log_error "SLACK_BOT_TOKEN environment variable is required"
+        log_info "SLACK_BOT_TOKEN not set, reading from config file..."
+        SLACK_BOT_TOKEN=$(get_config_value "slackBotToken")
+        if [[ -n "${SLACK_BOT_TOKEN}" ]]; then
+            export SLACK_BOT_TOKEN
+            log_info "Loaded SLACK_BOT_TOKEN from config file"
+        fi
+    fi
+
+    if [[ -z "${SLACK_SIGNING_SECRET:-}" ]]; then
+        log_info "SLACK_SIGNING_SECRET not set, reading from config file..."
+        SLACK_SIGNING_SECRET=$(get_config_value "slackSigningSecret")
+        if [[ -n "${SLACK_SIGNING_SECRET}" ]]; then
+            export SLACK_SIGNING_SECRET
+            log_info "Loaded SLACK_SIGNING_SECRET from config file"
+        fi
+    fi
+
+    # Check if credentials are available (from env var or config file)
+    if [[ -z "${SLACK_BOT_TOKEN:-}" ]]; then
+        log_error "SLACK_BOT_TOKEN is required. Set it as environment variable or in ${CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
         exit 1
     fi
 
     if [[ -z "${SLACK_SIGNING_SECRET:-}" ]]; then
-        log_error "SLACK_SIGNING_SECRET environment variable is required"
+        log_error "SLACK_SIGNING_SECRET is required. Set it as environment variable or in ${CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
         exit 1
     fi
 

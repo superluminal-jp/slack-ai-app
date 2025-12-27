@@ -3,6 +3,7 @@ import os
 import re
 import boto3
 from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
 from token_storage import store_token, get_token
 from slack_verifier import verify_signature
 from validation import validate_prompt
@@ -667,6 +668,51 @@ def lambda_handler(event, context):
                     else:
                         # Fallback to environment variable for backward compatibility
                         bot_token = os.environ.get("SLACK_BOT_TOKEN")
+
+                # Add 👀 reaction to indicate request received (non-blocking)
+                # Best practice: Use "eyes" emoji to show message is being reviewed/processed
+                if bot_token and channel and slack_event.get("ts"):
+                    try:
+                        client = WebClient(token=bot_token, timeout=2)
+                        client.reactions_add(
+                            channel=channel,
+                            name="eyes",  # Slack API standard name for 👀 emoji
+                            timestamp=slack_event.get("ts")
+                        )
+                        log_info("reaction_added", {
+                            "channel": channel,
+                            "timestamp": slack_event.get("ts"),
+                            "emoji": "eyes",
+                            "emoji_display": "👀",
+                            "team_id": team_id,
+                        })
+                    except SlackApiError as e:
+                        error_code = e.response.get("error", "")
+                        if error_code == "already_reacted":
+                            log_info("reaction_already_exists", {
+                                "channel": channel,
+                                "timestamp": slack_event.get("ts"),
+                                "emoji": "eyes",
+                            })
+                        elif error_code == "missing_scope":
+                            log_warn("reaction_add_missing_scope", {
+                                "channel": channel,
+                                "timestamp": slack_event.get("ts"),
+                                "error": error_code,
+                                "required_scope": "reactions:write",
+                            })
+                        else:
+                            log_warn("reaction_add_failed", {
+                                "channel": channel,
+                                "timestamp": slack_event.get("ts"),
+                                "error": error_code,
+                                "error_message": str(e),
+                            })
+                    except Exception as e:
+                        log_exception("reaction_add_unexpected_error", {
+                            "channel": channel,
+                            "timestamp": slack_event.get("ts"),
+                        }, e)
 
                 # Invoke Execution Layer via API Gateway with IAM authentication
                 execution_api_url = os.environ.get("EXECUTION_API_URL", "")

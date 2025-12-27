@@ -15,6 +15,7 @@ def format_success_response(
     bot_token: str,
     thread_ts: Optional[str] = None,
     correlation_id: Optional[str] = None,
+    original_message_ts: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Format a successful AI response into ExecutionResponse format.
@@ -54,6 +55,9 @@ def format_success_response(
     if correlation_id:
         response["correlation_id"] = correlation_id
 
+    if original_message_ts:
+        response["original_message_ts"] = original_message_ts
+
     return response
 
 
@@ -64,6 +68,7 @@ def format_error_response(
     bot_token: str,
     thread_ts: Optional[str] = None,
     correlation_id: Optional[str] = None,
+    original_message_ts: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Format an error response into ExecutionResponse format.
@@ -106,6 +111,9 @@ def format_error_response(
 
     if correlation_id:
         response["correlation_id"] = correlation_id
+
+    if original_message_ts:
+        response["original_message_ts"] = original_message_ts
 
     return response
 

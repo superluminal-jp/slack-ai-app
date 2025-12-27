@@ -230,6 +230,7 @@ def lambda_handler(event, context):
                                 bot_token=bot_token,
                                 thread_ts=thread_ts,
                                 correlation_id=correlation_id,
+                                original_message_ts=thread_ts,
                             )
                             queue_url = os.environ.get("EXECUTION_RESPONSE_QUEUE_URL", "")
                             if queue_url:
@@ -311,6 +312,7 @@ def lambda_handler(event, context):
                                 bot_token=bot_token,
                                 thread_ts=thread_ts,
                                 correlation_id=correlation_id,
+                                original_message_ts=thread_ts,
                             )
                             queue_url = os.environ.get("EXECUTION_RESPONSE_QUEUE_URL", "")
                             if queue_url:
@@ -368,6 +370,7 @@ def lambda_handler(event, context):
                                     bot_token=bot_token,
                                     thread_ts=thread_ts,
                                     correlation_id=correlation_id,
+                                    original_message_ts=thread_ts,
                                 )
                                 queue_url = os.environ.get("EXECUTION_RESPONSE_QUEUE_URL", "")
                                 if queue_url:
@@ -513,6 +516,7 @@ def lambda_handler(event, context):
                     bot_token=bot_token,
                     thread_ts=thread_ts,
                     correlation_id=correlation_id,
+                    original_message_ts=thread_ts,
                 )
                 queue_url = os.environ.get("EXECUTION_RESPONSE_QUEUE_URL", "")
                 if queue_url:
@@ -571,6 +575,7 @@ def lambda_handler(event, context):
                     bot_token=bot_token,
                     thread_ts=thread_ts,
                     correlation_id=correlation_id,
+                    original_message_ts=thread_ts,
                 )
                 queue_url = os.environ.get("EXECUTION_RESPONSE_QUEUE_URL", "")
                 if queue_url:
@@ -609,6 +614,7 @@ def lambda_handler(event, context):
                     bot_token=bot_token,
                     thread_ts=thread_ts,
                     correlation_id=correlation_id,
+                    original_message_ts=thread_ts,
                 )
                 queue_url = os.environ.get("EXECUTION_RESPONSE_QUEUE_URL", "")
                 if queue_url:
@@ -647,6 +653,7 @@ def lambda_handler(event, context):
                     bot_token=bot_token,
                     thread_ts=thread_ts,
                     correlation_id=correlation_id,
+                    original_message_ts=thread_ts,
                 )
                 queue_url = os.environ.get("EXECUTION_RESPONSE_QUEUE_URL", "")
                 if queue_url:
@@ -676,6 +683,7 @@ def lambda_handler(event, context):
                 bot_token=bot_token,
                 thread_ts=thread_ts,
                 correlation_id=correlation_id,
+                original_message_ts=thread_ts,
             )
             queue_url = os.environ.get("EXECUTION_RESPONSE_QUEUE_URL", "")
             if queue_url:
