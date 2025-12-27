@@ -9,6 +9,8 @@ Auto-generated from all feature plans. Last updated: 2025-12-06
 - DynamoDB table for caching verification results (TTL: 5 minutes, partition key: cache_key) (006-existence-check)
 - Python 3.11+ + slack-sdk>=3.27.0, boto3>=1.34.0, requests>=2.31.0 (007-whitelist-auth)
 - DynamoDB (whitelist configuration and cache), AWS Secrets Manager (optional whitelist storage) (007-whitelist-auth)
+- Python 3.11+ + boto3 (AWS SDK), slack-sdk (Python), AWS Lambda runtime (008-flexible-whitelist)
+- DynamoDB (whitelist configuration), AWS Secrets Manager (alternative), Environment variables (fallback) (008-flexible-whitelist)
 
 - Python 3.11+ for Lambda functions, TypeScript for AWS CDK infrastructure + AWS CDK, boto3 (Bedrock SDK), slack-sdk (Python), AWS Lambda runtime, requests/httpx for file downloads, PyPDF2/pdfplumber for PDF extraction, python-docx for DOCX extraction (004-slack-attachments)
 
@@ -28,9 +30,9 @@ cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLO
 Python 3.11+ for Lambda functions, TypeScript for AWS CDK infrastructure: Follow standard conventions
 
 ## Recent Changes
+- 008-flexible-whitelist: Added Python 3.11+ + boto3 (AWS SDK), slack-sdk (Python), AWS Lambda runtime
 - 007-whitelist-auth: Added Python 3.11+ + slack-sdk>=3.27.0, boto3>=1.34.0, requests>=2.31.0
 - 006-existence-check: Added Python 3.11+ for Lambda functions, TypeScript for AWS CDK infrastructure + AWS CDK, boto3 (DynamoDB client), slack-sdk (Python WebClient), AWS Lambda runtime
-- 004-slack-attachments: Added Python 3.11+ for Lambda functions, TypeScript for AWS CDK infrastructure + AWS CDK, boto3 (Bedrock SDK), slack-sdk (Python), AWS Lambda runtime, requests for file downloads, PyPDF2 for PDF extraction, python-docx for DOCX extraction, openpyxl for XLSX extraction, python-pptx for PPTX extraction, LibreOffice (Lambda Layer) for PPTX to image conversion, csv (built-in) for CSV extraction
 
 
 <!-- MANUAL ADDITIONS START -->

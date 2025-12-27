@@ -77,7 +77,7 @@ class TestDynamoDBLoading:
     @patch('whitelist_loader._get_dynamodb_client')
     @patch.dict(os.environ, {'WHITELIST_TABLE_NAME': 'test-whitelist-table'})
     def test_get_whitelist_from_dynamodb_empty(self, mock_get_client):
-        """Test DynamoDB loading with empty whitelist (fail-closed)."""
+        """Test DynamoDB loading with empty whitelist (allows all requests)."""
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
         
@@ -88,13 +88,20 @@ class TestDynamoDBLoading:
             {"Items": []},  # channel_id
         ]
         
-        with pytest.raises(AuthorizationError, match="Whitelist is empty"):
-            get_whitelist_from_dynamodb()
+        # Empty whitelist should return empty sets (not raise error)
+        result = get_whitelist_from_dynamodb()
+        
+        assert "team_ids" in result
+        assert "user_ids" in result
+        assert "channel_ids" in result
+        assert len(result["team_ids"]) == 0
+        assert len(result["user_ids"]) == 0
+        assert len(result["channel_ids"]) == 0
     
     @patch('whitelist_loader._get_dynamodb_client')
     @patch.dict(os.environ, {'WHITELIST_TABLE_NAME': 'test-whitelist-table'})
     def test_get_whitelist_from_dynamodb_table_not_found(self, mock_get_client):
-        """Test DynamoDB loading when table doesn't exist."""
+        """Test DynamoDB loading when table doesn't exist (returns empty whitelist)."""
         from botocore.exceptions import ClientError
         
         mock_client = MagicMock()
@@ -109,10 +116,15 @@ class TestDynamoDBLoading:
         }
         mock_client.query.side_effect = ClientError(error_response, "Query")
         
-        # Should not raise error for missing table (treated as empty)
-        # But will eventually raise AuthorizationError when all entity types are empty
-        with pytest.raises(AuthorizationError, match="Whitelist is empty"):
-            get_whitelist_from_dynamodb()
+        # Should not raise error for missing table (treated as empty whitelist)
+        result = get_whitelist_from_dynamodb()
+        
+        assert "team_ids" in result
+        assert "user_ids" in result
+        assert "channel_ids" in result
+        assert len(result["team_ids"]) == 0
+        assert len(result["user_ids"]) == 0
+        assert len(result["channel_ids"]) == 0
     
     @patch('whitelist_loader._get_dynamodb_client')
     def test_get_whitelist_from_dynamodb_missing_env_var(self, mock_get_client):
@@ -159,7 +171,7 @@ class TestSecretsManagerLoading:
     @patch('whitelist_loader._get_secrets_manager_client')
     @patch.dict(os.environ, {'WHITELIST_SECRET_NAME': 'test-whitelist-secret'})
     def test_get_whitelist_from_secrets_manager_empty(self, mock_get_client):
-        """Test Secrets Manager loading with empty whitelist (fail-closed)."""
+        """Test Secrets Manager loading with empty whitelist (allows all requests)."""
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
         
@@ -172,8 +184,15 @@ class TestSecretsManagerLoading:
             })
         }
         
-        with pytest.raises(AuthorizationError, match="Whitelist is empty"):
-            get_whitelist_from_secrets_manager()
+        # Empty whitelist should return empty sets (not raise error)
+        result = get_whitelist_from_secrets_manager()
+        
+        assert "team_ids" in result
+        assert "user_ids" in result
+        assert "channel_ids" in result
+        assert len(result["team_ids"]) == 0
+        assert len(result["user_ids"]) == 0
+        assert len(result["channel_ids"]) == 0
     
     @patch('whitelist_loader._get_secrets_manager_client')
     @patch.dict(os.environ, {'WHITELIST_SECRET_NAME': 'test-whitelist-secret'})
@@ -230,15 +249,29 @@ class TestEnvironmentVariableLoading:
         'WHITELIST_CHANNEL_IDS': '',
     }, clear=False)
     def test_get_whitelist_from_env_empty(self):
-        """Test environment variable loading with empty values (fail-closed)."""
-        with pytest.raises(AuthorizationError, match="Whitelist is empty"):
-            get_whitelist_from_env()
+        """Test environment variable loading with empty values (allows all requests)."""
+        # Empty whitelist should return empty sets (not raise error)
+        result = get_whitelist_from_env()
+        
+        assert "team_ids" in result
+        assert "user_ids" in result
+        assert "channel_ids" in result
+        assert len(result["team_ids"]) == 0
+        assert len(result["user_ids"]) == 0
+        assert len(result["channel_ids"]) == 0
     
     @patch.dict(os.environ, {}, clear=True)
     def test_get_whitelist_from_env_missing(self):
-        """Test environment variable loading when variables are missing (fail-closed)."""
-        with pytest.raises(AuthorizationError, match="Whitelist is empty"):
-            get_whitelist_from_env()
+        """Test environment variable loading when variables are missing (allows all requests)."""
+        # Missing variables should return empty sets (not raise error)
+        result = get_whitelist_from_env()
+        
+        assert "team_ids" in result
+        assert "user_ids" in result
+        assert "channel_ids" in result
+        assert len(result["team_ids"]) == 0
+        assert len(result["user_ids"]) == 0
+        assert len(result["channel_ids"]) == 0
 
 
 class TestCacheOperations:

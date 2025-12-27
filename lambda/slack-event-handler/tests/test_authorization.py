@@ -269,8 +269,8 @@ class TestEdgeCases:
     """Test edge cases for authorization."""
     
     @patch('authorization.load_whitelist_config')
-    def test_empty_whitelist_fail_closed(self, mock_load):
-        """Test empty whitelist results in fail-closed (all requests rejected)."""
+    def test_empty_whitelist_allows_all_requests(self, mock_load):
+        """Test empty whitelist allows all requests (flexible whitelist feature)."""
         # Mock empty whitelist
         mock_load.return_value = {
             "team_ids": set([]),
@@ -284,12 +284,42 @@ class TestEdgeCases:
             channel_id="C001",
         )
         
-        # Should fail authorization (fail-closed)
-        assert result.authorized is False
-        assert result.unauthorized_entities is not None
-        assert "team_id" in result.unauthorized_entities
-        assert "user_id" in result.unauthorized_entities
-        assert "channel_id" in result.unauthorized_entities
+        # Should allow authorization (empty whitelist = allow all)
+        assert result.authorized is True
+        assert result.unauthorized_entities is None
+        assert result.error_message is None
+    
+    @patch('authorization.load_whitelist_config')
+    def test_empty_whitelist_allows_multiple_requests(self, mock_load):
+        """Test empty whitelist allows multiple different requests."""
+        # Mock empty whitelist
+        mock_load.return_value = {
+            "team_ids": set([]),
+            "user_ids": set([]),
+            "channel_ids": set([]),
+        }
+        
+        # Test multiple different requests
+        result1 = authorize_request(
+            team_id="T123ABC",
+            user_id="U111",
+            channel_id="C001",
+        )
+        assert result1.authorized is True
+        
+        result2 = authorize_request(
+            team_id="T999XXX",
+            user_id="U888",
+            channel_id="C999",
+        )
+        assert result2.authorized is True
+        
+        result3 = authorize_request(
+            team_id="T000",
+            user_id="U000",
+            channel_id="C000",
+        )
+        assert result3.authorized is True
     
     @patch('authorization.load_whitelist_config')
     def test_config_load_failure_fail_closed(self, mock_load):
@@ -353,4 +383,321 @@ class TestEdgeCases:
         assert "team_id" in result.unauthorized_entities
         assert "user_id" in result.unauthorized_entities
         assert "channel_id" in result.unauthorized_entities
+
+
+class TestFlexibleWhitelist:
+    """Test flexible whitelist behavior (partial configuration)."""
+    
+    @patch('authorization.load_whitelist_config')
+    def test_channel_id_only_whitelist_allows_any_team_and_user(self, mock_load):
+        """Test channel_id-only whitelist allows any team_id and user_id."""
+        # Mock whitelist with only channel_id configured
+        mock_load.return_value = {
+            "team_ids": set([]),  # Not configured
+            "user_ids": set([]),  # Not configured
+            "channel_ids": set(["C001", "C002"]),  # Configured
+        }
+        
+        # Test with different team_id and user_id - should all be allowed
+        result1 = authorize_request(
+            team_id="T123",
+            user_id="U456",
+            channel_id="C001",
+        )
+        assert result1.authorized is True
+        
+        result2 = authorize_request(
+            team_id="T999",
+            user_id="U888",
+            channel_id="C001",
+        )
+        assert result2.authorized is True
+    
+    @patch('authorization.load_whitelist_config')
+    def test_channel_id_only_whitelist_rejects_unauthorized_channel(self, mock_load):
+        """Test channel_id-only whitelist rejects unauthorized channel_id."""
+        # Mock whitelist with only channel_id configured
+        mock_load.return_value = {
+            "team_ids": set([]),  # Not configured
+            "user_ids": set([]),  # Not configured
+            "channel_ids": set(["C001"]),  # Configured
+        }
+        
+        result = authorize_request(
+            team_id="T123",
+            user_id="U456",
+            channel_id="C002",  # Not in whitelist
+        )
+        
+        assert result.authorized is False
+        assert result.unauthorized_entities == ["channel_id"]
+    
+    @patch('authorization.load_whitelist_config')
+    def test_team_id_only_whitelist(self, mock_load):
+        """Test team_id-only whitelist allows any user_id and channel_id."""
+        # Mock whitelist with only team_id configured
+        mock_load.return_value = {
+            "team_ids": set(["T123"]),  # Configured
+            "user_ids": set([]),  # Not configured
+            "channel_ids": set([]),  # Not configured
+        }
+        
+        # Test with different user_id and channel_id - should all be allowed
+        result1 = authorize_request(
+            team_id="T123",
+            user_id="U456",
+            channel_id="C001",
+        )
+        assert result1.authorized is True
+        
+        result2 = authorize_request(
+            team_id="T123",
+            user_id="U999",
+            channel_id="C999",
+        )
+        assert result2.authorized is True
+        
+        # Test with unauthorized team_id - should be rejected
+        result3 = authorize_request(
+            team_id="T999",  # Not in whitelist
+            user_id="U456",
+            channel_id="C001",
+        )
+        assert result3.authorized is False
+        assert result3.unauthorized_entities == ["team_id"]
+    
+    @patch('authorization.load_whitelist_config')
+    def test_user_id_only_whitelist(self, mock_load):
+        """Test user_id-only whitelist allows any team_id and channel_id."""
+        # Mock whitelist with only user_id configured
+        mock_load.return_value = {
+            "team_ids": set([]),  # Not configured
+            "user_ids": set(["U456"]),  # Configured
+            "channel_ids": set([]),  # Not configured
+        }
+        
+        # Test with different team_id and channel_id - should all be allowed
+        result1 = authorize_request(
+            team_id="T123",
+            user_id="U456",
+            channel_id="C001",
+        )
+        assert result1.authorized is True
+        
+        result2 = authorize_request(
+            team_id="T999",
+            user_id="U456",
+            channel_id="C999",
+        )
+        assert result2.authorized is True
+        
+        # Test with unauthorized user_id - should be rejected
+        result3 = authorize_request(
+            team_id="T123",
+            user_id="U999",  # Not in whitelist
+            channel_id="C001",
+        )
+        assert result3.authorized is False
+        assert result3.unauthorized_entities == ["user_id"]
+    
+    @patch('authorization.load_whitelist_config')
+    def test_team_id_and_channel_id_combination_allows_any_user_id(self, mock_load):
+        """Test team_id and channel_id combination allows any user_id."""
+        # Mock whitelist with team_id and channel_id configured
+        mock_load.return_value = {
+            "team_ids": set(["T123"]),  # Configured
+            "user_ids": set([]),  # Not configured
+            "channel_ids": set(["C001"]),  # Configured
+        }
+        
+        # Test with different user_id - should all be allowed
+        result1 = authorize_request(
+            team_id="T123",
+            user_id="U456",
+            channel_id="C001",
+        )
+        assert result1.authorized is True
+        
+        result2 = authorize_request(
+            team_id="T123",
+            user_id="U999",  # Not in whitelist, but user_id is not checked
+            channel_id="C001",
+        )
+        assert result2.authorized is True
+        
+        # Test with unauthorized team_id - should be rejected
+        result3 = authorize_request(
+            team_id="T999",  # Not in whitelist
+            user_id="U456",
+            channel_id="C001",
+        )
+        assert result3.authorized is False
+        assert "team_id" in result3.unauthorized_entities
+    
+    @patch('authorization.load_whitelist_config')
+    def test_team_id_and_user_id_combination_allows_any_channel_id(self, mock_load):
+        """Test team_id and user_id combination allows any channel_id."""
+        # Mock whitelist with team_id and user_id configured
+        mock_load.return_value = {
+            "team_ids": set(["T123"]),  # Configured
+            "user_ids": set(["U456"]),  # Configured
+            "channel_ids": set([]),  # Not configured
+        }
+        
+        # Test with different channel_id - should all be allowed
+        result1 = authorize_request(
+            team_id="T123",
+            user_id="U456",
+            channel_id="C001",
+        )
+        assert result1.authorized is True
+        
+        result2 = authorize_request(
+            team_id="T123",
+            user_id="U456",
+            channel_id="C999",  # Not in whitelist, but channel_id is not checked
+        )
+        assert result2.authorized is True
+    
+    @patch('authorization.load_whitelist_config')
+    def test_user_id_and_channel_id_combination_allows_any_team_id(self, mock_load):
+        """Test user_id and channel_id combination allows any team_id."""
+        # Mock whitelist with user_id and channel_id configured
+        mock_load.return_value = {
+            "team_ids": set([]),  # Not configured
+            "user_ids": set(["U456"]),  # Configured
+            "channel_ids": set(["C001"]),  # Configured
+        }
+        
+        # Test with different team_id - should all be allowed
+        result1 = authorize_request(
+            team_id="T123",
+            user_id="U456",
+            channel_id="C001",
+        )
+        assert result1.authorized is True
+        
+        result2 = authorize_request(
+            team_id="T999",  # Not in whitelist, but team_id is not checked
+            user_id="U456",
+            channel_id="C001",
+        )
+        assert result2.authorized is True
+    
+    @patch('authorization.load_whitelist_config')
+    def test_rejecting_when_one_configured_entity_unauthorized(self, mock_load):
+        """Test rejecting when one configured entity is unauthorized."""
+        # Mock whitelist with team_id and channel_id configured
+        mock_load.return_value = {
+            "team_ids": set(["T123"]),  # Configured
+            "user_ids": set([]),  # Not configured
+            "channel_ids": set(["C001"]),  # Configured
+        }
+        
+        # Test with unauthorized channel_id - should be rejected
+        result = authorize_request(
+            team_id="T123",  # Authorized
+            user_id="U456",  # Not checked (not configured)
+            channel_id="C999",  # Not authorized
+        )
+        
+        assert result.authorized is False
+        assert "channel_id" in result.unauthorized_entities
+        assert "team_id" not in result.unauthorized_entities
+    
+    @patch('authorization.load_whitelist_config')
+    def test_all_entities_configured_maintains_and_condition(self, mock_load):
+        """Test all entities configured maintains AND condition (backward compatibility)."""
+        # Mock whitelist with all entities configured
+        mock_load.return_value = {
+            "team_ids": set(["T123"]),
+            "user_ids": set(["U456"]),
+            "channel_ids": set(["C001"]),
+        }
+        
+        # Test with all entities authorized - should be allowed
+        result1 = authorize_request(
+            team_id="T123",
+            user_id="U456",
+            channel_id="C001",
+        )
+        assert result1.authorized is True
+        
+        # Test with one entity unauthorized - should be rejected
+        result2 = authorize_request(
+            team_id="T123",
+            user_id="U456",
+            channel_id="C999",  # Not authorized
+        )
+        assert result2.authorized is False
+        assert result2.unauthorized_entities == ["channel_id"]
+
+
+class TestIntegrationScenarios:
+    """Integration tests for end-to-end whitelist scenarios."""
+    
+    @patch('authorization.load_whitelist_config')
+    def test_integration_empty_to_partial_whitelist_transition(self, mock_load):
+        """Test integration: transitioning from empty to partial whitelist."""
+        # Start with empty whitelist
+        mock_load.return_value = {
+            "team_ids": set([]),
+            "user_ids": set([]),
+            "channel_ids": set([]),
+        }
+        
+        result1 = authorize_request("T123", "U456", "C001")
+        assert result1.authorized is True  # Empty whitelist allows all
+        
+        # Transition to partial whitelist (channel_id only)
+        mock_load.return_value = {
+            "team_ids": set([]),
+            "user_ids": set([]),
+            "channel_ids": set(["C001"]),
+        }
+        
+        result2 = authorize_request("T123", "U456", "C001")
+        assert result2.authorized is True  # channel_id matches
+        
+        result3 = authorize_request("T123", "U456", "C999")
+        assert result3.authorized is False  # channel_id doesn't match
+    
+    @patch('authorization.load_whitelist_config')
+    def test_integration_partial_to_full_whitelist_transition(self, mock_load):
+        """Test integration: transitioning from partial to full whitelist."""
+        # Start with partial whitelist (channel_id only)
+        mock_load.return_value = {
+            "team_ids": set([]),
+            "user_ids": set([]),
+            "channel_ids": set(["C001"]),
+        }
+        
+        result1 = authorize_request("T123", "U456", "C001")
+        assert result1.authorized is True  # channel_id matches, others not checked
+        
+        # Transition to full whitelist
+        mock_load.return_value = {
+            "team_ids": set(["T123"]),
+            "user_ids": set(["U456"]),
+            "channel_ids": set(["C001"]),
+        }
+        
+        result2 = authorize_request("T123", "U456", "C001")
+        assert result2.authorized is True  # All match
+        
+        result3 = authorize_request("T999", "U456", "C001")
+        assert result3.authorized is False  # team_id doesn't match
+    
+    @patch('authorization.load_whitelist_config')
+    def test_integration_config_load_failure_maintains_fail_closed(self, mock_load):
+        """Test integration: configuration load failure maintains fail-closed behavior."""
+        # Mock configuration load failure
+        mock_load.side_effect = LoaderError("Failed to load whitelist configuration")
+        
+        result = authorize_request("T123", "U456", "C001")
+        
+        # Should fail-closed (reject all requests)
+        assert result.authorized is False
+        assert result.error_message is not None
+        assert "Failed to load whitelist configuration" in result.error_message
 

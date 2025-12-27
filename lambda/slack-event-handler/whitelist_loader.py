@@ -154,11 +154,6 @@ def get_whitelist_from_dynamodb() -> Dict[str, Set[str]]:
                 else:
                     raise
         
-        # Check if whitelist is empty (fail-closed)
-        total_entries = len(whitelist["team_ids"]) + len(whitelist["user_ids"]) + len(whitelist["channel_ids"])
-        if total_entries == 0:
-            raise AuthorizationError("Whitelist is empty - all requests will be rejected (fail-closed)")
-        
         log_info("whitelist_loaded_from_dynamodb", {
             "table_name": table_name,
             "team_ids_count": len(whitelist["team_ids"]),
@@ -224,11 +219,6 @@ def get_whitelist_from_secrets_manager() -> Dict[str, Set[str]]:
             "channel_ids": set(secret_data.get("channel_ids", [])),
         }
         
-        # Check if whitelist is empty (fail-closed)
-        total_entries = len(whitelist["team_ids"]) + len(whitelist["user_ids"]) + len(whitelist["channel_ids"])
-        if total_entries == 0:
-            raise AuthorizationError("Whitelist is empty - all requests will be rejected (fail-closed)")
-        
         log_info("whitelist_loaded_from_secrets_manager", {
             "secret_name": secret_name,
             "team_ids_count": len(whitelist["team_ids"]),
@@ -288,11 +278,6 @@ def get_whitelist_from_env() -> Dict[str, Set[str]]:
         "user_ids": set([id.strip() for id in user_ids_str.split(",") if id.strip()]),
         "channel_ids": set([id.strip() for id in channel_ids_str.split(",") if id.strip()]),
     }
-    
-    # Check if whitelist is empty (fail-closed)
-    total_entries = len(whitelist["team_ids"]) + len(whitelist["user_ids"]) + len(whitelist["channel_ids"])
-    if total_entries == 0:
-        raise AuthorizationError("Whitelist is empty - all requests will be rejected (fail-closed)")
     
     log_info("whitelist_loaded_from_env", {
         "team_ids_count": len(whitelist["team_ids"]),

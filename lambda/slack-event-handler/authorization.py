@@ -1,13 +1,19 @@
 """
 Whitelist authorization module.
 
-This module implements whitelist-based authorization for Slack requests.
-It checks if team_id, user_id, and channel_id are all present in the whitelist
+This module implements flexible whitelist-based authorization for Slack requests.
+It checks if team_id, user_id, and channel_id are present in the whitelist
 before allowing requests to proceed. This implements layer 3c in the multi-layer
 defense architecture (after signature verification 3a and Existence Check 3b).
 
-The authorization follows AND condition: all three entities must be authorized.
-If any entity is missing or unauthorized, the request is rejected with 403 Forbidden.
+The authorization follows a conditional AND condition:
+- Only configured entities (non-empty whitelist sets) are checked
+- If all entities are unset (empty whitelist), all requests are allowed
+- If an entity is configured, it must be authorized
+- If any configured entity is missing or unauthorized, the request is rejected with 403 Forbidden
+
+This flexible approach allows partial whitelist configuration while maintaining
+backward compatibility when all entities are configured.
 """
 
 import os
@@ -99,16 +105,18 @@ def authorize_request(
     channel_id: Optional[str],
 ) -> AuthorizationResult:
     """
-    Authorize request using whitelist.
+    Authorize request using flexible whitelist.
     
-    Checks if team_id, user_id, and channel_id are all present in the whitelist.
-    All three entities must be authorized (AND condition). If any entity is missing
-    or unauthorized, the request is rejected.
+    Checks if team_id, user_id, and channel_id are present in the whitelist.
+    Only configured entities (non-empty whitelist sets) are checked.
+    If all entities are unset (empty whitelist), all requests are allowed.
+    If an entity is configured, it must be authorized (conditional AND condition).
+    If any configured entity is missing or unauthorized, the request is rejected.
     
     Args:
-        team_id: Slack team ID (optional, but required for authorization)
-        user_id: Slack user ID (optional, but required for authorization)
-        channel_id: Slack channel ID (optional, but required for authorization)
+        team_id: Slack team ID (optional)
+        user_id: Slack user ID (optional)
+        channel_id: Slack channel ID (optional)
         
     Returns:
         AuthorizationResult with authorization status and details
@@ -141,37 +149,75 @@ def authorize_request(
             timestamp=timestamp,
         )
     
-    # Check each entity against whitelist (AND condition)
+    # Check if whitelist is completely empty (all entities unset) - allow all requests
+    total_entries = len(whitelist["team_ids"]) + len(whitelist["user_ids"]) + len(whitelist["channel_ids"])
+    if total_entries == 0:
+        # Empty whitelist means allow all requests
+        log_info("whitelist_authorization_success_empty_whitelist", {
+            "team_id": team_id,
+            "user_id": user_id,
+            "channel_id": channel_id,
+        })
+        _emit_metric("WhitelistAuthorizationSuccess", 1.0)
+        elapsed_time = (time.time() - start_time) * 1000  # Convert to milliseconds
+        _emit_metric("WhitelistAuthorizationLatency", elapsed_time, "Milliseconds")
+        return AuthorizationResult(
+            authorized=True,
+            team_id=team_id,
+            user_id=user_id,
+            channel_id=channel_id,
+            timestamp=timestamp,
+        )
+    
+    # Check each entity against whitelist (conditional AND condition - only check configured entities)
     unauthorized_entities: List[str] = []
     
-    # Check team_id
-    if not team_id:
-        unauthorized_entities.append("team_id")
-    elif team_id not in whitelist["team_ids"]:
-        unauthorized_entities.append("team_id")
+    # Track which entities were checked vs skipped for logging
+    checked_entities: List[str] = []
+    skipped_entities: List[str] = []
     
-    # Check user_id
-    if not user_id:
-        unauthorized_entities.append("user_id")
-    elif user_id not in whitelist["user_ids"]:
-        unauthorized_entities.append("user_id")
+    # Check team_id (only if whitelist has team_ids configured)
+    if len(whitelist["team_ids"]) > 0:
+        checked_entities.append("team_id")
+        if not team_id:
+            unauthorized_entities.append("team_id")
+        elif team_id not in whitelist["team_ids"]:
+            unauthorized_entities.append("team_id")
+    else:
+        skipped_entities.append("team_id")
     
-    # Check channel_id
-    if not channel_id:
-        unauthorized_entities.append("channel_id")
-    elif channel_id not in whitelist["channel_ids"]:
-        unauthorized_entities.append("channel_id")
+    # Check user_id (only if whitelist has user_ids configured)
+    if len(whitelist["user_ids"]) > 0:
+        checked_entities.append("user_id")
+        if not user_id:
+            unauthorized_entities.append("user_id")
+        elif user_id not in whitelist["user_ids"]:
+            unauthorized_entities.append("user_id")
+    else:
+        skipped_entities.append("user_id")
+    
+    # Check channel_id (only if whitelist has channel_ids configured)
+    if len(whitelist["channel_ids"]) > 0:
+        checked_entities.append("channel_id")
+        if not channel_id:
+            unauthorized_entities.append("channel_id")
+        elif channel_id not in whitelist["channel_ids"]:
+            unauthorized_entities.append("channel_id")
+    else:
+        skipped_entities.append("channel_id")
     
     # Calculate latency
     elapsed_time = (time.time() - start_time) * 1000  # Convert to milliseconds
     
     # Determine authorization result
     if len(unauthorized_entities) == 0:
-        # All entities are authorized
+        # All checked entities are authorized
         log_info("whitelist_authorization_success", {
             "team_id": team_id,
             "user_id": user_id,
             "channel_id": channel_id,
+            "checked_entities": checked_entities,
+            "skipped_entities": skipped_entities if skipped_entities else None,
         })
         # Emit metrics for authorization success
         _emit_metric("WhitelistAuthorizationSuccess", 1.0)
@@ -190,6 +236,8 @@ def authorize_request(
             "user_id": user_id,
             "channel_id": channel_id,
             "unauthorized_entities": unauthorized_entities,
+            "checked_entities": checked_entities,
+            "skipped_entities": skipped_entities if skipped_entities else None,
         })
         # Emit metrics for authorization failure
         _emit_metric("WhitelistAuthorizationFailed", 1.0)
