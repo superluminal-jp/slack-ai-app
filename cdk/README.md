@@ -16,78 +16,163 @@ Two independent stacks that can be deployed to separate accounts:
 - **ExecutionStack**: BedrockProcessor + API Gateway
 - **VerificationStack**: SlackEventHandler + DynamoDB + Secrets
 
-### Step 1: Configure Environment Variables
+### Step 1: Create Configuration File
 
-Create a `.env` file in the project root:
+Create environment-specific configuration files:
 
 ```bash
 # From project root
-cat > .env << EOF
-SLACK_BOT_TOKEN=xoxb-your-bot-token
-SLACK_SIGNING_SECRET=your-signing-secret
-EOF
+# For development environment
+cp cdk/cdk.config.json.example cdk/cdk.config.dev.json
+
+# For production environment (if using production)
+cp cdk/cdk.config.json.example cdk/cdk.config.prod.json
 ```
 
-### Step 2: Update cdk.json
+Edit `cdk/cdk.config.dev.json` (or `cdk/cdk.config.prod.json`) and set:
 
-Add account IDs to `cdk.json`:
+- `verificationAccountId`: Your AWS account ID
+- `executionAccountId`: Your AWS account ID
+- `slackBotToken`: Your Slack Bot OAuth Token
+- `slackSigningSecret`: Your Slack Signing Secret
+
+**Note**: You can also set Slack credentials via environment variables (`SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`), but configuration files are recommended for easier management.
+
+### Step 1.5: Set Deployment Environment (Optional)
+
+Set the deployment environment (`dev` or `prod`). If not set, defaults to `dev`:
+
+```bash
+export DEPLOYMENT_ENV=dev  # or 'prod' for production
+```
+
+**Note**: Stack names will automatically include environment suffix (`-Dev` or `-Prod`).
+
+### Step 2: Configure CDK Settings
+
+CDK configuration is managed through environment-specific JSON files. Create or update the configuration file for your environment:
+
+**For development environment:**
+
+```bash
+cp cdk.config.json.example cdk.config.dev.json
+# Edit cdk.config.dev.json with your settings
+```
+
+**For production environment:**
+
+```bash
+cp cdk.config.json.example cdk.config.prod.json
+# Edit cdk.config.prod.json with your settings
+```
+
+**Configuration file structure (`cdk.config.dev.json` or `cdk.config.prod.json`):**
 
 ```json
 {
-  "context": {
-    "deploymentMode": "split",
-    "verificationStackName": "SlackAI-Verification",
-    "executionStackName": "SlackAI-Execution",
-    "verificationAccountId": "YOUR_AWS_ACCOUNT_ID",
-    "executionAccountId": "YOUR_AWS_ACCOUNT_ID"
-  }
+  "awsRegion": "ap-northeast-1",
+  "bedrockModelId": "jp.anthropic.claude-haiku-4-5-20251001-v1:0",
+  "deploymentMode": "split",
+  "deploymentEnv": "dev",
+  "verificationStackName": "SlackAI-Verification",
+  "executionStackName": "SlackAI-Execution",
+  "verificationAccountId": "YOUR_AWS_ACCOUNT_ID",
+  "executionAccountId": "YOUR_AWS_ACCOUNT_ID",
+  "verificationLambdaRoleArn": "",
+  "executionApiUrl": "",
+  "executionResponseQueueUrl": "",
+  "slackBotToken": "",
+  "slackSigningSecret": ""
 }
 ```
 
-**Note**: Get your account ID with: `aws sts get-caller-identity --query Account --output text`
+**Configuration Priority (high to low):**
+
+1. **Environment variables** (`DEPLOYMENT_ENV`, `AWS_REGION`, `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, etc.)
+2. **Command-line arguments** (`--context key=value`)
+3. **Environment-specific config file** (`cdk.config.{env}.json`)
+4. **Local config file** (`cdk.config.local.json` - optional, gitignored)
+5. **Base config file** (`cdk.config.json` - optional)
+6. **Default values** (in code)
+
+**Note**:
+
+- Get your account ID with: `aws sts get-caller-identity --query Account --output text`
+- Optional fields (`verificationLambdaRoleArn`, `executionApiUrl`, `executionResponseQueueUrl`) can be left empty initially and will be populated after deployment
+- **Deployment order**:
+  1. Deploy ExecutionStack → Get `ExecutionApiUrl`
+  2. Deploy VerificationStack → Get `VerificationLambdaRoleArn` and `ExecutionResponseQueueUrl`
+  3. Update ExecutionStack with `verificationLambdaRoleArn` and `executionResponseQueueUrl`
+- **Slack credentials** (`slackBotToken`, `slackSigningSecret`) can be set via environment variables or config file. Environment variables take precedence.
+- **Security**: If you include Slack credentials in config files, ensure they are not committed to Git. Use `cdk.config.local.json` (gitignored) for sensitive values, or use environment variables instead.
+- You can create `cdk.config.local.json` for personal overrides (this file is gitignored)
 
 ### Step 3: Deploy Execution Stack
 
 ```bash
-# Load environment variables from .env
-set -a && source ../.env && set +a
+# Set deployment environment (if not already set)
+export DEPLOYMENT_ENV=dev  # or 'prod'
 
-# Deploy Execution Stack
-npx cdk deploy SlackAI-Execution \
+# Deploy Execution Stack (note: stack name includes environment suffix)
+npx cdk deploy SlackAI-Execution-Dev \
   --context deploymentMode=split \
+  --context deploymentEnv=dev \
   --profile YOUR_PROFILE \
   --require-approval never
 ```
+
+**Note**: Configuration is automatically loaded from `cdk.config.{env}.json`. You can also set Slack credentials via environment variables if preferred.
+
+**Note**: Stack names now include environment suffix. Use `SlackAI-Execution-Dev` for dev or `SlackAI-Execution-Prod` for prod.
 
 Note the `ExecutionApiUrl` from the outputs.
 
 ### Step 4: Deploy Verification Stack
 
 ```bash
-# Load environment variables from .env
-set -a && source ../.env && set +a
+# Set deployment environment (must match Step 3)
+export DEPLOYMENT_ENV=dev  # or 'prod'
 
 # Deploy Verification Stack with ExecutionApiUrl
-npx cdk deploy SlackAI-Verification \
+npx cdk deploy SlackAI-Verification-Dev \
   --context deploymentMode=split \
+  --context deploymentEnv=dev \
   --context executionApiUrl=<ExecutionApiUrl from step 3> \
   --profile YOUR_PROFILE \
   --require-approval never
 ```
 
+**Note**: Alternatively, update `cdk.config.{env}.json` with `executionApiUrl` instead of using `--context`.
+
+**Note**: Use `SlackAI-Verification-Dev` for dev or `SlackAI-Verification-Prod` for prod.
+
 Note the `VerificationLambdaRoleArn` from the outputs.
 
-### Step 5: Update Execution Stack with Resource Policy
+### Step 5: Update Execution Stack with Resource Policy and SQS Queue URL
 
 ```bash
-# Update Execution Stack to add API Gateway resource policy
-npx cdk deploy SlackAI-Execution \
+# Set deployment environment (must match previous steps)
+export DEPLOYMENT_ENV=dev  # or 'prod'
+
+# Get ExecutionResponseQueueUrl from Verification Stack outputs
+EXECUTION_RESPONSE_QUEUE_URL=$(aws cloudformation describe-stacks \
+  --stack-name SlackAI-Verification-Dev \
+  --region ap-northeast-1 \
+  --query 'Stacks[0].Outputs[?OutputKey==`ExecutionResponseQueueUrl`].OutputValue' \
+  --output text)
+
+# Update Execution Stack to add API Gateway resource policy and SQS queue URL
+npx cdk deploy SlackAI-Execution-Dev \
   --context deploymentMode=split \
+  --context deploymentEnv=dev \
   --context verificationLambdaRoleArn=<VerificationLambdaRoleArn from step 4> \
+  --context executionResponseQueueUrl=${EXECUTION_RESPONSE_QUEUE_URL} \
   --context verificationAccountId=YOUR_AWS_ACCOUNT_ID \
   --profile YOUR_PROFILE \
   --require-approval never
 ```
+
+**Note**: Alternatively, you can update `cdk.config.dev.json` (or `cdk.config.prod.json`) with `executionResponseQueueUrl` instead of using `--context`.
 
 ### Alternative: Use Deployment Script
 
@@ -95,8 +180,8 @@ For automated 3-phase deployment, use the provided script:
 
 ```bash
 # From project root
-# Load environment variables from .env
-set -a && source .env && set +a
+# Set deployment environment (dev or prod)
+export DEPLOYMENT_ENV=dev  # or 'prod' for production
 
 # Optional: Set AWS profile if using named profiles
 export AWS_PROFILE=your-profile-name
@@ -106,15 +191,25 @@ chmod +x scripts/deploy-split-stacks.sh
 ./scripts/deploy-split-stacks.sh
 ```
 
+**Note**: The deployment script automatically loads configuration from `cdk.config.{env}.json`. Make sure you have created and configured the appropriate configuration file before running the script.
+
+**Note**: The deployment script automatically loads configuration from `cdk.config.{env}.json`. Make sure you have created and configured the appropriate configuration file before running the script.
+
 This script automatically:
 
-1. Deploys Execution Stack
-2. Gets ExecutionApiUrl and updates cdk.json
-3. Deploys Verification Stack with ExecutionApiUrl
-4. Gets VerificationLambdaRoleArn and updates cdk.json
-5. Updates Execution Stack with resource policy
+1. Validates deployment environment (`dev` or `prod`)
+2. Sets stack names with environment suffix (`-Dev` or `-Prod`)
+3. Deploys Execution Stack
+4. Gets ExecutionApiUrl and updates `cdk.config.{env}.json`
+5. Deploys Verification Stack with ExecutionApiUrl
+6. Gets VerificationLambdaRoleArn and ExecutionResponseQueueUrl and updates `cdk.config.{env}.json`
+7. Updates Execution Stack with resource policy and SQS queue URL
 
-**Note**: The script supports AWS profile via `AWS_PROFILE` environment variable. If not set, it uses default AWS credentials.
+**Note**:
+
+- The script supports AWS profile via `AWS_PROFILE` environment variable. If not set, it uses default AWS credentials.
+- If `DEPLOYMENT_ENV` is not set, the script defaults to `dev` with a warning.
+- All resources are automatically tagged with `Environment`, `Project`, `ManagedBy`, and `StackName` tags.
 
 ### Cross-Account Deployment
 
@@ -167,21 +262,105 @@ Then follow the same steps as above. The deployment script (`scripts/deploy-spli
 When destroying split stacks, follow this order:
 
 ```bash
+# Set deployment environment
+export DEPLOYMENT_ENV=dev  # or 'prod' for production
+
 # 1. Destroy Verification Stack first
-npx cdk destroy SlackAI-Verification
+npx cdk destroy SlackAI-Verification-Dev  # or SlackAI-Verification-Prod
 
 # 2. Then destroy Execution Stack
-npx cdk destroy SlackAI-Execution
+npx cdk destroy SlackAI-Execution-Dev  # or SlackAI-Execution-Prod
 ```
+
+**Note**: Stack names automatically include environment suffix (`-Dev` or `-Prod`). Make sure to specify the correct environment when destroying stacks.
+
+## Environment Separation
+
+This project supports environment separation for development (`dev`) and production (`prod`) deployments:
+
+- **Stack Names**: Automatically suffixed with `-Dev` or `-Prod` (e.g., `SlackAI-Execution-Dev`, `SlackAI-Verification-Prod`)
+- **Resource Isolation**: All resources (Lambda functions, DynamoDB tables, Secrets Manager, API Gateway, etc.) are automatically separated by environment
+- **Resource Tagging**: All resources are tagged with:
+  - `Environment`: `dev` or `prod`
+  - `Project`: `SlackAI`
+  - `ManagedBy`: `CDK`
+  - `StackName`: The stack name
+
+**Usage:**
+
+```bash
+# Deploy to development environment
+export DEPLOYMENT_ENV=dev
+./scripts/deploy-split-stacks.sh
+
+# Deploy to production environment
+export DEPLOYMENT_ENV=prod
+./scripts/deploy-split-stacks.sh
+```
+
+**Note**: If `DEPLOYMENT_ENV` is not set, defaults to `dev` with a warning. Each environment should use separate Slack apps/workspaces or different secrets for security.
+
+## Configuration Files
+
+CDK configuration is managed through environment-specific JSON files with type validation using Zod.
+
+### Configuration File Structure
+
+```
+cdk/
+├── cdk.config.json              # Base configuration (optional, shared across environments)
+├── cdk.config.dev.json         # Development environment configuration (recommended: commit to git)
+├── cdk.config.prod.json         # Production environment configuration (recommended: commit to git)
+├── cdk.config.local.json       # Local overrides (gitignored, for personal use)
+└── cdk.config.json.example     # Configuration template
+```
+
+### Configuration Fields
+
+| Field                       | Required | Type   | Description                                                                             |
+| --------------------------- | -------- | ------ | --------------------------------------------------------------------------------------- |
+| `awsRegion`                 | Yes      | string | AWS region for deployment (e.g., `ap-northeast-1`)                                      |
+| `bedrockModelId`            | Yes      | string | Bedrock model ID (e.g., `jp.anthropic.claude-haiku-4-5-20251001-v1:0`)                  |
+| `deploymentMode`            | Yes      | enum   | Deployment mode: `"split"` or `"cross-account"`                                         |
+| `deploymentEnv`             | Yes      | enum   | Deployment environment: `"dev"` or `"prod"`                                             |
+| `verificationStackName`     | Yes      | string | Base name for Verification Stack (without environment suffix)                           |
+| `executionStackName`        | Yes      | string | Base name for Execution Stack (without environment suffix)                              |
+| `verificationAccountId`     | Yes      | string | 12-digit AWS account ID for Verification Stack                                          |
+| `executionAccountId`        | Yes      | string | 12-digit AWS account ID for Execution Stack                                             |
+| `verificationLambdaRoleArn` | No       | string | Lambda role ARN from Verification Stack (populated after Verification Stack deployment) |
+| `executionApiUrl`           | No       | string | Execution API URL (populated after Execution Stack deployment)                          |
+| `executionResponseQueueUrl` | No       | string | SQS queue URL from Verification Stack (populated after Verification Stack deployment)   |
+| `slackBotToken`             | No       | string | Slack Bot OAuth Token (can be set via environment variable `SLACK_BOT_TOKEN`)           |
+| `slackSigningSecret`        | No       | string | Slack Signing Secret (can be set via environment variable `SLACK_SIGNING_SECRET`)       |
+
+### Configuration Validation
+
+All configuration files are validated using Zod schemas:
+
+- **Type checking**: Ensures correct data types
+- **Format validation**: Validates AWS region format, account IDs (12 digits), ARN format, URL format
+- **Required fields**: Ensures all required fields are present
+- **Enum validation**: Ensures `deploymentMode` and `deploymentEnv` use valid values
+
+Validation errors provide clear, actionable error messages indicating which fields are invalid.
 
 ## Environment Variables
 
-| Variable                      | Required | Description                   |
-| ----------------------------- | -------- | ----------------------------- |
-| SLACK_BOT_TOKEN               | Yes      | Slack Bot OAuth Token         |
-| SLACK_SIGNING_SECRET          | Yes      | Slack Signing Secret          |
-| ENABLE_API_GATEWAY_MONITORING | No       | Enable CloudWatch dashboard   |
-| ALARM_EMAIL                   | No       | Email for alarm notifications |
+| Variable                      | Required | Description                                                                                   |
+| ----------------------------- | -------- | --------------------------------------------------------------------------------------------- |
+| DEPLOYMENT_ENV                | No       | Deployment environment (`dev` or `prod`). Defaults to `dev`                                   |
+| AWS_REGION                    | No       | AWS region (overrides config file)                                                            |
+| BEDROCK_MODEL_ID              | No       | Bedrock model ID (overrides config file)                                                      |
+| DEPLOYMENT_MODE               | No       | Deployment mode (overrides config file)                                                       |
+| VERIFICATION_ACCOUNT_ID       | No       | Verification account ID (overrides config file)                                               |
+| EXECUTION_ACCOUNT_ID          | No       | Execution account ID (overrides config file)                                                  |
+| EXECUTION_RESPONSE_QUEUE_URL  | No       | SQS queue URL for responses (overrides config file)                                           |
+| SLACK_BOT_TOKEN               | No\*     | Slack Bot OAuth Token (required if not set in config file. Takes precedence over config file) |
+| SLACK_SIGNING_SECRET          | No\*     | Slack Signing Secret (required if not set in config file. Takes precedence over config file)  |
+| ENABLE_API_GATEWAY_MONITORING | No       | Enable CloudWatch dashboard                                                                   |
+| ALARM_EMAIL                   | No       | Email for alarm notifications                                                                 |
+
+**Note**: `*` indicates that the variable is required if not provided via config file. Either environment variable or config file value must be set.
 
 ## Testing
 

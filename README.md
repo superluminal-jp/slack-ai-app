@@ -39,27 +39,61 @@ This application enables teams to use AI capabilities directly from Slack. Team 
 
 ### Deploy
 
-This project uses two independent stacks (VerificationStack and ExecutionStack) that can be deployed separately, supporting cross-account deployments. See [CDK README](cdk/README.md) for detailed deployment instructions.
+This project uses two independent stacks (VerificationStack and ExecutionStack) that can be deployed separately, supporting cross-account deployments.
+
+**Deployment Steps**:
+1. Deploy ExecutionStack → Get `ExecutionApiUrl`
+2. Deploy VerificationStack → Get `VerificationLambdaRoleArn` and `ExecutionResponseQueueUrl`
+3. Update ExecutionStack → Set resource policy and SQS queue URL
+
+See [CDK README](cdk/README.md) for detailed deployment instructions.
 
 **Quick start with deployment script:**
 
 ```bash
-# 1. Create .env file with credentials
-cat > .env << EOF
-SLACK_BOT_TOKEN=xoxb-your-bot-token
-SLACK_SIGNING_SECRET=your-signing-secret
-EOF
+# 1. Create configuration file
+cp cdk/cdk.config.json.example cdk/cdk.config.dev.json
+# Edit cdk/cdk.config.dev.json and set:
+# - verificationAccountId, executionAccountId
+# - slackBotToken, slackSigningSecret
 
-# 2. Update cdk.json with account IDs
-# Add "verificationAccountId" and "executionAccountId" to context
+# 2. Set deployment environment (dev or prod)
+export DEPLOYMENT_ENV=dev  # Use 'prod' for production
 
 # 3. Run deployment script (with optional AWS profile)
 export AWS_PROFILE=your-profile-name  # Optional: if using AWS profiles
-set -a && source .env && set +a
 ./scripts/deploy-split-stacks.sh
 ```
 
+**Note**: Slack credentials can be set directly in `cdk.config.{env}.json` file. Environment variables are also supported, but configuration files are easier to manage.
+
 **⚠️ Important**: Configure whitelist after deployment. See [Quick Start Guide](docs/quickstart.md).
+
+### Environment Separation
+
+This project supports environment separation for development (`dev`) and production (`prod`) deployments:
+
+- **Stack Names**: Automatically suffixed with `-Dev` or `-Prod` (e.g., `SlackAI-Execution-Dev`, `SlackAI-Verification-Prod`)
+- **Resource Isolation**: All resources (Lambda functions, DynamoDB tables, Secrets Manager, API Gateway, etc.) are automatically separated by environment
+- **Resource Tagging**: All resources are tagged with:
+  - `Environment`: `dev` or `prod`
+  - `Project`: `SlackAI`
+  - `ManagedBy`: `CDK`
+  - `StackName`: The stack name
+
+**Usage:**
+
+```bash
+# Deploy to development environment
+export DEPLOYMENT_ENV=dev
+./scripts/deploy-split-stacks.sh
+
+# Deploy to production environment
+export DEPLOYMENT_ENV=prod
+./scripts/deploy-split-stacks.sh
+```
+
+**Note**: If `DEPLOYMENT_ENV` is not set, the script defaults to `dev` environment with a warning. Each environment should use separate Slack apps/workspaces or different secrets for security.
 
 ## How It Works
 

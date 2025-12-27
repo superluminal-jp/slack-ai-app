@@ -1,0 +1,15 @@
+{
+  "awsRegion": "ap-northeast-1",
+  "bedrockModelId": "jp.anthropic.claude-haiku-4-5-20251001-v1:0",
+  "deploymentMode": "split",
+  "deploymentEnv": "dev",
+  "verificationStackName": "SlackAI-Verification",
+  "executionStackName": "SlackAI-Execution",
+  "verificationAccountId": "YOUR_AWS_ACCOUNT_ID",
+  "executionAccountId": "YOUR_AWS_ACCOUNT_ID",
+  "verificationLambdaRoleArn": "",
+  "executionApiUrl": "",
+  "slackBotToken": "",
+  "slackSigningSecret": ""
+}
+

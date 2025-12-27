@@ -122,16 +122,17 @@ npx cdk deploy SlackAI-Verification
 ### Phase 3: Execution Stack の更新
 
 ```bash
-# cdk.json に Lambda ロール ARN を設定
+# cdk.config.{env}.json に Lambda ロール ARN と SQS キュー URL を設定
 {
-  "context": {
-    "verificationLambdaRoleArn": "arn:aws:iam::123456789012:role/..."
-  }
+  "verificationLambdaRoleArn": "arn:aws:iam::123456789012:role/...",
+  "executionResponseQueueUrl": "https://sqs.ap-northeast-1.amazonaws.com/123456789012/slackai-verification-dev-execution-response-queue"
 }
 
-# 再デプロイ（リソースポリシーを更新）
-npx cdk deploy SlackAI-Execution
+# 再デプロイ（リソースポリシーとSQS送信権限を更新）
+npx cdk deploy SlackAI-Execution-Dev
 ```
+
+**注意**: `executionResponseQueueUrl` が設定されている場合、`ExecutionStack` は自動的に `BedrockProcessor` Lambda ロールに SQS 送信権限を追加します。
 
 ## クロスアカウント設定
 
