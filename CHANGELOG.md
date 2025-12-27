@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Cross-Account Zones Architecture** (010-cross-account-zones)
-  - Split-stack deployment (VerificationStack + ExecutionStack)
+  - Two independent stacks deployment (VerificationStack + ExecutionStack)
   - Cross-account IAM authentication support
   - Independent lifecycle management for each zone
   - Deployment scripts for 3-phase deploy process
@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CONTRIBUTING.md with contribution guidelines
 - CHANGELOG.md following Keep a Changelog format
 - SECURITY.md with security policy
-- Migration guide from single-stack to split-stack architecture
+- Migration guide from single-stack to two independent stacks architecture
 - Cross-account IAM authentication documentation
 
 ### Changed
@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Restructured docs/ directory with tutorials/, how-to/, reference/, explanation/ categories
 - Simplified README.md to focus on overview and navigation
 - Converted docs/README.md to navigation hub
-- CDK entry point now defaults to split-stack mode (single-stack mode removed)
+- CDK entry point now defaults to two independent stacks mode (single-stack mode removed)
 - Lambda folder structure reorganized: `lambda/verification-stack/` and `lambda/execution-stack/`
 - DynamoDB table names now include stack name prefix to prevent conflicts
 - IAM policy for VerificationStack Lambda uses wildcard resource (access controlled by API Gateway resource policy)

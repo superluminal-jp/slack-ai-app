@@ -38,7 +38,7 @@
 
 - [x] T004 Create ExecutionStack in `cdk/lib/execution-stack.ts` with BedrockProcessor and ExecutionApi constructs
 - [x] T005 Create VerificationStack in `cdk/lib/verification-stack.ts` with SlackEventHandler, DynamoDB tables, and Secrets
-- [x] T006 Update `cdk/bin/cdk.ts` to support both single-stack and split-stack deployment modes
+- [x] T006 Update `cdk/bin/cdk.ts` to support both single-stack and two independent stacks deployment modes
 - [x] T007 [P] Add cross-account resource policy support to ExecutionApi construct in `cdk/lib/constructs/execution-api.ts`
 - [x] T008 [P] Add Verification Lambda role ARN output to VerificationStack for resource policy configuration
 
@@ -72,7 +72,7 @@
   - Stack outputs: Function URL, Lambda Role ARN
 - [x] T013 [US1] Add environment variable configuration for Execution API URL in VerificationStack
 - [x] T014 [US1] Update CDK entry point to register both stacks in `cdk/bin/cdk.ts`
-- [x] T015 [US1] Add deploy/destroy scripts for split-stack mode in `cdk/README.md`
+- [x] T015 [US1] Add deploy/destroy scripts for two independent stacks mode in `cdk/README.md`
 
 **Checkpoint**: Both stacks deploy independently, Slack E2E flow works
 
@@ -142,7 +142,7 @@
 **Purpose**: Documentation, cleanup, and migration support
 
 - [x] T031 [P] Mark SlackBedrockStack as deprecated with migration notice in `cdk/lib/slack-bedrock-stack.ts`
-- [x] T032 [P] Create migration guide from single-stack to split-stack in `docs/how-to/migration-guide.md`
+- [x] T032 [P] Create migration guide from single-stack to two independent stacks in `docs/how-to/migration-guide.md`
 - [x] T033 Update architecture documentation in `docs/reference/architecture/overview.md`
 - [x] T034 [P] Update README.md with new deployment options
 - [ ] T035 Run quickstart.md validation - deploy and test per instructions
@@ -240,7 +240,7 @@ Task T017-T022: [US3] Implementation tasks
 ### Recommended Delivery
 
 1. Complete Setup + Foundational → Foundation ready
-2. Add US1 → Deploy → Validate split-stack works (MVP!)
+2. Add US1 → Deploy → Validate two independent stacks work (MVP!)
 3. Add US3 → Validate IAM authentication pattern
 4. Add US4 → Validate independent lifecycle
 5. Polish → Documentation and migration guide

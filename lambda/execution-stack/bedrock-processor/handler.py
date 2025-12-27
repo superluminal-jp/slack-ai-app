@@ -13,13 +13,11 @@ import json
 import os
 import time
 from botocore.exceptions import ClientError, ReadTimeoutError
-from slack_sdk import WebClient
-from slack_sdk.errors import SlackApiError
 
 from bedrock_client_converse import invoke_bedrock
-from slack_poster import post_to_slack
-from thread_history import get_thread_history, build_conversation_context
 from attachment_processor import process_attachments
+from response_formatter import format_success_response, format_error_response
+from sqs_client import send_response_to_queue
 from logger import (
     set_correlation_id,
     set_lambda_context,
@@ -223,15 +221,41 @@ def lambda_handler(event, context):
                     if skipped_attachments:
                         # All attachments are unsupported file types
                         error_message = ERROR_MESSAGES["unsupported_file_type"]
-                        post_to_slack(channel, error_message, bot_token, thread_ts)
-                        log_info(
-                            "error_message_posted",
-                            {
-                                "channel": channel,
-                                "error_type": "unsupported_file_type",
-                                "skipped_count": len(skipped_attachments),
-                            },
-                        )
+                        # Send error response to SQS queue
+                        try:
+                            error_response = format_error_response(
+                                channel=channel,
+                                error_code="unsupported_file_type",
+                                error_message=error_message,
+                                bot_token=bot_token,
+                                thread_ts=thread_ts,
+                                correlation_id=correlation_id,
+                            )
+                            queue_url = os.environ.get("EXECUTION_RESPONSE_QUEUE_URL", "")
+                            if queue_url:
+                                send_response_to_queue(queue_url, error_response)
+                                log_info(
+                                    "error_response_sent_to_sqs",
+                                    {
+                                        "channel": channel,
+                                        "error_type": "unsupported_file_type",
+                                        "skipped_count": len(skipped_attachments),
+                                    },
+                                )
+                            else:
+                                log_error(
+                                    "sqs_queue_url_missing",
+                                    {
+                                        "channel": channel,
+                                        "error_type": "unsupported_file_type",
+                                    },
+                                )
+                        except Exception as sqs_error:
+                            log_exception(
+                                "sqs_send_error",
+                                {"channel": channel, "error_type": "unsupported_file_type"},
+                                sqs_error,
+                            )
                         return {
                             "statusCode": 200,
                             "body": "Unsupported file type error handled",
@@ -278,17 +302,43 @@ def lambda_handler(event, context):
                         else:
                             error_message = ERROR_MESSAGES["image_download_failed"]
 
-                        post_to_slack(channel, error_message, bot_token, thread_ts)
-                        log_info(
-                            "error_message_posted",
-                            {
-                                "channel": channel,
-                                "error_type": "image_attachment_failed",
-                                "primary_error_code": (
-                                    error_codes[0] if error_codes else "unknown"
-                                ),
-                            },
-                        )
+                        # Send error response to SQS queue
+                        try:
+                            error_response = format_error_response(
+                                channel=channel,
+                                error_code="image_download_failed",
+                                error_message=error_message,
+                                bot_token=bot_token,
+                                thread_ts=thread_ts,
+                                correlation_id=correlation_id,
+                            )
+                            queue_url = os.environ.get("EXECUTION_RESPONSE_QUEUE_URL", "")
+                            if queue_url:
+                                send_response_to_queue(queue_url, error_response)
+                                log_info(
+                                    "error_response_sent_to_sqs",
+                                    {
+                                        "channel": channel,
+                                        "error_type": "image_attachment_failed",
+                                        "primary_error_code": (
+                                            error_codes[0] if error_codes else "unknown"
+                                        ),
+                                    },
+                                )
+                            else:
+                                log_error(
+                                    "sqs_queue_url_missing",
+                                    {
+                                        "channel": channel,
+                                        "error_type": "image_attachment_failed",
+                                    },
+                                )
+                        except Exception as sqs_error:
+                            log_exception(
+                                "sqs_send_error",
+                                {"channel": channel, "error_type": "image_attachment_failed"},
+                                sqs_error,
+                            )
                         return {
                             "statusCode": 200,
                             "body": "Image download error handled",
@@ -309,15 +359,41 @@ def lambda_handler(event, context):
                             error_message = _get_error_message_for_attachment_failure(
                                 primary_error_code
                             )
-                            post_to_slack(channel, error_message, bot_token, thread_ts)
-                            log_info(
-                                "error_message_posted",
-                                {
-                                    "channel": channel,
-                                    "error_type": "attachment_failed",
-                                    "primary_error_code": primary_error_code,
-                                },
-                            )
+                            # Send error response to SQS queue
+                            try:
+                                error_response = format_error_response(
+                                    channel=channel,
+                                    error_code=primary_error_code,
+                                    error_message=error_message,
+                                    bot_token=bot_token,
+                                    thread_ts=thread_ts,
+                                    correlation_id=correlation_id,
+                                )
+                                queue_url = os.environ.get("EXECUTION_RESPONSE_QUEUE_URL", "")
+                                if queue_url:
+                                    send_response_to_queue(queue_url, error_response)
+                                    log_info(
+                                        "error_response_sent_to_sqs",
+                                        {
+                                            "channel": channel,
+                                            "error_type": "attachment_failed",
+                                            "primary_error_code": primary_error_code,
+                                        },
+                                    )
+                                else:
+                                    log_error(
+                                        "sqs_queue_url_missing",
+                                        {
+                                            "channel": channel,
+                                            "error_type": "attachment_failed",
+                                        },
+                                    )
+                            except Exception as sqs_error:
+                                log_exception(
+                                    "sqs_send_error",
+                                    {"channel": channel, "error_type": "attachment_failed"},
+                                    sqs_error,
+                                )
                             return {
                                 "statusCode": 200,
                                 "body": "Attachment error handled",
@@ -338,39 +414,9 @@ def lambda_handler(event, context):
                 # Continue without attachments - process text only
                 processed_attachments = []
 
-        # Get thread history if thread_ts is provided
+        # Thread history retrieval removed - execution zone no longer accesses Slack API
+        # TODO: Move thread history retrieval to verification zone and pass as part of request payload
         conversation_history = None
-        if thread_ts:
-            try:
-                client = WebClient(token=bot_token)
-                thread_messages = get_thread_history(client, channel, thread_ts)
-
-                if thread_messages:
-                    # Use thread history directly (without adding current message)
-                    # Current message will be added by invoke_bedrock with attachments
-                    conversation_history = thread_messages
-                    log_info(
-                        "thread_history_retrieved",
-                        {
-                            "channel": channel,
-                            "thread_ts": thread_ts,
-                            "history_length": len(thread_messages),
-                            "conversation_length": len(thread_messages),
-                        },
-                    )
-                else:
-                    log_info(
-                        "thread_history_empty",
-                        {"channel": channel, "thread_ts": thread_ts},
-                    )
-            except SlackApiError as e:
-                # Log error but continue without history (graceful degradation)
-                log_warn(
-                    "thread_history_retrieval_failed",
-                    {"channel": channel, "thread_ts": thread_ts},
-                    e,
-                )
-                # Continue without conversation history
 
         # Prepare images and document texts from processed attachments
         # Converse API uses binary image data (not Base64)
@@ -458,11 +504,34 @@ def lambda_handler(event, context):
                 e,
             )
             error_message = ERROR_MESSAGES["bedrock_timeout"]
-            post_to_slack(channel, error_message, bot_token, thread_ts)
-            log_info(
-                "error_message_posted",
-                {"channel": channel, "error_type": "timeout"},
-            )
+            # Send error response to SQS queue
+            try:
+                error_response = format_error_response(
+                    channel=channel,
+                    error_code="bedrock_timeout",
+                    error_message=error_message,
+                    bot_token=bot_token,
+                    thread_ts=thread_ts,
+                    correlation_id=correlation_id,
+                )
+                queue_url = os.environ.get("EXECUTION_RESPONSE_QUEUE_URL", "")
+                if queue_url:
+                    send_response_to_queue(queue_url, error_response)
+                    log_info(
+                        "error_response_sent_to_sqs",
+                        {"channel": channel, "error_type": "timeout"},
+                    )
+                else:
+                    log_error(
+                        "sqs_queue_url_missing",
+                        {"channel": channel, "error_type": "timeout"},
+                    )
+            except Exception as sqs_error:
+                log_exception(
+                    "sqs_send_error",
+                    {"channel": channel, "error_type": "timeout"},
+                    sqs_error,
+                )
             return {"statusCode": 200, "body": "Timeout error handled"}
         except ClientError as e:
             # Bedrock API errors (throttling, access denied, timeout)
@@ -493,12 +562,34 @@ def lambda_handler(event, context):
             else:
                 error_message = ERROR_MESSAGES["generic"]
 
-            # Post error message to Slack
-            post_to_slack(channel, error_message, bot_token, thread_ts)
-            log_info(
-                "error_message_posted",
-                {"channel": channel, "error_code": error_code},
-            )
+            # Send error response to SQS queue
+            try:
+                error_response = format_error_response(
+                    channel=channel,
+                    error_code=error_code.lower().replace("exception", ""),
+                    error_message=error_message,
+                    bot_token=bot_token,
+                    thread_ts=thread_ts,
+                    correlation_id=correlation_id,
+                )
+                queue_url = os.environ.get("EXECUTION_RESPONSE_QUEUE_URL", "")
+                if queue_url:
+                    send_response_to_queue(queue_url, error_response)
+                    log_info(
+                        "error_response_sent_to_sqs",
+                        {"channel": channel, "error_code": error_code},
+                    )
+                else:
+                    log_error(
+                        "sqs_queue_url_missing",
+                        {"channel": channel, "error_code": error_code},
+                    )
+            except Exception as sqs_error:
+                log_exception(
+                    "sqs_send_error",
+                    {"channel": channel, "error_code": error_code},
+                    sqs_error,
+                )
             return {"statusCode": 200, "body": "Error handled"}
 
         except ValueError as e:
@@ -509,11 +600,34 @@ def lambda_handler(event, context):
                 e,
             )
             error_message = ERROR_MESSAGES["invalid_response"]
-            post_to_slack(channel, error_message, bot_token, thread_ts)
-            log_info(
-                "error_message_posted",
-                {"channel": channel, "error_type": "validation"},
-            )
+            # Send error response to SQS queue
+            try:
+                error_response = format_error_response(
+                    channel=channel,
+                    error_code="invalid_response",
+                    error_message=error_message,
+                    bot_token=bot_token,
+                    thread_ts=thread_ts,
+                    correlation_id=correlation_id,
+                )
+                queue_url = os.environ.get("EXECUTION_RESPONSE_QUEUE_URL", "")
+                if queue_url:
+                    send_response_to_queue(queue_url, error_response)
+                    log_info(
+                        "error_response_sent_to_sqs",
+                        {"channel": channel, "error_type": "validation"},
+                    )
+                else:
+                    log_error(
+                        "sqs_queue_url_missing",
+                        {"channel": channel, "error_type": "validation"},
+                    )
+            except Exception as sqs_error:
+                log_exception(
+                    "sqs_send_error",
+                    {"channel": channel, "error_type": "validation"},
+                    sqs_error,
+                )
             return {"statusCode": 200, "body": "Validation error handled"}
 
         except Exception as e:
@@ -524,33 +638,72 @@ def lambda_handler(event, context):
                 e,
             )
             error_message = ERROR_MESSAGES["generic"]
-            post_to_slack(channel, error_message, bot_token, thread_ts)
-            log_info(
-                "error_message_posted",
-                {"channel": channel, "error_type": "generic"},
-            )
+            # Send error response to SQS queue
+            try:
+                error_response = format_error_response(
+                    channel=channel,
+                    error_code="generic",
+                    error_message=error_message,
+                    bot_token=bot_token,
+                    thread_ts=thread_ts,
+                    correlation_id=correlation_id,
+                )
+                queue_url = os.environ.get("EXECUTION_RESPONSE_QUEUE_URL", "")
+                if queue_url:
+                    send_response_to_queue(queue_url, error_response)
+                    log_info(
+                        "error_response_sent_to_sqs",
+                        {"channel": channel, "error_type": "generic"},
+                    )
+                else:
+                    log_error(
+                        "sqs_queue_url_missing",
+                        {"channel": channel, "error_type": "generic"},
+                    )
+            except Exception as sqs_error:
+                log_exception(
+                    "sqs_send_error",
+                    {"channel": channel, "error_type": "generic"},
+                    sqs_error,
+                )
             return {"statusCode": 200, "body": "Error handled"}
 
-        # Post AI response to Slack
+        # Send AI response to SQS queue for verification zone to post to Slack
         try:
-            post_to_slack(channel, ai_response, bot_token, thread_ts)
-            log_info(
-                "slack_post_success",
-                {"channel": channel, "response_length": len(ai_response)},
+            success_response = format_success_response(
+                channel=channel,
+                response_text=ai_response,
+                bot_token=bot_token,
+                thread_ts=thread_ts,
+                correlation_id=correlation_id,
             )
+            queue_url = os.environ.get("EXECUTION_RESPONSE_QUEUE_URL", "")
+            if queue_url:
+                send_response_to_queue(queue_url, success_response)
+                log_info(
+                    "success_response_sent_to_sqs",
+                    {"channel": channel, "response_length": len(ai_response)},
+                )
+            else:
+                log_error(
+                    "sqs_queue_url_missing",
+                    {"channel": channel, "response_length": len(ai_response)},
+                )
+                return {"statusCode": 500, "body": "SQS queue URL not configured"}
+
             # Return 202 Accepted for async operations (when invoked via API Gateway)
             # API Gateway Lambda proxy integration will return this status code to client
             return {"statusCode": 202, "body": "Accepted"}
 
         except Exception as e:
-            # Error posting to Slack
+            # Error sending to SQS
             log_exception(
-                "slack_post_failed",
+                "sqs_send_failed",
                 {"channel": channel},
                 e,
             )
             # Log error but don't retry (async invocation)
-            return {"statusCode": 500, "body": "Slack posting failed"}
+            return {"statusCode": 500, "body": "SQS send failed"}
 
     except Exception as e:
         # Top-level error handler - log full traceback for debugging

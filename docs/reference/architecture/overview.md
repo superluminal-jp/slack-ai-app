@@ -64,21 +64,18 @@
 │ │ - AWS Bedrock Converse API呼び出し                     │ │
 │ │   * 統一インターフェース、マルチモーダル対応            │ │
 │ │   * バイナリ画像データ（Base64不要）                   │ │
-│ │ - スレッド履歴取得 (conversations.replies)              │ │
-│ │ - スレッド返信 (chat.postMessage with thread_ts)       │ │
 │ │ - **添付ファイル処理**: 画像とドキュメントのダウンロード│ │
 │ │ - **画像分析**: Bedrock Converse API視覚機能            │ │
 │ │ - **ドキュメント抽出**: PDF, DOCX, CSV, XLSX, PPTX, TXT│ │
 │ │ - **PPTX変換**: LibreOfficeを使用したスライド画像変換 │ │
 │ │ - **複数添付ファイル**: 複数ファイルの順次処理         │ │
-│ │ [4] → Slack APIにHTTP POSTでレスポンス投稿             │ │
-│ │   (スレッド内に投稿)                                     │ │
+│ │ [4] → SQS キューにレスポンスを送信                       │ │
+│ │   (ExecutionResponse形式)                                │ │
 │ │ - CloudTrail監査（すべてのBedrock呼び出し）           │ │
 │ │ - 会話、画像生成、コード生成、データ分析など対応      │ │
 │ └────────────────────┬───────────────────────────────────┘ │
-│                      │ [4] HTTPS POST                       │
-│                      │ to Slack API (chat.postMessage)      │
-│                      │ with thread_ts                       │
+│                      │ [4] SQS SendMessage                  │
+│                      │ ExecutionResponse                    │
 │                      ↓                                       │
 │ ┌─────────────────────────────────────────────────────────┐ │
 │ │ AWS Bedrock Converse API                                 │ │
@@ -88,16 +85,48 @@
 │ │ - Model Invocation Logging                             │ │
 │ └─────────────────────────────────────────────────────────┘ │
 └──────────────────────┬──────────────────────────────────────┘
-                       │
+                       │ [4] SQS Message
                        ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Verification Zone (検証層) - 継続                          │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ ExecutionResponseQueue (SQS)                            │ │
+│ │ - 実行ゾーンからのレスポンスを受信                        │ │
+│ │ - Dead Letter Queue (DLQ) で失敗メッセージを処理         │ │
+│ └──────────────────────┬──────────────────────────────────┘ │
+│                        │                                     │
+│ ┌─────────────────────▼──────────────────────────────────┐ │
+│ │ SlackResponseHandler                                    │ │
+│ │ タイムアウト: 30秒                                      │ │
+│ │ 責任範囲:                                              │ │
+│ │ - SQS メッセージを処理                                  │ │
+│ │ - ExecutionResponse を検証                              │ │
+│ │ - Slack API にレスポンスを投稿                          │ │
+│ │   (chat.postMessage with thread_ts)                    │ │
+│ │ - メッセージ分割（4000文字制限対応）                    │ │
+│ │ - リトライロジック（一時的エラー対応）                  │ │
+│ │ - CloudWatch メトリクス発行                             │ │
+│ │ [5] → Slack APIにHTTP POSTでレスポンス投稿             │ │
+│ │   (スレッド内に投稿)                                     │ │
+│ └──────────────────────┬──────────────────────────────────┘ │
+└────────────────────────┼────────────────────────────────────┘
+                         │ [5] HTTPS POST
+                         │ to Slack API (chat.postMessage)
+                         │ with thread_ts
+                         ↓
 ┌──────────────────────────────────────────────────────────────┐
 │ Slackワークスペース                                           │
-│ [5] BedrockProcessorからSlack APIへのPOSTを受信              │
+│ [6] SlackResponseHandlerからSlack APIへのPOSTを受信         │
 │ → スレッド内にAIレスポンスを表示                             │
 └──────────────────────────────────────────────────────────────┘
 
 フロー:
 [1] ユーザーが /ask "リクエスト" または @AIアプリ名 リクエスト を実行（添付ファイル可）
+[2] SlackEventHandler が即座に "考え中です..." を返答（3秒以内）
+[3] SlackEventHandler が Execution API を呼び出し（IAM認証）
+[4] BedrockProcessor が Bedrock API を呼び出し、結果を SQS キューに送信
+[5] SlackResponseHandler が SQS メッセージを処理し、Slack API に投稿
+[6] Slack ワークスペースに AI レスポンスが表示される
     または問い合わせチャンネルに質問が投稿されると自動的に一次回答を返信
 [2] SlackEventHandlerが即座に "処理中です..." を返す（3秒以内）
 [3] SlackEventHandlerがExecutionApi (API Gateway) を呼び出し（IAM認証）

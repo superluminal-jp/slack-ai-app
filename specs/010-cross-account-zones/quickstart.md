@@ -159,4 +159,4 @@ Error: EXECUTION_API_URL environment variable is required
 3. Slack アプリの Request URL を新しい Function URL に変更
 4. 動作確認後、既存スタックを削除
 
-**注意**: このプロジェクトは現在、split-stack アーキテクチャを標準として使用しています。単一スタック（SlackBedrockStack）はコードベースから削除されました。
+**注意**: このプロジェクトは現在、2つの独立したスタック（VerificationStack + ExecutionStack）を標準として使用しています。単一スタック（SlackBedrockStack）はコードベースから削除されました。

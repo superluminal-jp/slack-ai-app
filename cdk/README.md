@@ -118,7 +118,7 @@ For deploying to separate AWS accounts, set these in `cdk.json`:
 }
 ```
 
-Then follow the same steps as split-stack mode. The deployment script (`scripts/deploy-split-stacks.sh`) supports cross-account deployment.
+Then follow the same steps as above. The deployment script (`scripts/deploy-split-stacks.sh`) supports cross-account deployment.
 
 ## Stack Outputs
 

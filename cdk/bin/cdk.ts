@@ -47,56 +47,64 @@ function getApiArnFromUrl(
 }
 
 /**
- * Deployment Mode Selection:
+ * Deployment Architecture:
  *
- * 1. "split" (default): Split-stack deployment (same account)
- *    - ExecutionStack: BedrockProcessor + API Gateway
- *    - VerificationStack: SlackEventHandler + DynamoDB + Secrets
- *    - Deploy order: ExecutionStack → VerificationStack → ExecutionStack (update)
+ * The application uses two independent stacks that can be deployed separately:
+ * - ExecutionStack: BedrockProcessor + API Gateway
+ * - VerificationStack: SlackEventHandler + DynamoDB + Secrets
  *
- * 2. "cross-account": Cross-account deployment
- *    - Same as "split" but with different account IDs
- *    - Requires verificationAccountId and executionAccountId
+ * Deploy order: ExecutionStack → VerificationStack → ExecutionStack (update)
+ *
+ * Cross-account deployment is supported by setting verificationAccountId and executionAccountId.
+ * If both account IDs are the same (or not set), same-account deployment is used.
  */
 
-if (deploymentMode === "split" || deploymentMode === "cross-account") {
-  // Split-stack mode
+// Validate deployment mode (for backward compatibility)
+if (
+  deploymentMode &&
+  deploymentMode !== "split" &&
+  deploymentMode !== "cross-account"
+) {
+  throw new Error(
+    `Invalid deploymentMode: ${deploymentMode}. Must be "split" or "cross-account".`
+  );
+}
 
-  // Determine environments for cross-account
-  const executionEnv = executionAccountId
-    ? { account: executionAccountId, region: region }
-    : defaultEnv;
-  const verificationEnv = verificationAccountId
-    ? { account: verificationAccountId, region: region }
-    : defaultEnv;
+// Determine environments based on account IDs (cross-account if different accounts specified)
+const executionEnv = executionAccountId
+  ? { account: executionAccountId, region: region }
+  : defaultEnv;
+const verificationEnv = verificationAccountId
+  ? { account: verificationAccountId, region: region }
+  : defaultEnv;
 
-  // Create Execution Stack
-  const executionStack = new ExecutionStack(app, executionStackName, {
-    env: executionEnv,
-    verificationLambdaRoleArn: verificationLambdaRoleArn || undefined,
-    verificationAccountId: verificationAccountId || undefined,
+// Create Execution Stack
+new ExecutionStack(app, executionStackName, {
+  env: executionEnv,
+  verificationLambdaRoleArn: verificationLambdaRoleArn || undefined,
+  verificationAccountId: verificationAccountId || undefined,
+});
+
+// Create Verification Stack (requires Execution API URL from first deployment)
+if (executionApiUrl) {
+  const executionApiArn = getApiArnFromUrl(
+    executionApiUrl,
+    region,
+    executionAccountId || process.env.CDK_DEFAULT_ACCOUNT
+  );
+
+  new VerificationStack(app, verificationStackName, {
+    env: verificationEnv,
+    executionApiUrl: executionApiUrl,
+    executionApiArn: executionApiArn,
+    executionAccountId: executionAccountId || undefined,
   });
-
-  // Create Verification Stack (requires Execution API URL from first deployment)
-  if (executionApiUrl) {
-    const executionApiArn = getApiArnFromUrl(
-      executionApiUrl,
-      region,
-      executionAccountId || process.env.CDK_DEFAULT_ACCOUNT
-    );
-
-    new VerificationStack(app, verificationStackName, {
-      env: verificationEnv,
-      executionApiUrl: executionApiUrl,
-      executionApiArn: executionApiArn,
-      executionAccountId: executionAccountId || undefined,
-    });
-  } else {
-    // If no API URL, only synthesize Execution Stack
-    // User will need to deploy Execution Stack first, get URL, then re-run
-    console.log(`
+} else {
+  // If no API URL, only synthesize Execution Stack
+  // User will need to deploy Execution Stack first, get URL, then re-run
+  console.log(`
 ================================================================================
-SPLIT-STACK DEPLOYMENT - STEP 1
+DEPLOYMENT - STEP 1
 
 Execution Stack will be created. After deployment:
 
@@ -114,10 +122,5 @@ Execution Stack will be created. After deployment:
    npx cdk deploy ${executionStackName}
 
 ================================================================================
-    `);
-  }
-} else {
-  throw new Error(
-    `Invalid deploymentMode: ${deploymentMode}. Must be "split" or "cross-account".`
-  );
+  `);
 }

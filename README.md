@@ -1,4 +1,4 @@
-# Slack Bedrock MVP
+# Slack AI App
 
 > **日本語版**: [README.ja.md](README.ja.md)
 
@@ -97,7 +97,32 @@ The system processes requests through two independent zones that can be deployed
 │ ┌─────────────────────▼──────────────────────────────────┐ │
 │ │ BedrockProcessor                                        │ │
 │ │ - Calls Amazon Bedrock Converse API                    │ │
-│ │ - Manages thread history                                │ │
+│ │ - Processes attachments (images, documents)            │ │
+│ │ [4] → Sends response to SQS queue                     │ │
+│ └──────────────────────┬──────────────────────────────────┘ │
+└────────────────────────┼────────────────────────────────────┘
+                         │ [4] SQS Message
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Verification Zone (continued)                              │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ ExecutionResponseQueue (SQS)                            │ │
+│ │ - Receives responses from Execution Zone               │ │
+│ └──────────────────────┬──────────────────────────────────┘ │
+│                        │                                     │
+│ ┌─────────────────────▼──────────────────────────────────┐ │
+│ │ SlackResponseHandler                                    │ │
+│ │ - Processes SQS messages                                │ │
+│ │ - Posts responses to Slack API                         │ │
+│ │ [5] → Posts to Slack (chat.postMessage)               │ │
+│ └──────────────────────┬──────────────────────────────────┘ │
+└────────────────────────┼────────────────────────────────────┘
+                         │ [5] HTTPS POST
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Slack Workspace                                              │
+│ [6] AI response displayed in thread                         │
+└────────────────────────────────────────────────────────────┘
 │ │ - Processes attachments (images, documents)            │ │
 │ │ [4] → Posts response to Slack (thread reply)           │ │
 │ └────────────────────┬───────────────────────────────────┘ │

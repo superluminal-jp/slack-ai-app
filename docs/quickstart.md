@@ -475,6 +475,37 @@ aws iam get-role-policy \
 
 ---
 
+## SQS キュー設定
+
+このシステムは、実行ゾーン（Execution Zone）から検証ゾーン（Verification Zone）へのレスポンス送信に SQS キューを使用します。
+
+### ExecutionResponseQueue の設定
+
+**Verification Stack** に含まれる SQS キュー:
+
+- **キュー名**: `slackai-verification-execution-response-queue`
+- **Dead Letter Queue**: `slackai-verification-execution-response-dlq`
+- **可視性タイムアウト**: 30秒（Bedrock API 呼び出し時間を考慮）
+- **メッセージ保持期間**: 14日
+- **最大受信回数**: 3回（DLQ に送信）
+
+### クロスアカウント設定
+
+実行ゾーンと検証ゾーンを異なる AWS アカウントにデプロイする場合:
+
+1. **Verification Stack デプロイ後**:
+   - `ExecutionResponseQueueArn` をスタック出力から取得
+   - `ExecutionResponseQueueUrl` をスタック出力から取得
+
+2. **Execution Stack の環境変数**:
+   - `EXECUTION_RESPONSE_QUEUE_URL` に SQS キュー URL を設定
+
+3. **IAM 権限**:
+   - Execution Stack の BedrockProcessor Lambda ロールに `sqs:SendMessage` 権限を付与
+   - Verification Stack の SQS キューリソースポリシーで Execution Stack の Lambda ロールを許可
+
+詳細は [CDK README](cdk/README.md) のクロスアカウントデプロイセクションを参照してください。
+
 ## 次のステップ
 
 ### 基本機能の確認

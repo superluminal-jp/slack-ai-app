@@ -2,7 +2,7 @@
 #
 # deploy-split-stacks.sh
 #
-# Deploys the Slack AI application in split-stack mode.
+# Deploys the Slack AI application using two independent stacks.
 # This script handles the 3-phase deployment process:
 #   1. Deploy ExecutionStack (get API URL)
 #   2. Deploy VerificationStack (get Lambda Role ARN)
@@ -28,10 +28,14 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-CDK_DIR="cdk"
+# Get script directory and project root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+CDK_DIR="${PROJECT_ROOT}/cdk"
 EXECUTION_STACK_NAME="${EXECUTION_STACK_NAME:-SlackAI-Execution}"
 VERIFICATION_STACK_NAME="${VERIFICATION_STACK_NAME:-SlackAI-Verification}"
 AWS_REGION="${AWS_REGION:-ap-northeast-1}"
+AWS_PROFILE="${AWS_PROFILE:-}"
 
 # Functions
 log_info() {
@@ -108,9 +112,15 @@ get_stack_output() {
     local stack_name=$1
     local output_key=$2
 
+    local profile_args=""
+    if [[ -n "${AWS_PROFILE}" ]]; then
+        profile_args="--profile ${AWS_PROFILE}"
+    fi
+
     aws cloudformation describe-stacks \
         --stack-name "${stack_name}" \
         --region "${AWS_REGION}" \
+        ${profile_args} \
         --query "Stacks[0].Outputs[?OutputKey=='${output_key}'].OutputValue" \
         --output text 2>/dev/null || echo ""
 }
@@ -120,15 +130,20 @@ deploy_execution_stack() {
     log_info "Phase 1: Deploying Execution Stack"
     log_info "=========================================="
 
+    cd "${PROJECT_ROOT}"
     cd "${CDK_DIR}"
 
     # Ensure deployment mode is split
     update_cdk_context "deploymentMode" "split"
 
     # Deploy Execution Stack
-    npx cdk deploy "${EXECUTION_STACK_NAME}" --require-approval never
+    local profile_args=""
+    if [[ -n "${AWS_PROFILE}" ]]; then
+        profile_args="--profile ${AWS_PROFILE}"
+    fi
+    npx cdk deploy "${EXECUTION_STACK_NAME}" ${profile_args} --require-approval never
 
-    cd ..
+    cd "${PROJECT_ROOT}"
 
     # Get API URL from stack outputs
     local api_url=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionApiUrl")
@@ -152,12 +167,17 @@ deploy_verification_stack() {
     log_info "Phase 2: Deploying Verification Stack"
     log_info "=========================================="
 
+    cd "${PROJECT_ROOT}"
     cd "${CDK_DIR}"
 
     # Deploy Verification Stack
-    npx cdk deploy "${VERIFICATION_STACK_NAME}" --require-approval never
+    local profile_args=""
+    if [[ -n "${AWS_PROFILE}" ]]; then
+        profile_args="--profile ${AWS_PROFILE}"
+    fi
+    npx cdk deploy "${VERIFICATION_STACK_NAME}" ${profile_args} --require-approval never
 
-    cd ..
+    cd "${PROJECT_ROOT}"
 
     # Get Lambda Role ARN from stack outputs
     local role_arn=$(get_stack_output "${VERIFICATION_STACK_NAME}" "VerificationLambdaRoleArn")
@@ -183,12 +203,17 @@ update_execution_stack() {
     log_info "Phase 3: Updating Execution Stack Resource Policy"
     log_info "=========================================="
 
+    cd "${PROJECT_ROOT}"
     cd "${CDK_DIR}"
 
     # Re-deploy Execution Stack with resource policy
-    npx cdk deploy "${EXECUTION_STACK_NAME}" --require-approval never
+    local profile_args=""
+    if [[ -n "${AWS_PROFILE}" ]]; then
+        profile_args="--profile ${AWS_PROFILE}"
+    fi
+    npx cdk deploy "${EXECUTION_STACK_NAME}" ${profile_args} --require-approval never
 
-    cd ..
+    cd "${PROJECT_ROOT}"
 
     log_success "Execution Stack updated with resource policy"
 }
@@ -216,7 +241,7 @@ print_summary() {
 
 # Main execution
 main() {
-    log_info "Starting split-stack deployment..."
+    log_info "Starting deployment with two independent stacks..."
     echo ""
 
     check_prerequisites

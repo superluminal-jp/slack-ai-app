@@ -495,7 +495,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 Execution Layer (実行層) - AWS Bedrock Converse API + Slack API投稿版。
 
 このモジュールは、SlackEventHandlerで認可が検証された後、AWS Bedrock Converse APIを呼び出し、
-結果をSlack API (chat.postMessage) でスレッド返信として投稿します。
+結果を SQS キュー（ExecutionResponseQueue）に送信します。検証ゾーンの SlackResponseHandler が SQS メッセージを処理し、Slack API (chat.postMessage) でスレッド返信として投稿します。
 会話、画像生成、コード生成、データ分析など多様なAI機能に対応します。
 
 主な機能:
@@ -514,7 +514,8 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 from bedrock_client_converse import invoke_bedrock
-from slack_poster import post_to_slack
+from response_formatter import format_success_response, format_error_response
+from sqs_client import send_response_to_queue
 from thread_history import get_thread_history
 from attachment_processor import process_attachments
 
@@ -523,7 +524,9 @@ from attachment_processor import process_attachments
 # - invoke_bedrock(): Bedrock Converse API呼び出し（bedrock_client_converse.py）
 # - get_thread_history(): スレッド履歴取得（thread_history.py）
 # - process_attachments(): 添付ファイル処理（attachment_processor.py）
-# - post_to_slack(): Slack API投稿（slack_poster.py）
+# - format_success_response(): 成功レスポンスのフォーマット（response_formatter.py）
+# - format_error_response(): エラーレスポンスのフォーマット（response_formatter.py）
+# - send_response_to_queue(): SQS キューへの送信（sqs_client.py）
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -531,7 +534,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     BedrockProcessorエントリーポイント - Execution Layer (実行層)。
 
     SlackEventHandlerからAPI Gateway経由で呼び出しされ、Bedrock Converse APIを呼び出した後、
-    Slack API (chat.postMessage) でスレッド返信としてレスポンスを投稿します。
+    SQS キュー（ExecutionResponseQueue）にレスポンスを送信します。
+    検証ゾーンの SlackResponseHandler が SQS メッセージを処理し、Slack API (chat.postMessage) でスレッド返信として投稿します。
     会話、画像生成、コード生成、データ分析など多様なAI機能に対応します。
 
     Args:
@@ -555,7 +559,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     # 4. Bedrock Converse API呼び出し（invoke_bedrock）
     #    - テキスト、画像、ドキュメントテキストを統合
     #    - 会話履歴を含む
-    # 5. Slack API投稿（post_to_slack with thread_ts）
+    # 5. SQS キューにレスポンス送信（send_response_to_queue）
+    #    検証ゾーンの SlackResponseHandler が SQS メッセージを処理し、Slack API に投稿
 ```
 
 ---
