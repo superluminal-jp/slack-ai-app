@@ -12,6 +12,7 @@ The application uses two independent stacks that can be deployed separately, sup
 ## Deployment
 
 Two independent stacks that can be deployed to separate accounts:
+
 - **ExecutionStack**: BedrockProcessor + API Gateway
 - **VerificationStack**: SlackEventHandler + DynamoDB + Secrets
 
@@ -94,15 +95,26 @@ For automated 3-phase deployment, use the provided script:
 
 ```bash
 # From project root
-cd scripts
-chmod +x deploy-split-stacks.sh
-./deploy-split-stacks.sh
+# Load environment variables from .env
+set -a && source .env && set +a
+
+# Optional: Set AWS profile if using named profiles
+export AWS_PROFILE=your-profile-name
+
+# Run deployment script
+chmod +x scripts/deploy-split-stacks.sh
+./scripts/deploy-split-stacks.sh
 ```
 
 This script automatically:
+
 1. Deploys Execution Stack
-2. Deploys Verification Stack with ExecutionApiUrl
-3. Updates Execution Stack with VerificationLambdaRoleArn
+2. Gets ExecutionApiUrl and updates cdk.json
+3. Deploys Verification Stack with ExecutionApiUrl
+4. Gets VerificationLambdaRoleArn and updates cdk.json
+5. Updates Execution Stack with resource policy
+
+**Note**: The script supports AWS profile via `AWS_PROFILE` environment variable. If not set, it uses default AWS credentials.
 
 ### Cross-Account Deployment
 
@@ -123,30 +135,32 @@ Then follow the same steps as above. The deployment script (`scripts/deploy-spli
 ## Stack Outputs
 
 ### ExecutionStack
-| Output | Description |
-|--------|-------------|
-| ExecutionApiUrl | API Gateway URL for VerificationStack configuration |
-| ExecutionApiArn | API Gateway ARN for IAM policy |
-| BedrockProcessorArn | Lambda function ARN |
+
+| Output              | Description                                         |
+| ------------------- | --------------------------------------------------- |
+| ExecutionApiUrl     | API Gateway URL for VerificationStack configuration |
+| ExecutionApiArn     | API Gateway ARN for IAM policy                      |
+| BedrockProcessorArn | Lambda function ARN                                 |
 
 ### VerificationStack
-| Output | Description |
-|--------|-------------|
-| SlackEventHandlerUrl | Function URL for Slack Event Subscriptions |
+
+| Output                    | Description                                 |
+| ------------------------- | ------------------------------------------- |
+| SlackEventHandlerUrl      | Function URL for Slack Event Subscriptions  |
 | VerificationLambdaRoleArn | Role ARN for ExecutionStack resource policy |
-| SlackEventHandlerArn | Lambda function ARN |
+| SlackEventHandlerArn      | Lambda function ARN                         |
 
 ## Useful Commands
 
-| Command | Description |
-|---------|-------------|
-| `npm run build` | Compile TypeScript to JavaScript |
-| `npm run watch` | Watch for changes and compile |
-| `npm run test` | Run Jest unit tests |
-| `npx cdk deploy` | Deploy stack(s) |
-| `npx cdk diff` | Compare deployed stack with current state |
-| `npx cdk synth` | Emit synthesized CloudFormation template |
-| `npx cdk destroy` | Destroy stack(s) |
+| Command           | Description                               |
+| ----------------- | ----------------------------------------- |
+| `npm run build`   | Compile TypeScript to JavaScript          |
+| `npm run watch`   | Watch for changes and compile             |
+| `npm run test`    | Run Jest unit tests                       |
+| `npx cdk deploy`  | Deploy stack(s)                           |
+| `npx cdk diff`    | Compare deployed stack with current state |
+| `npx cdk synth`   | Emit synthesized CloudFormation template  |
+| `npx cdk destroy` | Destroy stack(s)                          |
 
 ## Destroy Order (Split Stack)
 
@@ -162,12 +176,12 @@ npx cdk destroy SlackAI-Execution
 
 ## Environment Variables
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| SLACK_BOT_TOKEN | Yes | Slack Bot OAuth Token |
-| SLACK_SIGNING_SECRET | Yes | Slack Signing Secret |
-| ENABLE_API_GATEWAY_MONITORING | No | Enable CloudWatch dashboard |
-| ALARM_EMAIL | No | Email for alarm notifications |
+| Variable                      | Required | Description                   |
+| ----------------------------- | -------- | ----------------------------- |
+| SLACK_BOT_TOKEN               | Yes      | Slack Bot OAuth Token         |
+| SLACK_SIGNING_SECRET          | Yes      | Slack Signing Secret          |
+| ENABLE_API_GATEWAY_MONITORING | No       | Enable CloudWatch dashboard   |
+| ALARM_EMAIL                   | No       | Email for alarm notifications |
 
 ## Testing
 

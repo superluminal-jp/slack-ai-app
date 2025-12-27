@@ -53,8 +53,10 @@ EOF
 # 2. cdk.json にアカウントIDを設定
 # "verificationAccountId" と "executionAccountId" を追加
 
-# 3. デプロイスクリプトを実行
-cd scripts && ./deploy-split-stacks.sh
+# 3. デプロイスクリプトを実行（AWSプロファイルはオプション）
+export AWS_PROFILE=your-profile-name  # オプション: AWSプロファイルを使用する場合
+set -a && source .env && set +a
+./scripts/deploy-split-stacks.sh
 ```
 
 **⚠️ 重要**: デプロイ後にホワイトリストを設定してください。[クイックスタートガイド](docs/quickstart.md)を参照。
@@ -303,4 +305,4 @@ aws logs tail /aws/lambda/bedrock-processor --follow
 
 ---
 
-**最終更新日**: 2025-12-27
+**最終更新日**: 2025-12-28

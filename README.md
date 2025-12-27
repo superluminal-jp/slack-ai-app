@@ -53,8 +53,10 @@ EOF
 # 2. Update cdk.json with account IDs
 # Add "verificationAccountId" and "executionAccountId" to context
 
-# 3. Run deployment script
-cd scripts && ./deploy-split-stacks.sh
+# 3. Run deployment script (with optional AWS profile)
+export AWS_PROFILE=your-profile-name  # Optional: if using AWS profiles
+set -a && source .env && set +a
+./scripts/deploy-split-stacks.sh
 ```
 
 **⚠️ Important**: Configure whitelist after deployment. See [Quick Start Guide](docs/quickstart.md).
@@ -303,4 +305,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 
-**Last Updated**: 2025-12-27
+**Last Updated**: 2025-12-28

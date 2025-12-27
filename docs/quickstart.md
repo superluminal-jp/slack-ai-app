@@ -5,7 +5,7 @@
 **ドキュメントタイプ**: セットアップガイド  
 **ステータス**: 推奨  
 **バージョン**: 1.0  
-**最終更新日**: 2025-12-27  
+**最終更新日**: 2025-12-28  
 **対象読者**: 開発者、DevOps エンジニア、システム管理者
 
 ---
@@ -185,10 +185,23 @@ cdk bootstrap aws://123456789012/ap-northeast-1
 
 ```bash
 # プロジェクトルートから
-cd scripts
-chmod +x deploy-split-stacks.sh
-./deploy-split-stacks.sh
+# .env ファイルから環境変数を読み込む
+set -a && source .env && set +a
+
+# AWS プロファイルを使用する場合（オプション）
+export AWS_PROFILE=your-profile-name
+
+# デプロイスクリプトを実行
+chmod +x scripts/deploy-split-stacks.sh
+./scripts/deploy-split-stacks.sh
 ```
+
+**注意**: デプロイスクリプトは自動的に以下を実行します：
+1. Execution Stack をデプロイ
+2. ExecutionApiUrl を取得して cdk.json を更新
+3. Verification Stack をデプロイ
+4. VerificationLambdaRoleArn を取得して cdk.json を更新
+5. Execution Stack を更新（リソースポリシー追加）
 
 #### 方法 2: 手動デプロイ
 
