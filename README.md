@@ -2,19 +2,19 @@
 
 > **日本語版**: [README.ja.md](README.ja.md)
 
-A serverless Slack bot that integrates with Amazon Bedrock to provide AI-generated responses directly within your existing Slack workflow. This solution eliminates the need to learn new tools while delivering enterprise-grade security and performance.
+A serverless Slack bot that securely connects Slack with Amazon Bedrock to provide AI-generated responses. This solution enables teams to use AI capabilities directly from Slack while maintaining enterprise-grade security and performance.
 
 ## What This System Does
 
-This application enables your team to use AI capabilities directly from Slack. Team members can ask questions, get AI-generated responses, and share knowledge—all without leaving the communication platform they already use daily.
+This application enables teams to use AI capabilities directly from Slack. Team members can ask questions, get AI-generated responses, and share knowledge—all within the Slack communication platform.
 
-**Key Value**: Natural workflow integration that reduces barriers to AI adoption while maintaining strong security boundaries.
+**Key Value**: Secure connection between Slack and generative AI services that reduces barriers to AI adoption while maintaining strong security boundaries.
 
 ## Why It Matters
 
 ### Immediate Benefits
 
-- **Zero learning curve**: Use AI where your team already works—no new tools to learn
+- **Zero learning curve**: Use AI directly from Slack—no new tools to learn
 - **Instant acknowledgment**: Get confirmation within 2 seconds that your request is being processed
 - **Fast responses**: Receive AI-generated answers in 5-30 seconds
 - **Team knowledge sharing**: See how colleagues effectively use AI, creating network effects
@@ -22,7 +22,7 @@ This application enables your team to use AI capabilities directly from Slack. T
 
 ### Business Impact
 
-- **Increased productivity**: Reduce context switching by keeping AI interactions within Slack
+- **Increased productivity**: Keep AI interactions within Slack to reduce context switching
 - **Faster decision-making**: Get answers to questions without leaving your workflow
 - **Organizational learning**: Team members naturally discover effective AI usage patterns through observation
 - **Cost efficiency**: Pay-per-use model with built-in rate limiting and token management
@@ -69,18 +69,21 @@ Slack → Verification Zone → Execution Zone → Slack
 ```
 
 **Verification Zone** ensures requests are legitimate:
+
 - Verifies Slack signatures to confirm requests come from Slack
 - Checks that users, channels, and workspaces actually exist
 - Enforces authorization rules (whitelist)
 - Prevents duplicate requests
 
 **Execution Zone** handles AI processing:
+
 - Calls Amazon Bedrock to generate responses
 - Manages conversation context and thread history
 - Processes attachments (images, documents)
 - Posts responses back to Slack
 
 This separation enables:
+
 - **Cross-account deployment**: Deploy verification and execution in different AWS accounts
 - **Independent updates**: Update one zone without affecting the other
 - **Enhanced security**: Stronger security boundaries between validation and processing
