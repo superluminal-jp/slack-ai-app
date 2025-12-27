@@ -39,7 +39,7 @@ Slack と Amazon Bedrock をセキュアに接続し、AI 生成レスポンス�
 
 ### デプロイ
 
-このプロジェクトは split-stack アーキテクチャ（VerificationStack + ExecutionStack）を使用します。詳細なデプロイ手順は [CDK README](cdk/README.md) を参照してください。
+このプロジェクトは 2 つの独立したスタック（VerificationStack と ExecutionStack）を使用し、個別にデプロイ可能で、クロスアカウントデプロイをサポートします。詳細なデプロイ手順は [CDK README](cdk/README.md) を参照してください。
 
 **クイックスタート（デプロイスクリプト使用）**:
 
@@ -117,16 +117,16 @@ Slack → 検証ゾーン → 実行ゾーン → Slack
 - **AWS CDK**: TypeScript によるインフラストラクチャ as コード
 - **DynamoDB**: トークンを保存し、検証結果をキャッシュし、重複を防止
 - **AWS Secrets Manager**: Slack 認証情報を安全に保存
-- **Split-stack デプロイ**: 検証と実行ゾーンを個別にデプロイ可能
+- **独立したデプロイ**: 検証と実行ゾーンを別々のスタックとしてデプロイ可能
 
 ## アーキテクチャ
 
-アプリケーションは、2 つの独立したスタックを持つ **split-stack アーキテクチャ**を使用します：
+アプリケーションは、**2 つの独立したスタック**を使用し、個別にデプロイ可能です：
 
 - **VerificationStack**: SlackEventHandler + DynamoDB + Secrets Manager
 - **ExecutionStack**: BedrockProcessor + API Gateway
 
-このアーキテクチャは以下をサポートします：
+この構成は以下をサポートします：
 
 - ✅ クロスアカウントデプロイ
 - ✅ 独立したライフサイクル管理

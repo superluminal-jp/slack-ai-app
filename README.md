@@ -39,7 +39,7 @@ This application enables teams to use AI capabilities directly from Slack. Team 
 
 ### Deploy
 
-This project uses a split-stack architecture (VerificationStack + ExecutionStack) that supports cross-account deployments. See [CDK README](cdk/README.md) for detailed deployment instructions.
+This project uses two independent stacks (VerificationStack and ExecutionStack) that can be deployed separately, supporting cross-account deployments. See [CDK README](cdk/README.md) for detailed deployment instructions.
 
 **Quick start with deployment script:**
 
@@ -117,16 +117,16 @@ This separation enables:
 - **AWS CDK**: Infrastructure as code in TypeScript
 - **DynamoDB**: Stores tokens, caches verification results, prevents duplicates
 - **AWS Secrets Manager**: Securely stores Slack credentials
-- **Split-stack deployment**: Verification and execution zones can be deployed independently
+- **Independent deployment**: Verification and execution zones can be deployed as separate stacks
 
 ## Architecture
 
-The application uses a **split-stack architecture** with two independent stacks:
+The application uses **two independent stacks** that can be deployed separately:
 
 - **VerificationStack**: SlackEventHandler + DynamoDB + Secrets Manager
 - **ExecutionStack**: BedrockProcessor + API Gateway
 
-This architecture supports:
+This structure supports:
 
 - ✅ Cross-account deployments
 - ✅ Independent lifecycle management
