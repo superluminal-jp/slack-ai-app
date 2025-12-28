@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Complete Stack Separation Architecture** (Structure Reorganization)
+  - Fully separated stack structure with self-contained directories
+  - Each stack (Execution/Verification) contains both CDK code and Lambda code
+  - Lambda code moved to `cdk/lib/{execution|verification}/lambda/`
+  - CDK code organized under `cdk/lib/{execution|verification}/`
+  - Simplified path references (e.g., `../lambda/bedrock-processor` instead of `../../../lambda/execution-stack/bedrock-processor`)
 - **Cross-Account Zones Architecture** (010-cross-account-zones)
   - Two independent stacks deployment (VerificationStack + ExecutionStack)
   - Cross-account IAM authentication support
@@ -31,7 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simplified README.md to focus on overview and navigation
 - Converted docs/README.md to navigation hub
 - CDK entry point now defaults to two independent stacks mode (single-stack mode removed)
-- Lambda folder structure reorganized: `lambda/verification-stack/` and `lambda/execution-stack/`
+- Lambda folder structure reorganized: `lambda/verification-stack/` and `lambda/execution-stack/` → moved to `cdk/lib/{execution|verification}/lambda/`
+- CDK code structure reorganized: stacks and constructs moved to `cdk/lib/{execution|verification}/` for complete stack isolation
+- Project structure now reflects complete stack independence with self-contained directories
 - DynamoDB table names now include stack name prefix to prevent conflicts
 - IAM policy for VerificationStack Lambda uses wildcard resource (access controlled by API Gateway resource policy)
 - Updated deployment documentation with `.env` file support and account ID configuration

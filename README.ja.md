@@ -270,11 +270,20 @@ export DEPLOYMENT_ENV=prod
 ```
 slack-ai-app/
 ├── cdk/                    # AWS CDK インフラストラクチャ
-├── lambda/
-│   ├── verification-stack/  # Verification Zone (検証層)
-│   │   └── slack-event-handler/
-│   └── execution-stack/     # Execution Zone (実行層)
-│       └── bedrock-processor/
+│   ├── lib/
+│   │   ├── execution/      # Execution Stack (完全自己完結)
+│   │   │   ├── execution-stack.ts
+│   │   │   ├── constructs/
+│   │   │   └── lambda/     # Lambdaコード
+│   │   │       └── bedrock-processor/
+│   │   ├── verification/   # Verification Stack (完全自己完結)
+│   │   │   ├── verification-stack.ts
+│   │   │   ├── constructs/
+│   │   │   └── lambda/     # Lambdaコード
+│   │   │       ├── slack-event-handler/
+│   │   │       └── slack-response-handler/
+│   │   └── types/         # 共通型定義
+│   └── bin/              # CDKエントリーポイント
 ├── docs/                   # ドキュメント
 │   ├── reference/          # アーキテクチャ、セキュリティ、運用
 │   ├── explanation/        # 設計原則、ADR
@@ -287,12 +296,12 @@ slack-ai-app/
 
 ```bash
 # テスト実行
-cd lambda/verification-stack/slack-event-handler && pytest tests/
-cd ../../execution-stack/bedrock-processor && pytest tests/
+cd cdk/lib/verification/lambda/slack-event-handler && pytest tests/
+cd ../../execution/lambda/bedrock-processor && pytest tests/
 
 # ログ確認
-aws logs tail /aws/lambda/slack-event-handler --follow
-aws logs tail /aws/lambda/bedrock-processor --follow
+aws logs tail /aws/lambda/SlackAI-Verification-Dev-SlackEventHandler --follow
+aws logs tail /aws/lambda/SlackAI-Execution-Dev-BedrockProcessor --follow
 ```
 
 開発ガイドラインは [CLAUDE.md](CLAUDE.md) を参照。

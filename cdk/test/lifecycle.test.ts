@@ -1,7 +1,7 @@
 import * as cdk from "aws-cdk-lib";
 import { Template } from "aws-cdk-lib/assertions";
-import { ExecutionStack } from "../lib/execution-stack";
-import { VerificationStack } from "../lib/verification-stack";
+import { ExecutionStack } from "../lib/execution/execution-stack";
+import { VerificationStack } from "../lib/verification/verification-stack";
 
 /**
  * Tests for independent lifecycle management of stacks.

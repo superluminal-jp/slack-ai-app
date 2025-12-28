@@ -381,6 +381,46 @@ Validation errors provide clear, actionable error messages indicating which fiel
 
 **Note**: `*` indicates that the variable is required if not provided via config file. Either environment variable or config file value must be set.
 
+## Project Structure
+
+The CDK project follows a fully separated stack structure where each stack is self-contained:
+
+```
+cdk/
+├── bin/
+│   └── cdk.ts                    # CDK application entry point
+├── lib/
+│   ├── execution/                # Execution Stack (完全自己完結)
+│   │   ├── execution-stack.ts    # Stack definition
+│   │   ├── constructs/
+│   │   │   ├── bedrock-processor.ts
+│   │   │   ├── execution-api.ts
+│   │   │   └── api-gateway-monitoring.ts
+│   │   └── lambda/               # Lambda code
+│   │       └── bedrock-processor/
+│   ├── verification/              # Verification Stack (完全自己完結)
+│   │   ├── verification-stack.ts # Stack definition
+│   │   ├── constructs/
+│   │   │   ├── slack-event-handler.ts
+│   │   │   ├── slack-response-handler.ts
+│   │   │   └── (other constructs)
+│   │   └── lambda/               # Lambda code
+│   │       ├── slack-event-handler/
+│   │       └── slack-response-handler/
+│   └── types/                    # Shared type definitions
+├── test/                         # Unit tests
+├── package.json
+├── tsconfig.json
+└── cdk.json
+```
+
+**Key Benefits of This Structure**:
+- **Complete Stack Isolation**: Each stack contains both CDK code and Lambda code
+- **Clear Separation**: Directory structure reflects stack independence
+- **Simple Paths**: Lambda paths are simple (e.g., `../lambda/bedrock-processor`)
+- **Maintainability**: Changes to one stack don't affect the other
+- **Best Practices**: Follows monorepo patterns for feature-based separation
+
 ## Testing
 
 ```bash

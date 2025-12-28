@@ -269,11 +269,20 @@ For technical details, see [Architecture Overview](docs/reference/architecture/o
 ```
 slack-ai-app/
 ├── cdk/                    # AWS CDK infrastructure
-├── lambda/
-│   ├── verification-stack/  # Verification Zone (検証層)
-│   │   └── slack-event-handler/
-│   └── execution-stack/     # Execution Zone (実行層)
-│       └── bedrock-processor/
+│   ├── lib/
+│   │   ├── execution/      # Execution Stack (完全自己完結)
+│   │   │   ├── execution-stack.ts
+│   │   │   ├── constructs/
+│   │   │   └── lambda/     # Lambdaコード
+│   │   │       └── bedrock-processor/
+│   │   ├── verification/   # Verification Stack (完全自己完結)
+│   │   │   ├── verification-stack.ts
+│   │   │   ├── constructs/
+│   │   │   └── lambda/     # Lambdaコード
+│   │   │       ├── slack-event-handler/
+│   │   │       └── slack-response-handler/
+│   │   └── types/         # 共通型定義
+│   └── bin/                # CDKエントリーポイント
 ├── docs/                   # Documentation
 │   ├── reference/          # Architecture, Security, Operations
 │   ├── explanation/        # Design Principles, ADRs
@@ -286,8 +295,8 @@ slack-ai-app/
 
 ```bash
 # Run tests
-cd lambda/verification-stack/slack-event-handler && pytest tests/
-cd ../../execution-stack/bedrock-processor && pytest tests/
+cd cdk/lib/verification/lambda/slack-event-handler && pytest tests/
+cd ../../execution/lambda/bedrock-processor && pytest tests/
 
 # View logs
 aws logs tail /aws/lambda/slack-event-handler --follow

@@ -27,7 +27,7 @@ export class SlackEventHandler extends Construct {
   constructor(scope: Construct, id: string, props: SlackEventHandlerProps) {
     super(scope, id);
 
-    const lambdaPath = path.join(__dirname, "../../../lambda/verification-stack/slack-event-handler");
+    const lambdaPath = path.join(__dirname, "../lambda/slack-event-handler");
     
     // Create Lambda function for Slack event handling
     this.function = new lambda.Function(this, "Handler", {

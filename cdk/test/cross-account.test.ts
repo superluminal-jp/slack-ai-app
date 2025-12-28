@@ -1,7 +1,7 @@
 import * as cdk from "aws-cdk-lib";
 import { Template, Match } from "aws-cdk-lib/assertions";
-import { ExecutionStack } from "../lib/execution-stack";
-import { VerificationStack } from "../lib/verification-stack";
+import { ExecutionStack } from "../lib/execution/execution-stack";
+import { VerificationStack } from "../lib/verification/verification-stack";
 
 describe("Cross-Account IAM Authentication", () => {
   // Set required environment variables for all tests

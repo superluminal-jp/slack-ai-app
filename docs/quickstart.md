@@ -73,7 +73,7 @@ npm install
 
 ```bash
 # Lambda 関数の依存関係
-cd lambda/verification-stack/slack-event-handler
+cd cdk/lib/verification/lambda/slack-event-handler
 pip install -r requirements.txt
 
 cd ../../execution-stack/bedrock-processor

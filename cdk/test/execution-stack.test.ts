@@ -1,6 +1,6 @@
 import * as cdk from "aws-cdk-lib";
 import { Template, Match } from "aws-cdk-lib/assertions";
-import { ExecutionStack } from "../lib/execution-stack";
+import { ExecutionStack } from "../lib/execution/execution-stack";
 
 describe("ExecutionStack", () => {
   let app: cdk.App;
