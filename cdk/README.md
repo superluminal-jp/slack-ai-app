@@ -9,12 +9,32 @@ The application uses two independent stacks that can be deployed separately, sup
 - **ExecutionStack**: BedrockProcessor + API Gateway
 - **VerificationStack**: SlackEventHandler + DynamoDB + Secrets
 
-## Deployment
+### Stack Independence
 
-Two independent stacks that can be deployed to separate accounts:
+Both stacks can be deployed independently using CDK CLI. This follows CDK best practices for modular infrastructure:
 
-- **ExecutionStack**: BedrockProcessor + API Gateway
-- **VerificationStack**: SlackEventHandler + DynamoDB + Secrets
+**Deploy ExecutionStack only:**
+```bash
+export DEPLOYMENT_ENV=dev
+npx cdk deploy SlackAI-Execution-Dev
+```
+
+**Deploy VerificationStack only** (requires `executionApiUrl` to be configured):
+```bash
+export DEPLOYMENT_ENV=dev
+npx cdk deploy SlackAI-Verification-Dev
+```
+
+**Key benefits of independent deployment:**
+- Deploy ExecutionStack without VerificationStack
+- Deploy VerificationStack after ExecutionStack is deployed (with `executionApiUrl` configured)
+- Update either stack independently without affecting the other
+- Deploy to different AWS accounts (cross-account deployment)
+- Better separation of concerns and lifecycle management
+
+**Stack dependencies:**
+- ExecutionStack: No dependencies (can be deployed standalone)
+- VerificationStack: Requires `executionApiUrl` from ExecutionStack (configured in `cdk.config.{env}.json` or via `--context`)
 
 ### Step 1: Create Configuration File
 
@@ -72,7 +92,6 @@ cp cdk.config.json.example cdk.config.prod.json
 {
   "awsRegion": "ap-northeast-1",
   "bedrockModelId": "jp.anthropic.claude-haiku-4-5-20251001-v1:0",
-  "deploymentMode": "split",
   "deploymentEnv": "dev",
   "verificationStackName": "SlackAI-Verification",
   "executionStackName": "SlackAI-Execution",
@@ -115,7 +134,6 @@ export DEPLOYMENT_ENV=dev  # or 'prod'
 
 # Deploy Execution Stack (note: stack name includes environment suffix)
 npx cdk deploy SlackAI-Execution-Dev \
-  --context deploymentMode=split \
   --context deploymentEnv=dev \
   --profile YOUR_PROFILE \
   --require-approval never
@@ -135,7 +153,6 @@ export DEPLOYMENT_ENV=dev  # or 'prod'
 
 # Deploy Verification Stack with ExecutionApiUrl
 npx cdk deploy SlackAI-Verification-Dev \
-  --context deploymentMode=split \
   --context deploymentEnv=dev \
   --context executionApiUrl=<ExecutionApiUrl from step 3> \
   --profile YOUR_PROFILE \
@@ -163,7 +180,6 @@ EXECUTION_RESPONSE_QUEUE_URL=$(aws cloudformation describe-stacks \
 
 # Update Execution Stack to add API Gateway resource policy and SQS queue URL
 npx cdk deploy SlackAI-Execution-Dev \
-  --context deploymentMode=split \
   --context deploymentEnv=dev \
   --context verificationLambdaRoleArn=<VerificationLambdaRoleArn from step 4> \
   --context executionResponseQueueUrl=${EXECUTION_RESPONSE_QUEUE_URL} \
@@ -213,16 +229,21 @@ This script automatically:
 
 ### Cross-Account Deployment
 
-For deploying to separate AWS accounts, set these in `cdk.json`:
+For deploying to separate AWS accounts, set these in your configuration file (`cdk.config.{env}.json`):
 
 ```json
 {
-  "context": {
-    "deploymentMode": "cross-account",
-    "verificationAccountId": "111111111111",
-    "executionAccountId": "222222222222"
-  }
+  "verificationAccountId": "111111111111",
+  "executionAccountId": "222222222222"
 }
+```
+
+Or via command-line context:
+
+```bash
+npx cdk deploy SlackAI-Execution-Dev \
+  --context verificationAccountId=111111111111 \
+  --context executionAccountId=222222222222
 ```
 
 Then follow the same steps as above. The deployment script (`scripts/deploy-split-stacks.sh`) supports cross-account deployment.
@@ -321,7 +342,6 @@ cdk/
 | --------------------------- | -------- | ------ | --------------------------------------------------------------------------------------- |
 | `awsRegion`                 | Yes      | string | AWS region for deployment (e.g., `ap-northeast-1`)                                      |
 | `bedrockModelId`            | Yes      | string | Bedrock model ID (e.g., `jp.anthropic.claude-haiku-4-5-20251001-v1:0`)                  |
-| `deploymentMode`            | Yes      | enum   | Deployment mode: `"split"` or `"cross-account"`                                         |
 | `deploymentEnv`             | Yes      | enum   | Deployment environment: `"dev"` or `"prod"`                                             |
 | `verificationStackName`     | Yes      | string | Base name for Verification Stack (without environment suffix)                           |
 | `executionStackName`        | Yes      | string | Base name for Execution Stack (without environment suffix)                              |
@@ -340,7 +360,7 @@ All configuration files are validated using Zod schemas:
 - **Type checking**: Ensures correct data types
 - **Format validation**: Validates AWS region format, account IDs (12 digits), ARN format, URL format
 - **Required fields**: Ensures all required fields are present
-- **Enum validation**: Ensures `deploymentMode` and `deploymentEnv` use valid values
+- **Enum validation**: Ensures `deploymentEnv` uses valid values (`dev` or `prod`)
 
 Validation errors provide clear, actionable error messages indicating which fields are invalid.
 
@@ -351,7 +371,6 @@ Validation errors provide clear, actionable error messages indicating which fiel
 | DEPLOYMENT_ENV                | No       | Deployment environment (`dev` or `prod`). Defaults to `dev`                                   |
 | AWS_REGION                    | No       | AWS region (overrides config file)                                                            |
 | BEDROCK_MODEL_ID              | No       | Bedrock model ID (overrides config file)                                                      |
-| DEPLOYMENT_MODE               | No       | Deployment mode (overrides config file)                                                       |
 | VERIFICATION_ACCOUNT_ID       | No       | Verification account ID (overrides config file)                                               |
 | EXECUTION_ACCOUNT_ID          | No       | Execution account ID (overrides config file)                                                  |
 | EXECUTION_RESPONSE_QUEUE_URL  | No       | SQS queue URL for responses (overrides config file)                                           |

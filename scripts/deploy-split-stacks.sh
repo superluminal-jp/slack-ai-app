@@ -220,9 +220,6 @@ deploy_execution_stack() {
     cd "${PROJECT_ROOT}"
     cd "${CDK_DIR}"
 
-    # Ensure deployment mode is split
-    update_cdk_context "deploymentMode" "split"
-    
     # Set deployment environment in context
     update_cdk_context "deploymentEnv" "${DEPLOYMENT_ENV}"
 
