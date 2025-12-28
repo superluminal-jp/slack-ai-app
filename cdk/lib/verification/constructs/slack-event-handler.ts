@@ -27,6 +27,11 @@ export class SlackEventHandler extends Construct {
   constructor(scope: Construct, id: string, props: SlackEventHandlerProps) {
     super(scope, id);
 
+    // Get deployment environment from stack name or context
+    const stack = cdk.Stack.of(this);
+    const stackName = stack.stackName;
+    const deploymentEnv = stackName.includes("-Prod") ? "prod" : "dev";
+
     const lambdaPath = path.join(__dirname, "../lambda/slack-event-handler");
     
     // Create Lambda function for Slack event handling
@@ -94,6 +99,12 @@ export class SlackEventHandler extends Construct {
         // WHITELIST_TEAM_IDS, WHITELIST_USER_IDS, WHITELIST_CHANNEL_IDS can be set via CDK context or environment
         // API Gateway URL for Execution Layer (required)
         EXECUTION_API_URL: props.executionApiUrl,
+        // Authentication method for Execution API (default: 'api_key')
+        // Set to 'iam' to use IAM authentication
+        EXECUTION_API_AUTH_METHOD: process.env.EXECUTION_API_AUTH_METHOD || "api_key",
+        // API key secret name in Secrets Manager (required if EXECUTION_API_AUTH_METHOD is 'api_key')
+        // Default: 'execution-api-key-{env}' (environment-specific)
+        EXECUTION_API_KEY_SECRET_NAME: process.env.EXECUTION_API_KEY_SECRET_NAME || `execution-api-key-${deploymentEnv}`,
       },
     });
 
@@ -110,6 +121,19 @@ export class SlackEventHandler extends Construct {
         actions: ["secretsmanager:GetSecretValue"],
         resources: [
           `arn:aws:secretsmanager:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:secret:${cdk.Stack.of(this).stackName}/slack/whitelist-config*`,
+        ],
+      })
+    );
+
+    // Grant Lambda function permission to read API key from Secrets Manager (for API key authentication)
+    // The secret name follows the pattern: execution-api-key (or can be customized)
+    // This permission allows reading the API key secret for Execution API Gateway authentication
+    this.function.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["secretsmanager:GetSecretValue"],
+        resources: [
+          `arn:aws:secretsmanager:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:secret:execution-api-key-${deploymentEnv}*`,
         ],
       })
     );

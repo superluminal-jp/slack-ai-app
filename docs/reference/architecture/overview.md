@@ -43,17 +43,19 @@
 │ │ [3] → ExecutionApi (API Gateway) を呼び出し           │ │
 │ └──────────────────────┬──────────────────────────────────┘ │
 └────────────────────────┼────────────────────────────────────┘
-                         │ [3] API Gateway呼び出し (IAM認証)
+                         │ [3] API Gateway呼び出し (IAM認証 または APIキー認証)
                          │ POST /execute
                          │ Payload: {channel, text, bot_token, thread_ts, attachments}
+                         │ 認証: IAM (SigV4) または APIキー (x-api-key ヘッダー)
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ Execution Zone (実行層)                                      │
 │ ┌─────────────────────────────────────────────────────────┐ │
 │ │ ExecutionApi (Execution Layer API)                      │ │
-│ │ API Gateway REST API (プライベート / IAM認証)             │ │
-│ │ - IAM認証のみ                                           │ │
-│ │ - リソースポリシー: SlackEventHandlerロールのみ         │ │
+│ │ API Gateway REST API (プライベート / デュアル認証)         │ │
+│ │ - IAM認証: SigV4署名による認証                          │ │
+│ │ - APIキー認証: x-api-key ヘッダーによる認証（デフォルト）│ │
+│ │ - リソースポリシー: SlackEventHandlerロール + APIキー   │ │
 │ │ - Lambda Proxy統合                                      │ │
 │ └──────────────────────┬──────────────────────────────────┘ │
 │                        │                                     │
@@ -123,15 +125,11 @@
 フロー:
 [1] ユーザーが /ask "リクエスト" または @AIアプリ名 リクエスト を実行（添付ファイル可）
 [2] SlackEventHandler が即座に "考え中です..." を返答（3秒以内）
-[3] SlackEventHandler が Execution API を呼び出し（IAM認証）
+[3] SlackEventHandler が Execution API を呼び出し（IAM認証 または APIキー認証、デフォルト: APIキー認証）
 [4] BedrockProcessor が Bedrock API を呼び出し、結果を SQS キューに送信
 [5] SlackResponseHandler が SQS メッセージを処理し、Slack API に投稿
 [6] Slack ワークスペースに AI レスポンスが表示される
     または問い合わせチャンネルに質問が投稿されると自動的に一次回答を返信
-[2] SlackEventHandlerが即座に "処理中です..." を返す（3秒以内）
-[3] SlackEventHandlerがExecutionApi (API Gateway) を呼び出し（IAM認証）
-[4] BedrockProcessorがBedrock Converse APIを呼び出し、Slack APIにPOST（スレッド返信）
-[5] Slackスレッド内に最終レスポンスが表示される（5〜30秒後）
 ```
 
 ## 2.2 システムコンポーネント
@@ -141,13 +139,13 @@
 | Slack             | ユーザーインターフェース | Slack API              | コマンド受付、メッセージ表示、スレッド管理                                                                                                   |
 | SlackEventHandler | 検証層処理               | Python 3.11            | 署名検証（鍵 1）、Existence Check（鍵 2）、ホワイトリスト認可（3c）、API Gateway 呼び出し、即座応答、添付ファイルメタデータ抽出                                        |
 | Function URL      | パブリックエンドポイント | Lambda Function URL    | リクエスト受付、SlackEventHandler へのルーティング                                                                                           |
-| ExecutionApi      | 内部 API                 | API Gateway (IAM 認証) | 内部通信の保護（IAM 認証による）、Lambda Proxy 統合                                                                                          |
+| ExecutionApi      | 内部 API                 | API Gateway (デュアル認証) | 内部通信の保護（IAM認証 または APIキー認証）、Lambda Proxy 統合、リソースポリシーによるアクセス制御                                                                                          |
 | BedrockProcessor  | AI 処理                  | Python 3.11            | Bedrock Converse API 呼び出し、スレッド履歴取得、スレッド返信、添付ファイル処理                                                              |
 | Bedrock Converse  | AI モデル                | Foundation Model       | 統一インターフェース、マルチモーダル入力（テキスト+画像）、多様な AI 機能（会話、画像生成、コード生成、データ分析など、モデル選択可能）      |
 | DynamoDB          | データストア             | DynamoDB               | トークンストレージ (slack-workspace-tokens)、イベント重複排除 (slack-event-dedupe)、Existence Check キャッシュ (slack-existence-check-cache) |
 | LibreOffice Layer | PPTX 変換                | Lambda Layer           | PowerPoint スライドを画像に変換（オプション）                                                                                                |
 
-**データフロー**: Slack → SlackEventHandler Function URL → SlackEventHandler（署名検証、Existence Check、即座応答、添付ファイルメタデータ抽出）→ ExecutionApi (API Gateway, IAM 認証) → BedrockProcessor（スレッド履歴取得、添付ファイルダウンロード・処理）→ Bedrock Converse API（テキスト+画像分析）→ Slack API（スレッド返信）→ Slack
+**データフロー**: Slack → SlackEventHandler Function URL → SlackEventHandler（署名検証、Existence Check、即座応答、添付ファイルメタデータ抽出）→ ExecutionApi (API Gateway, IAM認証 または APIキー認証) → BedrockProcessor（スレッド履歴取得、添付ファイルダウンロード・処理）→ Bedrock Converse API（テキスト+画像分析）→ Slack API（スレッド返信）→ Slack
 
 **スレッド処理フロー**: Slack Event (`event.thread_ts` or `event.ts`) → BedrockProcessor（`conversations.replies`で履歴取得）→ Bedrock Converse API（会話履歴を含む）→ Slack API（`chat.postMessage` with `thread_ts`）→ Slack スレッド内に表示
 
@@ -192,7 +190,7 @@
 
 - **レイヤー 1-2 (Slack/Function URL)**: T-02 (アカウント乗っ取り)、T-07 (DDoS)
 - **レイヤー 3 (SlackEventHandler)**: T-01 (シークレット漏洩)、T-03 (リプレイ)、T-08 (権限昇格)、Two-Key Defense
-- **レイヤー 4 (ExecutionApi IAM 認証)**: T-05 (IAM 侵害)、内部 API 保護
+- **レイヤー 4 (ExecutionApi デュアル認証)**: T-05 (IAM 侵害)、内部 API 保護、非AWS API統合対応
 - **レイヤー 5-6 (Bedrock Converse API)**: T-11 (モデル乱用)
 
 詳細は [セキュリティ要件](../security/requirements.md) を参照してください。

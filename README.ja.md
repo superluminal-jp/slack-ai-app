@@ -120,15 +120,16 @@ export DEPLOYMENT_ENV=prod
 │ │ [3] → Execution API を呼び出し（IAM 認証）              │ │
 │ └──────────────────────┬──────────────────────────────────┘ │
 └────────────────────────┼────────────────────────────────────┘
-                         │ [3] API Gateway (IAM 認証)
+                         │ [3] API Gateway (IAM認証 または APIキー認証)
                          │ POST /execute
+                         │ 認証: IAM (SigV4) または APIキー (x-api-key ヘッダー)
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ 実行ゾーン (Execution Zone)                                  │
 │ ┌─────────────────────────────────────────────────────────┐ │
 │ │ Execution API (API Gateway)                             │ │
-│ │ - IAM 認証のみ                                           │ │
-│ │ - リソースポリシー: 検証 Lambda ロールのみ              │ │
+│ │ - デュアル認証: IAM認証 または APIキー認証（デフォルト: APIキー認証）│ │
+│ │ - リソースポリシー: 検証 Lambda ロール + APIキー        │ │
 │ └──────────────────────┬──────────────────────────────────┘ │
 │                        │                                     │
 │ ┌─────────────────────▼──────────────────────────────────┐ │
@@ -181,7 +182,7 @@ export DEPLOYMENT_ENV=prod
 フロー:
 [1] ユーザーが Slack からリクエストを送信
 [2] 検証ゾーンが即座に応答（3 秒以内）
-[3] 検証ゾーンが Execution API を呼び出し（IAM 認証）
+[3] 検証ゾーンが Execution API を呼び出し（IAM認証 または APIキー認証、デフォルト: APIキー認証）
 [4] 実行ゾーンが Bedrock で処理し、Slack に投稿
 [5] レスポンスが Slack スレッド内に表示（5〜30 秒後）
 ```
@@ -234,7 +235,8 @@ export DEPLOYMENT_ENV=prod
 
 - **AWS CDK**: TypeScript によるインフラストラクチャ as コード
 - **DynamoDB**: トークンを保存し、検証結果をキャッシュし、重複を防止
-- **AWS Secrets Manager**: Slack 認証情報を安全に保存
+- **AWS Secrets Manager**: Slack 認証情報と API キーを安全に保存
+- **API Gateway**: デュアル認証（IAM 認証と API キー認証）によるスタック間通信
 - **独立したデプロイ**: 検証と実行ゾーンを別々のスタックとしてデプロイ可能
 
 ## アーキテクチャ
@@ -308,11 +310,18 @@ aws logs tail /aws/lambda/SlackAI-Execution-Dev-BedrockProcessor --follow
 
 ## 環境変数
 
-| 変数                   | 説明                                             |
-| ---------------------- | ------------------------------------------------ |
-| `SLACK_SIGNING_SECRET` | Slack アプリ署名シークレット（初回デプロイのみ） |
-| `SLACK_BOT_TOKEN`      | Slack ボット OAuth トークン（初回デプロイのみ）  |
-| `BEDROCK_MODEL_ID`     | Bedrock モデル（cdk.json で設定）                |
+| 変数                            | 説明                                                | デフォルト                                     |
+| ------------------------------- | --------------------------------------------------- | ---------------------------------------------- |
+| `SLACK_SIGNING_SECRET`          | Slack アプリ署名シークレット（初回デプロイのみ）    | -                                              |
+| `SLACK_BOT_TOKEN`               | Slack ボット OAuth トークン（初回デプロイのみ）     | -                                              |
+| `BEDROCK_MODEL_ID`              | Bedrock モデル（cdk.json で設定）                   | -                                              |
+| `EXECUTION_API_AUTH_METHOD`     | Execution API の認証方法（`iam` または `api_key`）  | `api_key`                                      |
+| `EXECUTION_API_KEY_SECRET_NAME` | API キー認証使用時の Secrets Manager シークレット名 | `execution-api-key-{env}` (環境ごとに自動設定) |
+
+**認証方法**:
+
+- **IAM 認証**: AWS Signature Version 4 (SigV4) 署名による認証
+- **API キー認証**: AWS Secrets Manager に保存された API キーを使用（デフォルト）
 
 シークレットは初回デプロイ後、AWS Secrets Manager に保存されます。
 
@@ -350,3 +359,10 @@ aws logs tail /aws/lambda/SlackAI-Execution-Dev-BedrockProcessor --follow
 ---
 
 **最終更新日**: 2025-12-28
+
+## 最近の更新
+
+- **2025-12-28**: Execution API Gateway にデュアル認証サポート（IAM 認証と API キー認証）を追加
+  - デフォルト認証方法: API キー認証（`EXECUTION_API_AUTH_METHOD` 環境変数で設定可能）
+  - API キーは AWS Secrets Manager に安全に保存
+  - 将来的な非 AWS API との統合に対応

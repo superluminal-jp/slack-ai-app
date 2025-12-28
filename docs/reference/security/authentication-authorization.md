@@ -101,7 +101,7 @@
 | **Slack**             | ユーザー認証              | SSO + MFA                    | リクエスト不可 |
 | **Function URL**      | エンドポイント公開        | なし（署名検証は Lambda 内） | -              |
 | **SlackEventHandler** | 署名検証、Existence Check | Signing Secret + Bot Token   | 401/403 を返す |
-| **ExecutionApi**      | 内部 API 保護             | IAM 認証                     | 403 を返す     |
+| **ExecutionApi**      | 内部 API 保護             | IAM認証 または APIキー認証（デフォルト: APIキー認証） | 403 を返す     |
 | **BedrockProcessor**  | AI 処理実行               | IAM ロール                   | エラーログ     |
 
 ---
@@ -353,17 +353,28 @@ def check_entity_existence(
 - ユーザーフレンドリーなエラーメッセージを返す
 - リクエストは処理しない
 
-### レイヤー 4: ExecutionApi（IAM 認証）
+### レイヤー 4: ExecutionApi（デュアル認証: IAM と API キー）
 
-**目的**: 内部 API の保護
+**目的**: 内部 API の保護、非AWS API統合への対応
 
 **実装詳細**:
 
 - API Gateway REST API
-- IAM 認証のみ（パブリックアクセス不可）
-- リソースポリシー: SlackEventHandler ロールのみ許可
+- **デュアル認証**: IAM認証 と APIキー認証の両方をサポート
+- **デフォルト認証方法**: APIキー認証（環境変数 `EXECUTION_API_AUTH_METHOD` で制御）
+- リソースポリシー: SlackEventHandler ロール + APIキー認証を許可
 
-**IAM ポリシー例**:
+**認証方法の選択**:
+
+- **IAM認証**: AWS Signature Version 4 (SigV4) 署名による認証
+  - 既存のIAM認証機能を維持（後方互換性）
+  - クロスアカウントデプロイに対応
+- **APIキー認証**: `x-api-key` ヘッダーによる認証（デフォルト）
+  - AWS Secrets ManagerにAPIキーを保存
+  - 非AWS APIとの統合に対応
+  - 使用量プランによるレート制限
+
+**リソースポリシー例**:
 
 ```json
 {
@@ -375,16 +386,36 @@ def check_entity_existence(
         "AWS": "arn:aws:iam::ACCOUNT_ID:role/SlackEventHandlerRole"
       },
       "Action": "execute-api:Invoke",
+      "Resource": "arn:aws:execute-api:REGION:ACCOUNT_ID:API_ID/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalAccount": "ACCOUNT_ID"
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "execute-api:Invoke",
       "Resource": "arn:aws:execute-api:REGION:ACCOUNT_ID:API_ID/*"
     }
   ]
 }
 ```
 
+**APIキー管理**:
+
+- APIキーはAWS Secrets Managerに保存（暗号化）
+- シークレット名: `execution-api-key`（デフォルト、環境変数で変更可能）
+- APIキー値はログ、環境変数、コードに露出しない
+- ダウンタイムなしでAPIキーをローテーション可能
+
 **セキュリティ効果**:
 
 - 内部 API への不正アクセス防止
 - 最小権限の原則
+- 非AWS APIとの統合に対応
+- 柔軟な認証方法の選択
 
 ### レイヤー 5: BedrockProcessor（実行層）
 

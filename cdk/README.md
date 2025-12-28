@@ -257,6 +257,7 @@ Then follow the same steps as above. The deployment script (`scripts/deploy-spli
 | ExecutionApiUrl     | API Gateway URL for VerificationStack configuration |
 | ExecutionApiArn     | API Gateway ARN for IAM policy                      |
 | BedrockProcessorArn | Lambda function ARN                                 |
+| ExecutionApiKeyId   | API Gateway API Key ID (if API key auth is enabled) |
 
 ### VerificationStack
 
@@ -321,6 +322,13 @@ export DEPLOYMENT_ENV=prod
 
 **Note**: If `DEPLOYMENT_ENV` is not set, defaults to `dev` with a warning. Each environment should use separate Slack apps/workspaces or different secrets for security.
 
+**Environment-Specific Resource Names**:
+- API Gateway API Key: `execution-api-key-{env}` (e.g., `execution-api-key-dev`, `execution-api-key-prod`)
+- API Gateway Usage Plan: `execution-api-usage-plan-{env}` (e.g., `execution-api-usage-plan-dev`, `execution-api-usage-plan-prod`)
+- Secrets Manager Secret: `execution-api-key-{env}` (e.g., `execution-api-key-dev`, `execution-api-key-prod`)
+
+These resource names are automatically suffixed with the environment name to ensure complete isolation between dev and prod environments.
+
 ## Configuration Files
 
 CDK configuration is managed through environment-specific JSON files with type validation using Zod.
@@ -376,6 +384,7 @@ Validation errors provide clear, actionable error messages indicating which fiel
 | EXECUTION_RESPONSE_QUEUE_URL  | No       | SQS queue URL for responses (overrides config file)                                           |
 | SLACK_BOT_TOKEN               | No\*     | Slack Bot OAuth Token (required if not set in config file. Takes precedence over config file) |
 | SLACK_SIGNING_SECRET          | No\*     | Slack Signing Secret (required if not set in config file. Takes precedence over config file)  |
+| ENABLE_API_KEY_AUTH           | No       | Enable API key authentication for Execution API Gateway (default: true, set to "false" to disable) |
 | ENABLE_API_GATEWAY_MONITORING | No       | Enable CloudWatch dashboard                                                                   |
 | ALARM_EMAIL                   | No       | Email for alarm notifications                                                                 |
 

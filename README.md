@@ -233,7 +233,8 @@ This separation enables:
 
 - **AWS CDK**: Infrastructure as code in TypeScript
 - **DynamoDB**: Stores tokens, caches verification results, prevents duplicates
-- **AWS Secrets Manager**: Securely stores Slack credentials
+- **AWS Secrets Manager**: Securely stores Slack credentials and API keys
+- **API Gateway**: Dual authentication (IAM and API key) for inter-stack communication
 - **Independent deployment**: Verification and execution zones can be deployed as separate stacks
 
 ## Architecture
@@ -307,11 +308,17 @@ See [CLAUDE.md](CLAUDE.md) for development guidelines.
 
 ## Environment Variables
 
-| Variable               | Description                                  |
-| ---------------------- | -------------------------------------------- |
-| `SLACK_SIGNING_SECRET` | Slack app signing secret (first deploy only) |
-| `SLACK_BOT_TOKEN`      | Slack bot OAuth token (first deploy only)    |
-| `BEDROCK_MODEL_ID`     | Bedrock model (configured in cdk.json)       |
+| Variable                        | Description                                                      | Default     |
+| ------------------------------- | ---------------------------------------------------------------- | ----------- |
+| `SLACK_SIGNING_SECRET`          | Slack app signing secret (first deploy only)                     | -           |
+| `SLACK_BOT_TOKEN`               | Slack bot OAuth token (first deploy only)                        | -           |
+| `BEDROCK_MODEL_ID`              | Bedrock model (configured in cdk.json)                          | -           |
+| `EXECUTION_API_AUTH_METHOD`     | Authentication method for Execution API (`iam` or `api_key`)     | `api_key`   |
+| `EXECUTION_API_KEY_SECRET_NAME` | Secrets Manager secret name for API key (if using API key auth)  | `execution-api-key-{env}` (environment-specific) |
+
+**Authentication Methods**:
+- **IAM Authentication**: Uses AWS Signature Version 4 (SigV4) signing with IAM credentials
+- **API Key Authentication**: Uses API key stored in AWS Secrets Manager (default)
 
 Secrets are stored in AWS Secrets Manager after first deployment.
 
@@ -349,3 +356,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 ---
 
 **Last Updated**: 2025-12-28
+
+## Recent Updates
+
+- **2025-12-28**: Added dual authentication support (IAM and API key) for Execution API Gateway
+  - Default authentication method: API key (configurable via `EXECUTION_API_AUTH_METHOD`)
+  - API keys stored securely in AWS Secrets Manager
+  - Supports future integrations with non-AWS APIs
