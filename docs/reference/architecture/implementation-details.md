@@ -138,6 +138,12 @@ SlackEventHandler は署名検証、Existence Check、認可を行い、即座�
 - **鍵1**: HMAC SHA256 署名検証（Signing Secret）
 - **鍵2**: Slack API Existence Check（Bot Token） - team_id, user_id, channel_id の実在性確認
 
+**Execution API 認証**:
+- **デフォルト**: APIキー認証（環境変数 `EXECUTION_API_AUTH_METHOD=api_key`）
+- **代替**: IAM認証（環境変数 `EXECUTION_API_AUTH_METHOD=iam`）
+- APIキーは AWS Secrets Manager から取得（`secrets_manager_client.py`）
+- IAM認証の場合は SigV4 署名を使用（`api_gateway_client.py`）
+
 ```python
 """
 Verification Layer (検証層) - 信頼境界の強制 + 非同期Lambda呼び出し。
@@ -415,19 +421,29 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         }))
 
         # ExecutionApi (API Gateway) を呼び出し
-        lambda_payload = {
-            "team_id": team_id,
-            "user_id": user_id,
-            "channel_id": channel_id,
-            "user_message": text,
-            "response_url": response_url,
-            "correlation_id": correlation_id
+        # 認証方法は環境変数 EXECUTION_API_AUTH_METHOD で制御（デフォルト: api_key）
+        # IAM認証: SigV4署名を使用
+        # APIキー認証: Secrets Managerから取得したAPIキーをx-api-keyヘッダーに設定
+        from api_gateway_client import invoke_execution_api
+        
+        execution_api_url = os.environ.get("EXECUTION_API_URL")
+        auth_method = os.environ.get("EXECUTION_API_AUTH_METHOD", "api_key").lower()
+        api_key_secret_name = os.environ.get("EXECUTION_API_KEY_SECRET_NAME", "execution-api-key")
+        
+        payload = {
+            "channel": channel_id,
+            "text": text,
+            "bot_token": bot_token,
+            "thread_ts": thread_ts,  # スレッドタイムスタンプ（オプション）
+            "attachments": attachments  # 添付ファイルメタデータ（オプション）
         }
-
-        lambda_client.invoke(
-            api_url=execution_api_url,  # ExecutionApi (API Gateway) のURL
-            InvocationType="Event",  # 非同期呼び出し
-            Payload=json.dumps(lambda_payload).encode("utf-8")
+        
+        # API Gateway を呼び出し（IAM認証 または APIキー認証）
+        response = invoke_execution_api(
+            api_url=execution_api_url,
+            payload=payload,
+            auth_method=auth_method,
+            api_key_secret_name=api_key_secret_name if auth_method == "api_key" else None
         )
 
         print(json.dumps({

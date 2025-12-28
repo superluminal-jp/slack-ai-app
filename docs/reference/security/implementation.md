@@ -10,7 +10,7 @@
   - 3a. HMAC SHA256 署名検証
   - **3b. Slack API Existence Check（NEW）**
   - 3c. 認可（ホワイトリスト）
-- **レイヤー 4（ExecutionApi）**: IAM 認証による内部 API 保護
+- **レイヤー 4（ExecutionApi）**: デュアル認証（IAM認証 または APIキー認証）による内部 API 保護
 - **レイヤー 5（BedrockProcessor）**: Bedrock Guardrails
 - **レイヤー 6（Bedrock）**: Automated Reasoning
 

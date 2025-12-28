@@ -82,7 +82,7 @@ pip install -r requirements.txt
 
 ### ステップ 3: 設定ファイルの作成
 
-CDK設定ファイルを作成して、Slack認証情報とAWSアカウントIDを設定します：
+CDK 設定ファイルを作成して、Slack 認証情報と AWS アカウント ID を設定します：
 
 ```bash
 # 開発環境用の設定ファイルを作成
@@ -108,8 +108,9 @@ cp cdk/cdk.config.json.example cdk/cdk.config.prod.json
 }
 ```
 
-**重要**: 
-- 設定ファイルには機密情報が含まれるため、Gitにコミットしないでください（`.gitignore`に含まれています）
+**重要**:
+
+- 設定ファイルには機密情報が含まれるため、Git にコミットしないでください（`.gitignore`に含まれています）
 - 環境変数（`SLACK_BOT_TOKEN`、`SLACK_SIGNING_SECRET`）として設定することも可能ですが、設定ファイルの方が管理しやすくなります
 
 ### ステップ 4: CDK ブートストラップ（初回のみ）
@@ -144,16 +145,18 @@ cdk bootstrap aws://123456789012/ap-northeast-1
 2. 「Scopes」セクションで以下の Bot Token Scopes を追加：
 
    **必須スコープ**:
+
    - `app_mentions:read` - メンションを読み取る
    - `channels:history` - チャンネルのメッセージ履歴を読み取る
    - `channels:read` - チャンネル情報を読み取る（Existence Check 用）
    - `chat:write` - メッセージを送信する
    - `files:read` - ファイルを読み取る（添付ファイル処理用）
-   - `reactions:write` - リアクションを追加/削除する（リクエスト受付時👀、成功時✅、失敗時❌の表示用）
+   - `reactions:write` - リアクションを追加/削除する（リクエスト受付時 👀、成功時 ✅、失敗時 ❌ の表示用）
    - `team:read` - チーム情報を読み取る（Existence Check 用）
    - `users:read` - ユーザー情報を読み取る（Existence Check 用）
 
    **オプションスコープ**（DM・プライベートチャンネル対応時に追加）:
+
    - `groups:history` - プライベートチャンネルの履歴を読み取る
    - `groups:read` - プライベートチャンネル情報を読み取る
    - `im:history` - ダイレクトメッセージの履歴を読み取る
@@ -193,7 +196,7 @@ cdk bootstrap aws://123456789012/ap-northeast-1
 
 ### ステップ 1: CDK スタックのデプロイ
 
-このプロジェクトは 2 つの独立したスタック（VerificationStack と ExecutionStack）を使用します。3段階のデプロイプロセスが必要です。
+このプロジェクトは 2 つの独立したスタック（VerificationStack と ExecutionStack）を使用します。3 段階のデプロイプロセスが必要です。
 
 #### 方法 1: デプロイスクリプトを使用（推奨）
 
@@ -213,11 +216,12 @@ chmod +x scripts/deploy-split-stacks.sh
 **注意**: デプロイスクリプトは`cdk.config.{env}.json`ファイルから設定を自動的に読み込みます。環境変数（`SLACK_BOT_TOKEN`、`SLACK_SIGNING_SECRET`）もサポートされていますが、設定ファイルの方が推奨されます。
 
 **注意**: デプロイスクリプトは自動的に以下を実行します：
+
 1. Execution Stack をデプロイ
 2. ExecutionApiUrl を取得して `cdk.config.{env}.json` を更新
 3. Verification Stack をデプロイ
 4. VerificationLambdaRoleArn と ExecutionResponseQueueUrl を取得して `cdk.config.{env}.json` を更新
-5. Execution Stack を更新（リソースポリシーとSQSキューURL設定）
+5. Execution Stack を更新（リソースポリシーと SQS キュー URL 設定）
 
 #### 方法 2: 手動デプロイ
 
@@ -257,7 +261,8 @@ npx cdk deploy SlackAI-Execution-Dev \
   --require-approval never
 ```
 
-**重要**: 
+**重要**:
+
 - スタック名には環境サフィックス（`-Dev` または `-Prod`）が自動的に追加されます
 - `DEPLOYMENT_ENV` 環境変数を設定することで、正しい環境のスタックがデプロイされます
 - `cdk.config.{env}.json` ファイルに値を設定することで、`--context` オプションの代わりに使用できます
@@ -265,11 +270,14 @@ npx cdk deploy SlackAI-Execution-Dev \
 デプロイ中に以下のリソースが作成されます：
 
 **ExecutionStack**:
+
 - Lambda 関数（BedrockProcessor）
-- API Gateway（Execution API）
+- API Gateway（Execution API、デュアル認証: IAM 認証と API キー認証）
+- API Gateway API キーと使用量プラン（API キー認証が有効な場合）
 - CloudWatch アラームとメトリクス
 
 **VerificationStack**:
+
 - Lambda 関数（SlackEventHandler, SlackResponseHandler）
 - DynamoDB テーブル（Token Storage, Event Dedupe, Existence Check Cache, Whitelist Config, Rate Limit）
 - SQS キュー（ExecutionResponseQueue, ExecutionResponseDlq）
@@ -282,6 +290,7 @@ npx cdk deploy SlackAI-Execution-Dev \
 デプロイ完了後、以下の出力が表示されます：
 
 **VerificationStack の出力**:
+
 ```
 SlackAI-Verification-Dev.SlackEventHandlerUrl = https://xxxxxxxxxx.lambda-url.ap-northeast-1.on.aws/
 SlackAI-Verification-Dev.VerificationLambdaRoleArn = arn:aws:iam::123456789012:role/...
@@ -290,13 +299,99 @@ SlackAI-Verification-Dev.ExecutionResponseQueueArn = arn:aws:sqs:ap-northeast-1:
 ```
 
 **ExecutionStack の出力**:
+
 ```
 SlackAI-Execution-Dev.ExecutionApiUrl = https://xxxxxxxxxx.execute-api.ap-northeast-1.amazonaws.com/prod/
 SlackAI-Execution-Dev.ExecutionApiArn = arn:aws:execute-api:ap-northeast-1:123456789012:xxx/*/*/*
 SlackAI-Execution-Dev.BedrockProcessorArn = arn:aws:lambda:ap-northeast-1:123456789012:function:...
+SlackAI-Execution-Dev.ExecutionApiKeyId = xxxxxx  # APIキー認証が有効な場合のみ
 ```
 
 **重要**: `SlackEventHandlerUrl` をコピーして、Slack App の Event Subscriptions に設定してください。
+
+### ステップ 2.5: API キー認証の設定（デフォルトで有効）
+
+API キー認証はデフォルトで有効になっています。API キーを Secrets Manager に保存する必要があります。
+
+#### API キー認証を使用する場合（デフォルト）
+
+1. **API キー値を取得**（デプロイ後）:
+
+   ```bash
+   # 開発環境の場合
+   API_KEY_ID=$(aws cloudformation describe-stacks \
+     --stack-name SlackAI-Execution-Dev \
+     --region ap-northeast-1 \
+     --query 'Stacks[0].Outputs[?OutputKey==`ExecutionApiKeyId`].OutputValue' \
+     --output text)
+
+   # 本番環境の場合
+   API_KEY_ID=$(aws cloudformation describe-stacks \
+     --stack-name SlackAI-Execution-Prod \
+     --region ap-northeast-1 \
+     --query 'Stacks[0].Outputs[?OutputKey==`ExecutionApiKeyId`].OutputValue' \
+     --output text)
+
+   # APIキー値を取得（作成時のみ可能）
+   aws apigateway get-api-key \
+     --api-key $API_KEY_ID \
+     --include-value \
+     --profile YOUR_PROFILE \
+     --query 'value' \
+     --output text
+   ```
+
+2. **Secrets Manager に API キーを保存**:
+
+   ```bash
+   # 開発環境の場合
+   aws secretsmanager create-secret \
+     --name execution-api-key-dev \
+     --description "API key for Execution Layer API Gateway authentication (dev)" \
+     --secret-string "{\"api_key\":\"YOUR_API_KEY_VALUE_HERE\"}" \
+     --region ap-northeast-1 \
+     --profile YOUR_PROFILE
+
+   # 本番環境の場合
+   aws secretsmanager create-secret \
+     --name execution-api-key-prod \
+     --description "API key for Execution Layer API Gateway authentication (prod)" \
+     --secret-string "{\"api_key\":\"YOUR_API_KEY_VALUE_HERE\"}" \
+     --region ap-northeast-1 \
+     --profile YOUR_PROFILE
+   ```
+
+   **注意**:
+
+   - `YOUR_API_KEY_VALUE_HERE` を実際の API キー値に置き換えてください
+   - シークレット名は環境ごとに異なります（`execution-api-key-dev` / `execution-api-key-prod`）
+   - API キー名と Usage Plan 名も環境ごとに自動的に分離されます
+
+3. **認証方法の確認**:
+   - デフォルト: API キー認証（`EXECUTION_API_AUTH_METHOD=api_key`）
+   - シークレット名は環境ごとに自動設定されます（`execution-api-key-dev` / `execution-api-key-prod`）
+   - IAM 認証に切り替える場合: Lambda 関数の環境変数 `EXECUTION_API_AUTH_METHOD=iam` を設定
+
+**環境ごとのリソース名**:
+
+- API Gateway API キー名: `execution-api-key-{env}` (例: `execution-api-key-dev`, `execution-api-key-prod`)
+- API Gateway Usage Plan 名: `execution-api-usage-plan-{env}` (例: `execution-api-usage-plan-dev`, `execution-api-usage-plan-prod`)
+- Secrets Manager シークレット名: `execution-api-key-{env}` (例: `execution-api-key-dev`, `execution-api-key-prod`)
+
+これらのリソース名は環境名で自動的にサフィックスが付与され、dev 環境と prod 環境が完全に分離されます。
+
+#### API キー認証を無効化する場合（IAM 認証のみを使用）
+
+API キー認証を無効化して IAM 認証のみを使用する場合：
+
+```bash
+export ENABLE_API_KEY_AUTH=false
+./scripts/deploy-split-stacks.sh
+```
+
+**注意**: IAM 認証のみを使用する場合、Lambda 関数の環境変数 `EXECUTION_API_AUTH_METHOD=iam` も設定する必要があります。
+
+詳細は [アーキテクチャ概要](./reference/architecture/overview.md) の認証セクションを参照してください。
 
 ### ステップ 3: ホワイトリストの設定（必須）
 
@@ -341,7 +436,7 @@ aws dynamodb put-item \
   }'
 ```
 
-**注意**: DynamoDBテーブル名は`{StackName}-whitelist-config`の形式で、スタック名には環境サフィックス（`-Dev`または`-Prod`）が含まれます。
+**注意**: DynamoDB テーブル名は`{StackName}-whitelist-config`の形式で、スタック名には環境サフィックス（`-Dev`または`-Prod`）が含まれます。
 
 #### 方法 2: Secrets Manager
 
@@ -365,7 +460,7 @@ aws secretsmanager create-secret \
   }'
 ```
 
-**注意**: Secrets Managerの名前は`{StackName}/slack/whitelist-config`の形式で、スタック名には環境サフィックス（`-Dev`または`-Prod`）が含まれます。
+**注意**: Secrets Manager の名前は`{StackName}/slack/whitelist-config`の形式で、スタック名には環境サフィックス（`-Dev`または`-Prod`）が含まれます。
 
 #### 方法 3: 環境変数（開発環境のみ）
 
@@ -488,7 +583,7 @@ aws logs tail /aws/lambda/SlackAI-Execution-BedrockProcessor-XXXXX --follow
    # DynamoDB テーブルの内容を確認（環境サフィックス付き）
    # 開発環境の場合
    aws dynamodb scan --table-name SlackAI-Verification-Dev-whitelist-config
-   
+
    # 本番環境の場合
    aws dynamodb scan --table-name SlackAI-Verification-Prod-whitelist-config
 
@@ -496,7 +591,7 @@ aws logs tail /aws/lambda/SlackAI-Execution-BedrockProcessor-XXXXX --follow
    # 開発環境の場合
    aws secretsmanager get-secret-value \
      --secret-id SlackAI-Verification-Dev/slack/whitelist-config
-   
+
    # 本番環境の場合
    aws secretsmanager get-secret-value \
      --secret-id SlackAI-Verification-Prod/slack/whitelist-config
@@ -559,9 +654,9 @@ aws iam get-role-policy \
 
 - **キュー名**: `slackai-verification-execution-response-queue`
 - **Dead Letter Queue**: `slackai-verification-execution-response-dlq`
-- **可視性タイムアウト**: 30秒（Bedrock API 呼び出し時間を考慮）
-- **メッセージ保持期間**: 14日
-- **最大受信回数**: 3回（DLQ に送信）
+- **可視性タイムアウト**: 30 秒（Bedrock API 呼び出し時間を考慮）
+- **メッセージ保持期間**: 14 日
+- **最大受信回数**: 3 回（DLQ に送信）
 
 ### SQS キュー URL の設定
 
@@ -574,6 +669,7 @@ aws iam get-role-policy \
 #### 手動設定
 
 1. **Verification Stack デプロイ後**:
+
    ```bash
    # ExecutionResponseQueueUrl を取得
    aws cloudformation describe-stacks \
@@ -584,6 +680,7 @@ aws iam get-role-policy \
    ```
 
 2. **`cdk.config.{env}.json` を更新**:
+
    ```json
    {
      "executionResponseQueueUrl": "https://sqs.ap-northeast-1.amazonaws.com/123456789012/slackai-verification-dev-execution-response-queue"
