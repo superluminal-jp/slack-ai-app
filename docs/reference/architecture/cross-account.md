@@ -90,15 +90,11 @@ API Gateway には、特定の IAM ロールからのアクセスのみを許可
 ### Phase 1: Execution Stack のデプロイ
 
 ```bash
-# cdk.json の設定
-{
-  "context": {
-    "deploymentMode": "split"
-  }
-}
+# デプロイ環境を設定
+export DEPLOYMENT_ENV=dev  # または 'prod'
 
 # デプロイ
-npx cdk deploy SlackAI-Execution
+npx cdk deploy SlackAI-Execution-Dev
 
 # 出力から API URL と API ARN を取得
 ```
@@ -106,15 +102,10 @@ npx cdk deploy SlackAI-Execution
 ### Phase 2: Verification Stack のデプロイ
 
 ```bash
-# cdk.json に API URL を設定
-{
-  "context": {
-    "executionApiUrl": "https://xxx.execute-api.ap-northeast-1.amazonaws.com/prod/"
-  }
-}
-
-# デプロイ
-npx cdk deploy SlackAI-Verification
+# 設定ファイル (cdk.config.{env}.json) に API URL を設定
+# または --context で指定
+npx cdk deploy SlackAI-Verification-Dev \
+  --context executionApiUrl=https://xxx.execute-api.ap-northeast-1.amazonaws.com/prod/
 
 # 出力から Lambda ロール ARN を取得
 ```
@@ -138,16 +129,21 @@ npx cdk deploy SlackAI-Execution-Dev
 
 異なる AWS アカウントにデプロイする場合の追加設定：
 
-### cdk.json
+### 設定ファイル (cdk.config.{env}.json)
 
 ```json
 {
-  "context": {
-    "deploymentMode": "cross-account",
-    "verificationAccountId": "111111111111",
-    "executionAccountId": "222222222222"
-  }
+  "verificationAccountId": "111111111111",
+  "executionAccountId": "222222222222"
 }
+```
+
+または、コマンドラインで指定：
+
+```bash
+npx cdk deploy SlackAI-Execution-Dev \
+  --context verificationAccountId=111111111111 \
+  --context executionAccountId=222222222222
 ```
 
 ### AWS 認証情報

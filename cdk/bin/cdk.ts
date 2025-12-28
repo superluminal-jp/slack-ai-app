@@ -13,7 +13,6 @@ import * as cdk from "aws-cdk-lib";
 import * as path from "path";
 import { ExecutionStack } from "../lib/execution-stack";
 import { VerificationStack } from "../lib/verification-stack";
-import { DeploymentMode } from "../lib/types/stack-config";
 import {
   loadCdkConfig,
   applyEnvOverrides,
@@ -24,7 +23,6 @@ import {
 const VALID_ENVIRONMENTS = ["dev", "prod"] as const;
 const DEFAULT_ENVIRONMENT = "dev";
 const DEFAULT_REGION = "ap-northeast-1";
-const DEFAULT_DEPLOYMENT_MODE: DeploymentMode = "split";
 
 type DeploymentEnvironment = (typeof VALID_ENVIRONMENTS)[number];
 
@@ -125,10 +123,6 @@ function getConfigString(key: string, defaultValue = ""): string {
 
 // Get configuration values with priority: context > config file > defaults
 const region = getConfigValue("awsRegion", DEFAULT_REGION);
-const deploymentMode = getConfigValue<DeploymentMode>(
-  "deploymentMode",
-  DEFAULT_DEPLOYMENT_MODE
-);
 
 // Base stack names (without environment suffix)
 const baseVerificationStackName = getConfigValue(
@@ -166,7 +160,6 @@ function setContextFromConfig(config: CdkConfig | null): void {
   // Required configuration
   app.node.setContext("awsRegion", region);
   app.node.setContext("bedrockModelId", config.bedrockModelId);
-  app.node.setContext("deploymentMode", deploymentMode);
   app.node.setContext("deploymentEnv", deploymentEnv);
   app.node.setContext("verificationStackName", baseVerificationStackName);
   app.node.setContext("executionStackName", baseExecutionStackName);
@@ -240,27 +233,23 @@ function getApiArnFromUrl(
  * - ExecutionStack: BedrockProcessor + API Gateway
  * - VerificationStack: SlackEventHandler + DynamoDB + Secrets
  *
- * Deploy order: ExecutionStack → VerificationStack → ExecutionStack (update)
+ * Stacks can be deployed independently using CDK CLI:
+ *   - Deploy ExecutionStack: npx cdk deploy SlackAI-Execution-{Env}
+ *   - Deploy VerificationStack: npx cdk deploy SlackAI-Verification-{Env}
+ *
+ * Deploy order (for initial setup):
+ *   1. ExecutionStack → Get ExecutionApiUrl
+ *   2. VerificationStack (with ExecutionApiUrl) → Get VerificationLambdaRoleArn
+ *   3. ExecutionStack (update with VerificationLambdaRoleArn)
  *
  * Cross-account deployment is supported by setting verificationAccountId and executionAccountId.
  * If both account IDs are the same (or not set), same-account deployment is used.
- */
-
-/**
- * Validate deployment mode
  *
- * @param mode - Deployment mode to validate
- * @throws {Error} If deployment mode is invalid
+ * Stack independence:
+ * - ExecutionStack can be deployed without VerificationStack
+ * - VerificationStack requires ExecutionApiUrl (from ExecutionStack) to be configured
+ * - If ExecutionApiUrl is not configured, only ExecutionStack will be synthesized
  */
-function validateDeploymentMode(mode: DeploymentMode): void {
-  if (mode !== "split" && mode !== "cross-account") {
-    throw new Error(
-      `Invalid deploymentMode: ${mode}. Must be "split" or "cross-account".`
-    );
-  }
-}
-
-validateDeploymentMode(deploymentMode);
 
 /**
  * Determine CDK environment based on account ID

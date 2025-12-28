@@ -98,7 +98,6 @@ cp cdk/cdk.config.json.example cdk/cdk.config.prod.json
 {
   "awsRegion": "ap-northeast-1",
   "bedrockModelId": "jp.anthropic.claude-haiku-4-5-20251001-v1:0",
-  "deploymentMode": "split",
   "deploymentEnv": "dev",
   "verificationStackName": "SlackAI-Verification",
   "executionStackName": "SlackAI-Execution",
@@ -233,7 +232,6 @@ export DEPLOYMENT_ENV=dev  # 本番環境の場合は 'prod' を使用
 
 # 1. Execution Stack をデプロイ（環境サフィックスが自動的に追加されます）
 npx cdk deploy SlackAI-Execution-Dev \
-  --context deploymentMode=split \
   --context deploymentEnv=dev \
   --profile YOUR_PROFILE \
   --require-approval never
@@ -242,7 +240,6 @@ npx cdk deploy SlackAI-Execution-Dev \
 
 # 2. Verification Stack をデプロイ
 npx cdk deploy SlackAI-Verification-Dev \
-  --context deploymentMode=split \
   --context deploymentEnv=dev \
   --context executionApiUrl=<ExecutionApiUrl from step 1> \
   --profile YOUR_PROFILE \
@@ -252,7 +249,6 @@ npx cdk deploy SlackAI-Verification-Dev \
 
 # 3. Execution Stack を更新（リソースポリシーとSQSキューURL設定）
 npx cdk deploy SlackAI-Execution-Dev \
-  --context deploymentMode=split \
   --context deploymentEnv=dev \
   --context verificationLambdaRoleArn=<VerificationLambdaRoleArn from step 2> \
   --context executionResponseQueueUrl=<ExecutionResponseQueueUrl from step 2> \
