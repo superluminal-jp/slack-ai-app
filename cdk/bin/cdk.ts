@@ -11,8 +11,8 @@
 
 import * as cdk from "aws-cdk-lib";
 import * as path from "path";
-import { ExecutionStack } from "../lib/execution-stack";
-import { VerificationStack } from "../lib/verification-stack";
+import { ExecutionStack } from "../lib/execution/execution-stack";
+import { VerificationStack } from "../lib/verification/verification-stack";
 import {
   loadCdkConfig,
   applyEnvOverrides,

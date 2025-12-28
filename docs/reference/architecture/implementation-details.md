@@ -4,7 +4,7 @@
 
 ## 7.0 Existence Check 実装（Two-Key Defense - 鍵2）
 
-**ファイル**: `lambda/verification-stack/slack-event-handler/existence_check.py`
+**ファイル**: `cdk/lib/verification/lambda/slack-event-handler/existence_check.py`
 
 Existence Check は Two-Key Defense モデルの第二の鍵として、Slack API を使用して team_id, user_id, channel_id の実在性を動的に確認します。
 
@@ -130,7 +130,7 @@ Existence Check は Two-Key Defense モデルの第二の鍵として、Slack AP
 
 ### SlackEventHandler（検証層 Verification Layer） - Python 実装
 
-**ファイル**: `lambda/verification-stack/slack-event-handler/handler.py`
+**ファイル**: `cdk/lib/verification/lambda/slack-event-handler/handler.py`
 
 SlackEventHandler は署名検証、Existence Check、認可を行い、即座に応答を返してから ExecutionApi (API Gateway) を呼び出します:
 
@@ -488,7 +488,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 ## 7.2 BedrockProcessor（実行層 Execution Layer） - Python
 
-**ファイル**: `lambda/execution-stack/bedrock-processor/handler.py`
+**ファイル**: `cdk/lib/execution/lambda/bedrock-processor/handler.py`
 
 ```python
 """
@@ -519,7 +519,7 @@ from sqs_client import send_response_to_queue
 from thread_history import get_thread_history
 from attachment_processor import process_attachments
 
-# 実装は lambda/execution-stack/bedrock-processor/handler.py を参照
+# 実装は cdk/lib/execution/lambda/bedrock-processor/handler.py を参照
 # 主要な機能:
 # - invoke_bedrock(): Bedrock Converse API呼び出し（bedrock_client_converse.py）
 # - get_thread_history(): スレッド履歴取得（thread_history.py）
@@ -550,7 +550,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     Returns:
         実行結果（Slackには直接返さず、Slack APIに投稿）
     """
-    # 実装詳細は lambda/execution-stack/bedrock-processor/handler.py を参照
+    # 実装詳細は cdk/lib/execution/lambda/bedrock-processor/handler.py を参照
     
     # 主な処理フロー:
     # 1. ペイロード検証（channel, text, bot_token）
@@ -577,7 +577,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 ### 8.3.1 添付ファイルメタデータ抽出 (SlackEventHandler)
 
-`lambda/verification-stack/slack-event-handler/attachment_extractor.py` モジュールは、Slack イベントから添付ファイル情報を抽出します：
+`cdk/lib/verification/lambda/slack-event-handler/attachment_extractor.py` モジュールは、Slack イベントから添付ファイル情報を抽出します：
 
 ```python
 def extract_attachment_metadata(event: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -626,7 +626,7 @@ def extract_attachment_metadata(event: Dict[str, Any]) -> List[Dict[str, Any]]:
 **SlackEventHandler の統合**:
 
 ```python
-# lambda/verification-stack/slack-event-handler/handler.py
+# cdk/lib/verification/lambda/slack-event-handler/handler.py
 from attachment_extractor import extract_attachment_metadata
 
 def lambda_handler(event, context):
@@ -651,7 +651,7 @@ def lambda_handler(event, context):
 
 ### 8.3.2 添付ファイル処理 (BedrockProcessor)
 
-`lambda/execution-stack/bedrock-processor/attachment_processor.py` モジュールは、添付ファイルのダウンロードと処理を実行します：
+`cdk/lib/execution/lambda/bedrock-processor/attachment_processor.py` モジュールは、添付ファイルのダウンロードと処理を実行します：
 
 **主要関数**:
 
@@ -762,7 +762,7 @@ def process_attachments(
 
 ### 8.3.3 ドキュメントテキスト抽出
 
-`lambda/execution-stack/bedrock-processor/document_extractor.py` モジュールは、各種ドキュメント形式からテキストを抽出します：
+`cdk/lib/execution/lambda/bedrock-processor/document_extractor.py` モジュールは、各種ドキュメント形式からテキストを抽出します：
 
 **対応形式**:
 
@@ -824,7 +824,7 @@ def extract_text_from_docx(file_bytes: bytes) -> Optional[str]:
 
 ### 8.3.4 BedrockProcessor での統合
 
-`lambda/execution-stack/bedrock-processor/handler.py` は、処理された添付ファイルを Bedrock Converse API に送信します：
+`cdk/lib/execution/lambda/bedrock-processor/handler.py` は、処理された添付ファイルを Bedrock Converse API に送信します：
 
 ```python
 def lambda_handler(event, context):
@@ -913,7 +913,7 @@ def _get_error_message_for_attachment_failure(error_code: str) -> str:
 
 ## 7.3 スレッド履歴取得の実装
 
-**ファイル**: `lambda/execution-stack/bedrock-processor/thread_history.py`
+**ファイル**: `cdk/lib/execution/lambda/bedrock-processor/thread_history.py`
 
 スレッド内の会話履歴を取得し、Bedrock Converse APIに渡すことで文脈を理解した応答を実現します。
 
@@ -928,7 +928,7 @@ def _get_error_message_for_attachment_failure(error_code: str) -> str:
 **実装例**:
 
 ```python
-# lambda/execution-stack/bedrock-processor/handler.py
+# cdk/lib/execution/lambda/bedrock-processor/handler.py
 thread_ts = payload.get("thread_ts")  # Optional: timestamp for thread replies
 
 if thread_ts:
@@ -961,7 +961,7 @@ post_to_slack(channel, ai_response, bot_token, thread_ts)
 
 ## 7.4 Bedrock Converse API の実装
 
-**ファイル**: `lambda/execution-stack/bedrock-processor/bedrock_client_converse.py`
+**ファイル**: `cdk/lib/execution/lambda/bedrock-processor/bedrock_client_converse.py`
 
 Bedrock Converse APIは統一インターフェースを提供し、マルチモーダル入力（テキスト+画像）をサポートします。
 
@@ -975,7 +975,7 @@ Bedrock Converse APIは統一インターフェースを提供し、マルチモ
 **実装例**:
 
 ```python
-# lambda/execution-stack/bedrock-processor/bedrock_client_converse.py
+# cdk/lib/execution/lambda/bedrock-processor/bedrock_client_converse.py
 def invoke_bedrock(
     prompt: str,
     conversation_history: Optional[List[Dict[str, Any]]] = None,
@@ -1044,7 +1044,7 @@ def invoke_bedrock(
 - [アーキテクチャ概要](./overview.md) - システム全体像
 ## 7.5 レート制限の実装
 
-**ファイル**: `lambda/verification-stack/slack-event-handler/rate_limiter.py`
+**ファイル**: `cdk/lib/verification/lambda/slack-event-handler/rate_limiter.py`
 
 レート制限は、DynamoDB ベースのトークンバケットアルゴリズムを使用して、ユーザー単位のスロットリングを実装します。
 
@@ -1099,7 +1099,7 @@ except RateLimitExceededError as e:
 
 ## 7.6 トークン数制限の実装
 
-**ファイル**: `lambda/execution-stack/bedrock-processor/bedrock_client_converse.py`
+**ファイル**: `cdk/lib/execution/lambda/bedrock-processor/bedrock_client_converse.py`
 
 トークン数制限は、モデルごとの最大値を自動的に決定します。
 

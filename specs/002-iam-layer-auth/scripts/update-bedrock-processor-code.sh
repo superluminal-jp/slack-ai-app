@@ -34,7 +34,7 @@ TEMP_DIR=$(mktemp -d)
 trap "rm -rf $TEMP_DIR" EXIT
 
 # Copy Lambda code
-LAMBDA_SOURCE_DIR="$(cd "$(dirname "$0")/../../.." && pwd)/lambda/bedrock-processor"
+LAMBDA_SOURCE_DIR="$(cd "$(dirname "$0")/../../.." && pwd)/cdk/lib/execution/lambda/bedrock-processor"
 cp -r "$LAMBDA_SOURCE_DIR"/* "$TEMP_DIR/"
 
 # Install dependencies
