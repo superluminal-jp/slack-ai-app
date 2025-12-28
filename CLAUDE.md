@@ -5,6 +5,7 @@ Auto-generated from all feature plans. Last updated: 2025-11-30
 ## Active Technologies
 
 - Python 3.11+ for Lambda functions, TypeScript for AWS CDK infrastructure + AWS CDK, boto3 (Bedrock SDK), slack-sdk (Python), AWS Lambda runtime (001-slack-bedrock-mvp)
+- AWS API Gateway REST API with IAM and API key authentication, AWS Secrets Manager (012-api-key-auth)
 
 ## Project Structure
 
@@ -24,6 +25,7 @@ Python 3.11+ for Lambda functions, TypeScript for AWS CDK infrastructure: Follow
 ## Recent Changes
 
 - 001-slack-bedrock-mvp: Added Python 3.11+ for Lambda functions, TypeScript for AWS CDK infrastructure + AWS CDK, boto3 (Bedrock SDK), slack-sdk (Python), AWS Lambda runtime
+- 012-api-key-auth: Added AWS API Gateway REST API with dual authentication (IAM and API key), AWS Secrets Manager for API key storage
 
 <!-- MANUAL ADDITIONS START -->
 

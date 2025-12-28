@@ -1,0 +1,245 @@
+openapi: 3.0.3
+info:
+  title: Execution Layer API (Dual Authentication)
+  description: |
+    Internal API Gateway endpoint for Execution Layer (bedrock-processor Lambda).
+    This API supports both IAM authentication and API key authentication.
+    
+    **Authentication Methods**:
+    - **IAM Authentication**: AWS Signature Version 4 (SigV4) required
+    - **API Key Authentication**: x-api-key header required
+    
+    **Authorization**: 
+    - IAM authentication: API Gateway resource policy restricts access to Verification Layer IAM role only
+    - API key authentication: API Gateway validates API key via usage plan
+    
+    **Integration**: Lambda proxy integration (preserves existing Lambda handler interface)
+    
+    **Configuration**: Authentication method is selected via environment variable configuration
+  version: 2.0.0
+  contact:
+    name: Slack AI App Team
+servers:
+  - url: https://{apiId}.execute-api.{region}.amazonaws.com/{stage}
+    description: API Gateway endpoint (values provided by CDK deployment)
+    variables:
+      apiId:
+        default: abc123xyz
+        description: API Gateway API ID
+      region:
+        default: ap-northeast-1
+        description: AWS region
+      stage:
+        default: prod
+        description: API Gateway stage name
+
+paths:
+  /execute:
+    post:
+      summary: Execute Bedrock AI processing
+      description: |
+        Asynchronously invokes Execution Layer Lambda function to process Slack message with Bedrock AI.
+        
+        **Authentication**: 
+        - IAM authentication: Requires AWS Signature Version 4 (SigV4) signing with IAM credentials.
+          Only Verification Layer IAM role can invoke this endpoint (enforced by resource policy).
+        - API key authentication: Requires x-api-key header with valid API Gateway API key.
+          API key is validated via usage plan.
+        
+        **Processing**: Request is processed asynchronously. Response is acknowledgment (202 Accepted).
+        Actual AI response is posted to Slack via response_url webhook.
+      operationId: executeBedrockProcessing
+      security:
+        - IAMAuth: []
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecutionRequest'
+            example:
+              channel: "C01234567"
+              text: "What is the weather today?"
+              bot_token: "xoxb-EXAMPLE-TOKEN-REPLACE-WITH-ACTUAL-TOKEN"
+              team_id: "T01234567"
+              user_id: "U01234567"
+              response_url: "https://hooks.slack.com/services/TEAM/WEBHOOK/EXAMPLE"
+              correlation_id: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '202':
+          description: Request accepted for asynchronous processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionResponse'
+              example:
+                statusCode: 202
+                body: ""
+        '400':
+          description: Bad request - invalid payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                statusCode: 400
+                body: '{"error": "Missing required field: channel"}'
+        '403':
+          description: Forbidden - IAM authentication failed, API key authentication failed, or resource policy denied access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticationError'
+              examples:
+                iamAuthFailure:
+                  summary: IAM authentication failure
+                  value:
+                    statusCode: 403
+                    body: '{"message": "User: arn:aws:iam::123456789012:role/verification-lambda-role is not authorized to perform: execute-api:Invoke"}'
+                apiKeyAuthFailure:
+                  summary: API key authentication failure
+                  value:
+                    statusCode: 403
+                    body: '{"message": "Forbidden"}'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                statusCode: 500
+                body: '{"error": "Internal server error"}'
+
+components:
+  securitySchemes:
+    IAMAuth:
+      type: awsSigv4
+      description: AWS Signature Version 4 authentication using IAM credentials
+      x-amazon-apigateway-authtype: awsSigv4
+      x-amazon-apigateway-request-signer:
+        serviceName: execute-api
+        region: ap-northeast-1
+    
+    ApiKeyAuth:
+      type: apiKey
+      name: x-api-key
+      in: header
+      description: API Gateway API key for authentication
+      x-amazon-apigateway-api-key-source: HEADER
+
+  schemas:
+    ExecutionRequest:
+      type: object
+      required:
+        - channel
+        - text
+        - bot_token
+      properties:
+        channel:
+          type: string
+          description: Slack channel ID where the message was received
+          example: "C01234567"
+        text:
+          type: string
+          description: User message text to process with Bedrock AI
+          example: "What is the weather today?"
+        bot_token:
+          type: string
+          description: Slack bot OAuth token for posting response
+          pattern: '^xoxb-'
+          example: "xoxb-EXAMPLE-TOKEN-REPLACE-WITH-ACTUAL-TOKEN"
+        team_id:
+          type: string
+          description: Slack workspace team ID
+          example: "T01234567"
+        user_id:
+          type: string
+          description: Slack user ID who sent the message
+          example: "U01234567"
+        response_url:
+          type: string
+          format: uri
+          description: Slack response_url webhook URL for async response posting
+          example: "https://hooks.slack.com/services/TEAM/WEBHOOK/EXAMPLE"
+        correlation_id:
+          type: string
+          format: uuid
+          description: Request correlation ID for tracing
+          example: "550e8400-e29b-41d4-a716-446655440000"
+
+    ExecutionResponse:
+      type: object
+      required:
+        - statusCode
+      properties:
+        statusCode:
+          type: integer
+          description: HTTP status code
+          example: 202
+        body:
+          type: string
+          description: Response body (empty for async processing, JSON string for errors)
+          example: ""
+
+    ErrorResponse:
+      type: object
+      required:
+        - statusCode
+        - body
+      properties:
+        statusCode:
+          type: integer
+          description: HTTP status code
+          example: 400
+        body:
+          type: string
+          description: Error message body (JSON string)
+          example: '{"error": "Missing required field: channel"}'
+
+    AuthenticationError:
+      type: object
+      required:
+        - statusCode
+        - body
+      properties:
+        statusCode:
+          type: integer
+          description: HTTP status code (403 Forbidden)
+          example: 403
+        body:
+          type: string
+          description: Authentication error message body (JSON string)
+          example: '{"message": "User: arn:aws:iam::123456789012:role/verification-lambda-role is not authorized to perform: execute-api:Invoke"}'
+
+  examples:
+    ExecutionRequestExample:
+      summary: Example execution request
+      value:
+        channel: "C01234567"
+        text: "What is the weather today?"
+        bot_token: "xoxb-EXAMPLE-TOKEN-REPLACE-WITH-ACTUAL-TOKEN"
+        team_id: "T01234567"
+        user_id: "U01234567"
+        response_url: "https://hooks.slack.com/services/TEAM/WEBHOOK/EXAMPLE"
+        correlation_id: "550e8400-e29b-41d4-a716-446655440000"
+
+    ExecutionResponseExample:
+      summary: Example execution response (async acknowledgment)
+      value:
+        statusCode: 202
+        body: ""
+
+    AuthenticationErrorExample:
+      summary: Example authentication error (IAM)
+      value:
+        statusCode: 403
+        body: '{"message": "User: arn:aws:iam::123456789012:role/verification-lambda-role is not authorized to perform: execute-api:Invoke"}'
+    
+    ApiKeyAuthenticationErrorExample:
+      summary: Example authentication error (API key)
+      value:
+        statusCode: 403
+        body: '{"message": "Forbidden"}'
+

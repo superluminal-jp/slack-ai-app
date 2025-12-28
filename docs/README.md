@@ -86,3 +86,10 @@ Slack から AWS Bedrock AI を利用するためのアーキテクチャと実�
 ---
 
 **最終更新日**: 2025-12-28
+
+## 最近の更新
+
+- **2025-12-28**: Execution API Gateway にデュアル認証サポート（IAM認証とAPIキー認証）を追加
+  - デフォルト認証方法: APIキー認証（`EXECUTION_API_AUTH_METHOD` 環境変数で設定可能）
+  - APIキーは AWS Secrets Manager に安全に保存
+  - 将来的な非AWS APIとの統合に対応

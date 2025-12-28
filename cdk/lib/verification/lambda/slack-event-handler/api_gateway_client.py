@@ -1,8 +1,8 @@
 """
-API Gateway client with IAM authentication (SigV4 signing).
+API Gateway client with IAM authentication (SigV4 signing) and API key authentication.
 
 This module provides a client for calling API Gateway endpoints
-using AWS Signature Version 4 authentication.
+using AWS Signature Version 4 authentication or API key authentication.
 
 Supports cross-account deployments where the Execution API
 may be in a different AWS account.
@@ -21,6 +21,15 @@ from requests.exceptions import (
     Timeout,
     RequestException,
 )
+
+# Import secrets manager client for API key retrieval
+try:
+    from secrets_manager_client import get_api_key, SecretNotFoundError, InvalidSecretFormatError
+except ImportError:
+    # Fallback if secrets_manager_client is not available
+    get_api_key = None
+    SecretNotFoundError = Exception
+    InvalidSecretFormatError = Exception
 
 
 class ExecutionApiError(Exception):
@@ -51,9 +60,11 @@ def invoke_execution_api(
     region: str = "ap-northeast-1",
     timeout: int = 30,
     max_retries: int = 2,
+    auth_method: str = "iam",
+    api_key_secret_name: Optional[str] = None,
 ) -> requests.Response:
     """
-    Invoke Execution Layer API Gateway endpoint with IAM authentication.
+    Invoke Execution Layer API Gateway endpoint with IAM or API key authentication.
 
     Supports cross-account deployments where the Execution API
     may be in a different AWS account.
@@ -64,6 +75,8 @@ def invoke_execution_api(
         region: AWS region name
         timeout: Request timeout in seconds
         max_retries: Maximum number of retry attempts for transient errors
+        auth_method: Authentication method ('iam' or 'api_key')
+        api_key_secret_name: Secrets Manager secret name for API key (required if auth_method is 'api_key')
 
     Returns:
         requests.Response: HTTP response from API Gateway
@@ -71,17 +84,14 @@ def invoke_execution_api(
     Raises:
         ExecutionApiUnavailableError: If the Execution API is unavailable
         ExecutionApiAuthError: If authentication fails (403)
-        ValueError: If no AWS credentials are available
+        ValueError: If no AWS credentials are available, invalid auth_method, or missing api_key_secret_name
     """
-    # Get AWS credentials from Lambda execution role
-    session = boto3.Session()
-    credentials = session.get_credentials()
+    # Validate authentication method
+    if auth_method not in ["iam", "api_key"]:
+        raise ValueError(f"Invalid auth_method: {auth_method}. Must be 'iam' or 'api_key'")
 
-    if not credentials:
-        raise ValueError("No AWS credentials available")
-
-    # Create SigV4 signer
-    signer = SigV4Auth(credentials, "execute-api", region)
+    if auth_method == "api_key" and not api_key_secret_name:
+        raise ValueError("api_key_secret_name is required when auth_method is 'api_key'")
 
     # Prepare request
     url = f"{api_url.rstrip('/')}/execute"
@@ -91,18 +101,48 @@ def invoke_execution_api(
     }
     body = json.dumps(payload)
 
+    # Set up authentication based on method
+    if auth_method == "iam":
+        # IAM authentication (SigV4 signing)
+        session = boto3.Session()
+        credentials = session.get_credentials()
+
+        if not credentials:
+            raise ValueError("No AWS credentials available")
+
+        # Create SigV4 signer
+        signer = SigV4Auth(credentials, "execute-api", region)
+    elif auth_method == "api_key":
+        # API key authentication
+        if not get_api_key:
+            raise ValueError("secrets_manager_client module is not available")
+
+        try:
+            api_key = get_api_key(api_key_secret_name, region)
+            headers["x-api-key"] = api_key
+        except (SecretNotFoundError, InvalidSecretFormatError) as e:
+            raise ExecutionApiAuthError(
+                f"Failed to retrieve API key from Secrets Manager: {str(e)}"
+            ) from e
+
     last_error: Optional[Exception] = None
 
     for attempt in range(max_retries + 1):
         try:
-            # Create AWS request for signing (must be fresh for each attempt)
-            request = AWSRequest(method=method, url=url, data=body, headers=headers)
-            signer.add_auth(request)
+            # For IAM authentication, sign the request
+            if auth_method == "iam":
+                # Create AWS request for signing (must be fresh for each attempt)
+                request = AWSRequest(method=method, url=url, data=body, headers=headers)
+                signer.add_auth(request)
+                request_headers = dict(request.headers)
+            else:
+                # For API key authentication, use headers directly
+                request_headers = headers
 
-            # Send signed request
+            # Send request
             response = requests.post(
                 url,
-                headers=dict(request.headers),
+                headers=request_headers,
                 data=body,
                 timeout=timeout,
             )

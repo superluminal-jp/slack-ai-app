@@ -754,10 +754,37 @@ def lambda_handler(event, context):
                         context,
                     )
 
+                    # Get authentication method from environment variable (default: 'api_key')
+                    auth_method = os.environ.get("EXECUTION_API_AUTH_METHOD", "api_key").lower()
+                    api_key_secret_name = os.environ.get("EXECUTION_API_KEY_SECRET_NAME", "")
+                    
+                    # Validate authentication method configuration
+                    if auth_method == "api_key" and not api_key_secret_name:
+                        log_error(
+                            "api_key_auth_config_error",
+                            {
+                                "error": "EXECUTION_API_KEY_SECRET_NAME is required when EXECUTION_API_AUTH_METHOD is 'api_key'",
+                            },
+                        )
+                        raise ValueError(
+                            "EXECUTION_API_KEY_SECRET_NAME is required when EXECUTION_API_AUTH_METHOD is 'api_key'"
+                        )
+                    
+                    # Log authentication method (without exposing sensitive data)
+                    log_info(
+                        "execution_api_auth_method",
+                        {
+                            "auth_method": auth_method,
+                            "has_api_key_secret_name": bool(api_key_secret_name),
+                        },
+                    )
+                    
                     response = invoke_execution_api(
                         api_url=execution_api_url,
                         payload=payload,
                         region=os.environ.get("AWS_REGION_NAME", "ap-northeast-1"),
+                        auth_method=auth_method,
+                        api_key_secret_name=api_key_secret_name if auth_method == "api_key" else None,
                     )
 
                     # Accept both 200 and 202 as success

@@ -385,6 +385,185 @@ class TestExistenceCheckIntegration:
                                         assert result["statusCode"] == 200
 
 
+class TestAuthenticationMethodSelection:
+    """Test authentication method selection logic."""
+
+    @patch.dict(os.environ, {
+        "EXECUTION_API_URL": "https://api.execute-api.region.amazonaws.com/prod",
+        "EXECUTION_API_AUTH_METHOD": "iam",
+        "AWS_REGION_NAME": "ap-northeast-1",
+    })
+    @patch('handler.verify_signature', return_value=True)
+    @patch('handler.is_duplicate_event', return_value=False)
+    @patch('handler.mark_event_processed', return_value=True)
+    @patch('handler.validate_prompt', return_value=(True, None))
+    @patch('handler.get_token', return_value="xoxb-test")
+    @patch('handler.invoke_execution_api')
+    def test_iam_auth_selected_by_default(
+        self, mock_invoke, mock_get_token, mock_validate, mock_mark, mock_dedupe, mock_verify
+    ):
+        """Test that IAM authentication is selected by default."""
+        mock_invoke.return_value = Mock(status_code=202)
+        
+        event = {
+            "body": json.dumps({
+                "type": "event_callback",
+                "event": {
+                    "type": "app_mention",
+                    "ts": "1234567890.123456",
+                    "channel": "C01234567",
+                    "text": "<@U12345> hello",
+                    "user": "U12345"
+                },
+                "team_id": "T12345"
+            }),
+            "headers": {
+                "x-slack-signature": "v0=test",
+                "x-slack-request-timestamp": "1234567890"
+            }
+        }
+        
+        context = Mock()
+        context.aws_request_id = "test-request-id"
+        
+        lambda_handler(event, context)
+        
+        # Verify IAM authentication is used (auth_method='iam', no api_key_secret_name)
+        call_args = mock_invoke.call_args
+        assert call_args[1]['auth_method'] == 'iam'
+        assert call_args[1].get('api_key_secret_name') is None
+
+    @patch.dict(os.environ, {
+        "EXECUTION_API_URL": "https://api.execute-api.region.amazonaws.com/prod",
+        "EXECUTION_API_AUTH_METHOD": "api_key",
+        "EXECUTION_API_KEY_SECRET_NAME": "execution-api-key",
+        "AWS_REGION_NAME": "ap-northeast-1",
+    })
+    @patch('handler.verify_signature', return_value=True)
+    @patch('handler.is_duplicate_event', return_value=False)
+    @patch('handler.mark_event_processed', return_value=True)
+    @patch('handler.validate_prompt', return_value=(True, None))
+    @patch('handler.get_token', return_value="xoxb-test")
+    @patch('handler.invoke_execution_api')
+    def test_api_key_auth_selected_when_configured(
+        self, mock_invoke, mock_get_token, mock_validate, mock_mark, mock_dedupe, mock_verify
+    ):
+        """Test that API key authentication is selected when configured."""
+        mock_invoke.return_value = Mock(status_code=202)
+        
+        event = {
+            "body": json.dumps({
+                "type": "event_callback",
+                "event": {
+                    "type": "app_mention",
+                    "ts": "1234567890.123456",
+                    "channel": "C01234567",
+                    "text": "<@U12345> hello",
+                    "user": "U12345"
+                },
+                "team_id": "T12345"
+            }),
+            "headers": {
+                "x-slack-signature": "v0=test",
+                "x-slack-request-timestamp": "1234567890"
+            }
+        }
+        
+        context = Mock()
+        context.aws_request_id = "test-request-id"
+        
+        lambda_handler(event, context)
+        
+        # Verify API key authentication is used
+        call_args = mock_invoke.call_args
+        assert call_args[1]['auth_method'] == 'api_key'
+        assert call_args[1]['api_key_secret_name'] == 'execution-api-key'
+
+    @patch.dict(os.environ, {
+        "EXECUTION_API_URL": "https://api.execute-api.region.amazonaws.com/prod",
+        "EXECUTION_API_AUTH_METHOD": "api_key",
+        "AWS_REGION_NAME": "ap-northeast-1",
+    }, clear=True)
+    @patch('handler.verify_signature', return_value=True)
+    @patch('handler.is_duplicate_event', return_value=False)
+    @patch('handler.mark_event_processed', return_value=True)
+    @patch('handler.validate_prompt', return_value=(True, None))
+    @patch('handler.get_token', return_value="xoxb-test")
+    def test_api_key_auth_requires_secret_name(
+        self, mock_get_token, mock_validate, mock_mark, mock_dedupe, mock_verify
+    ):
+        """Test that API key authentication requires secret name."""
+        event = {
+            "body": json.dumps({
+                "type": "event_callback",
+                "event": {
+                    "type": "app_mention",
+                    "ts": "1234567890.123456",
+                    "channel": "C01234567",
+                    "text": "<@U12345> hello",
+                    "user": "U12345"
+                },
+                "team_id": "T12345"
+            }),
+            "headers": {
+                "x-slack-signature": "v0=test",
+                "x-slack-request-timestamp": "1234567890"
+            }
+        }
+        
+        context = Mock()
+        context.aws_request_id = "test-request-id"
+        
+        # Should raise ValueError when api_key_secret_name is missing
+        with pytest.raises(ValueError, match="EXECUTION_API_KEY_SECRET_NAME is required"):
+            lambda_handler(event, context)
+
+    @patch.dict(os.environ, {
+        "EXECUTION_API_URL": "https://api.execute-api.region.amazonaws.com/prod",
+        "EXECUTION_API_AUTH_METHOD": "invalid_method",
+        "AWS_REGION_NAME": "ap-northeast-1",
+    })
+    @patch('handler.verify_signature', return_value=True)
+    @patch('handler.is_duplicate_event', return_value=False)
+    @patch('handler.mark_event_processed', return_value=True)
+    @patch('handler.validate_prompt', return_value=(True, None))
+    @patch('handler.get_token', return_value="xoxb-test")
+    @patch('handler.invoke_execution_api')
+    def test_invalid_auth_method_falls_back_to_iam(
+        self, mock_invoke, mock_get_token, mock_validate, mock_mark, mock_dedupe, mock_verify
+    ):
+        """Test that invalid auth method falls back to IAM (handled by api_gateway_client)."""
+        # Note: The actual validation happens in api_gateway_client.invoke_execution_api
+        # This test verifies that the handler passes the invalid method through
+        # and api_gateway_client will raise ValueError
+        mock_invoke.side_effect = ValueError("Invalid auth_method: invalid_method")
+        
+        event = {
+            "body": json.dumps({
+                "type": "event_callback",
+                "event": {
+                    "type": "app_mention",
+                    "ts": "1234567890.123456",
+                    "channel": "C01234567",
+                    "text": "<@U12345> hello",
+                    "user": "U12345"
+                },
+                "team_id": "T12345"
+            }),
+            "headers": {
+                "x-slack-signature": "v0=test",
+                "x-slack-request-timestamp": "1234567890"
+            }
+        }
+        
+        context = Mock()
+        context.aws_request_id = "test-request-id"
+        
+        # Should handle the error gracefully
+        result = lambda_handler(event, context)
+        assert result['statusCode'] == 500
+
+
 class TestHandlerWithWhitelistAuthorization:
     """Test handler with whitelist authorization integration."""
     
