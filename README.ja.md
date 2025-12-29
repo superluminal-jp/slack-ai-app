@@ -308,6 +308,217 @@ aws logs tail /aws/lambda/SlackAI-Execution-Dev-BedrockProcessor --follow
 
 開発ガイドラインは [CLAUDE.md](CLAUDE.md) を参照。
 
+## AWS MCP Servers
+
+このプロジェクトには、AI 支援開発を強化する AWS Model Context Protocol (MCP) サーバーが含まれています。これらのサーバーは、AWS ドキュメント、API 操作、Infrastructure-as-Code 支援へのアクセスを提供します。
+
+### 利用可能なサーバー
+
+| サーバー | 目的 | 認証 |
+|--------|------|------|
+| **aws-documentation-mcp-server** | AWS ドキュメントへのアクセスとコンテンツ検索 | なし |
+| **aws-knowledge-mcp-server** | 最新の AWS ドキュメント、コードサンプル、リージョン可用性情報 | なし（レート制限あり） |
+| **aws-api-mcp-server** | 15,000 以上の AWS API を自然言語で操作 | AWS 認証情報が必要 |
+| **aws-iac-mcp-server** | CDK と CloudFormation のドキュメント、テンプレート検証 | AWS 認証情報が必要 |
+
+### 前提条件
+
+`uv` パッケージマネージャーをインストール:
+
+```bash
+# macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# または Homebrew を使用
+brew install uv
+```
+
+### 設定
+
+プロジェクトには、4 つの AWS MCP サーバーすべてが事前設定された `.claude/mcp.json` ファイルが含まれています。設定では、柔軟なセットアップのために環境変数展開を使用します:
+
+```json
+{
+  "mcpServers": {
+    "aws-documentation-mcp-server": { ... },
+    "aws-knowledge-mcp-server": { ... },
+    "aws-api-mcp-server": { ... },
+    "aws-iac-mcp-server": { ... }
+  }
+}
+```
+
+### 環境変数
+
+MCP サーバーは以下の環境変数を使用します（デフォルト値あり）:
+
+| 変数 | デフォルト | 説明 |
+|------|-----------|------|
+| `AWS_REGION` | `ap-northeast-1` | API 操作用の AWS リージョン |
+| `AWS_PROFILE` | `default` | 使用する AWS 認証情報プロファイル |
+| `HOME` | システムデフォルト | ユーザーホームディレクトリ |
+
+### 使用方法
+
+設定が完了すると、Claude Code が自動的に MCP サーバーを検出して使用します。以下のことができます:
+
+- AWS サービスについて質問し、ドキュメントスニペットを取得
+- 自然言語で AWS API 操作を実行
+- CDK と CloudFormation テンプレートのヘルプを取得
+- コード例とベストプラクティスを検索
+
+### 承認
+
+プロジェクトスコープの MCP サーバーを初めて使用するとき、Claude Code が承認を求めます。承認の選択をリセットするには:
+
+```bash
+claude mcp reset-project-choices
+```
+
+### 参考資料
+
+- [AWS MCP Servers ドキュメント](https://awslabs.github.io/mcp/)
+- [GitHub リポジトリ](https://github.com/awslabs/mcp)
+- [Claude Code MCP ガイド](https://code.claude.com/docs/en/mcp)
+
+## AWS MCP Orchestrator Skill
+
+このプロジェクトには、組み込みの安全ゲートと透明性を備えた、AWS 関連のクエリを最適な MCP サーバーに自動的にルーティングするインテリジェントな AWS MCP Orchestrator スキルが含まれています。
+
+### 機能
+
+Orchestrator は AWS クエリを分析し、以下を行います:
+
+- **インテント分類** - 達成しようとしていることを判断
+- **インテリジェントルーティング** - クエリに最適な MCP サーバーを選択
+- **安全性の確保** - 確認ゲートによる偶発的なリソース変更を防止
+- **透明性の提供** - どのサーバーが使用されているか、その理由を説明
+- **フォールバックの管理** - レート制限時に自動的にサーバーを切り替え
+
+### 設計優先順位
+
+1. **安全性** - 偶発的な AWS リソース変更を防止
+2. **正確性** - 適切なサーバーから正しい情報を確保
+3. **最新性** - 必要に応じて最新の AWS ドキュメントを使用
+4. **透明性** - 常にルーティング決定を説明
+5. **速度** - 高速応答のために最適化
+6. **コスト** - 不要な API 呼び出しを最小化
+
+### インテントタイプ
+
+Orchestrator は 6 つのクエリタイプを認識します:
+
+| インテント | 説明 | 例 | 使用サーバー |
+|-----------|------|-----|-------------|
+| **DOCUMENTATION_LOOKUP** | 一般的な AWS コンセプトとハウツー質問 | "Lambda 環境変数の設定方法は？" | knowledge-mcp |
+| **LATEST_INFORMATION** | 最近の更新、新機能、リージョン可用性 | "2025 年の最新 Bedrock モデルは？" | documentation-mcp |
+| **IAC_ASSISTANCE** | CDK/CloudFormation コード生成と検証 | "Lambda + DynamoDB の CDK コードを生成" | iac-mcp |
+| **ACCOUNT_INSPECTION** | 読み取り専用 AWS アカウントリソースクエリ | "Lambda 関数一覧を表示" | account-mcp |
+| **RESOURCE_MODIFICATION** | AWS リソースの作成/更新/削除 | "Lambda 関数メモリを 512MB に更新" | resource-mcp（安全ゲート付き） |
+| **ARCHITECTURAL_GUIDANCE** | 複数ステップのアーキテクチャ判断 | "API 認証を実装する最良の方法は？" | 複数サーバー |
+
+### 安全ゲート
+
+リソース変更クエリに対して、Orchestrator は:
+
+1. **書き込み操作を検出** - 作成/更新/削除インテントを識別
+2. **プレビューを表示** - 実行される内容を正確に表示
+3. **確認を要求** - 明示的な "CONFIRM" 応答を待機
+4. **影響を分析** - 不可逆性、コスト、依存関係について警告
+5. **代替案を提供** - 可能な場合、より安全なオプションを提案
+
+**例**:
+
+```
+ユーザー: "DynamoDB テーブル my-test-table を削除"
+
+Orchestrator:
+⚠️  高リスク操作が検出されました
+
+操作: DeleteTable
+サービス: DynamoDB
+リソース: my-test-table
+
+影響:
+❌ 永続的なデータ損失（テーブルとすべてのアイテム）
+❌ 元に戻せません
+⚠️  依存リソースが壊れる可能性があります
+
+続行するには、次を正確に入力してください: CONFIRM DELETE my-test-table
+```
+
+### 使用方法
+
+AWS 関連の質問をすると、Orchestrator が自動的にアクティブ化されます:
+
+```bash
+# 一般ドキュメント
+"Lambda の同時実行はどのように機能しますか？"
+→ ルーティング先: knowledge-mcp（高速、キャッシュ済み）
+
+# 最新情報
+"2025 年の最新 Lambda ランタイムバージョンは？"
+→ ルーティング先: documentation-mcp（最新、正確）
+
+# インフラストラクチャコード
+"API キー認証付き API Gateway の CDK コードを生成"
+→ ルーティング先: iac-mcp（IaC 専門）
+
+# アカウント検査
+"ap-northeast-1 の DynamoDB テーブル一覧"
+→ ルーティング先: account-mcp（読み取り専用、AWS 認証が必要）
+
+# リソース変更（安全ゲート付き）
+"Lambda 関数のタイムアウトを 60 秒に更新"
+→ ルーティング先: resource-mcp（プレビュー + 確認が必要）
+```
+
+### プロジェクトコンテキスト最適化
+
+Orchestrator はこの Slack AI App プロジェクト用に最適化されており、以下を認識します:
+
+- **技術**: Lambda、DynamoDB、API Gateway、CDK、Secrets Manager、Bedrock
+- **一般的なパターン**: Slack イベント処理、Bedrock API 統合、API 認証
+- **言語設定**: Lambda 用 Python 3.11、CDK 用 TypeScript
+
+プロジェクト固有の質問をすると、Orchestrator は自動的に:
+- 関連技術の結果をフィルタリング
+- 適切な言語でコード例を提供
+- プロジェクトアーキテクチャに適合するパターンを提案
+
+### フォールバックチェーン
+
+プライマリサーバーが利用できないか、レート制限されている場合:
+
+```
+documentation-mcp（レート制限）
+    ↓
+knowledge-mcp（フォールバック）
+    + 警告: "キャッシュされたドキュメントを使用（最新の更新を反映していない可能性）"
+```
+
+### 透明性
+
+すべての応答に含まれます:
+
+```
+📋 インテント: DOCUMENTATION_LOOKUP
+🔍 サーバー: knowledge-mcp
+💡 理由: 一般的な AWS コンセプト、安定したドキュメント
+✅ 安全性: 認証不要、読み取り専用
+
+[応答内容]
+
+---
+Powered by knowledge-mcp
+```
+
+### ドキュメント
+
+- **スキル定義**: `.claude/skills/aws-mcp-orchestrator/SKILL.md`
+- **使用ガイド**: `.claude/skills/aws-mcp-orchestrator/README.md`
+- **例**: `.claude/skills/aws-mcp-orchestrator/examples.md`（28 の包括的な例）
+
 ## 環境変数
 
 | 変数                            | 説明                                                | デフォルト                                     |
@@ -358,10 +569,15 @@ aws logs tail /aws/lambda/SlackAI-Execution-Dev-BedrockProcessor --follow
 
 ---
 
-**最終更新日**: 2025-12-28
+**最終更新日**: 2025-12-29
 
 ## 最近の更新
 
+- **2025-12-29**: AWS MCP Servers と AWS MCP Orchestrator Skill を追加
+  - 4つの AWS MCP サーバーを設定（documentation、knowledge、api、iac）
+  - 6つのインテントタイプを持つインテリジェントオーケストレータースキルを作成
+  - リソース変更操作用の安全ゲートを実装
+  - Slack AI App 用に最適化（Lambda、DynamoDB、API Gateway、CDK、Bedrock）
 - **2025-12-28**: Execution API Gateway にデュアル認証サポート（IAM 認証と API キー認証）を追加
   - デフォルト認証方法: API キー認証（`EXECUTION_API_AUTH_METHOD` 環境変数で設定可能）
   - API キーは AWS Secrets Manager に安全に保存
