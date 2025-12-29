@@ -237,7 +237,45 @@ This project has access to specialized Claude agents and skills. Using the appro
 - Documenting critical decisions
 - Compliance record-keeping
 
-#### 7. github-speckit / github-speckit-agent
+#### 7. document-assistant / document-agent
+**Use When**: Creating structured business documents, strategic analyses
+**Capabilities**:
+- Applies McKinsey methodology (Pyramid Principle, MECE, SCQA)
+- Creates executive-level business content
+- Structures data-driven insights and recommendations
+- Produces decision-enabling documents in text format
+
+**Mandatory For**:
+- Strategic recommendation documents
+- Executive briefings
+- Business analysis documents
+- Structured content before slide conversion
+
+**Use For**:
+- Business documents without slide formatting
+- Strategic analyses or recommendations
+- Executive summaries or briefing documents
+- Content creation before using presentation-assistant
+
+#### 8. presentation-assistant / presentation-agent
+**Use When**: Converting structured documents to slides, designing presentation visuals
+**Capabilities**:
+- Converts structured documents to McKinsey-style slides
+- Applies visual communication standards
+- Selects appropriate charts and designs
+- Creates professional slide layouts and formatting
+
+**Mandatory For**:
+- Converting business documents to slide format
+- Designing presentation visuals
+- Creating slide decks from structured content
+
+**Use For**:
+- As second step after document-assistant (recommended workflow)
+- Converting existing documents to slides
+- Professional slide deck design
+
+#### 9. github-speckit / github-speckit-agent
 **Use When**: Working with specification-driven development
 **Capabilities**:
 - Guides through Speckit workflow phases
@@ -266,6 +304,12 @@ This project has access to specialized Claude agents and skills. Using the appro
 | **User Story Creation** | agile-scrum-agent | - |
 | **Daily Progress Log** | daily-logging-agent | - |
 | **Specification Writing** | github-speckit-agent | - |
+| **Business Document Creation** | document-agent | thinking-agent (for analysis) |
+| **Executive Briefing** | document-agent | - |
+| **Strategic Analysis** | thinking-agent → document-agent | - |
+| **Slide Design (from document)** | document-agent → presentation-agent | - |
+| **Slide Conversion (existing doc)** | presentation-agent | - |
+| **Complete Presentation** | document-agent → presentation-agent | thinking-agent (for analysis) |
 
 ### Workflow Examples
 
@@ -301,6 +345,22 @@ This project has access to specialized Claude agents and skills. Using the appro
 6. daily-logging-agent: Log daily progress
 ```
 
+#### Example 4: Creating Business Presentation
+
+```
+1. thinking-agent: Analyze strategic options (if needed)
+2. document-agent: Create structured business document
+   - Apply McKinsey methodology (Pyramid Principle, MECE, SCQA)
+   - Create executive summary, body sections, recommendations
+3. presentation-agent: Convert document to slides
+   - Design visualizations
+   - Apply visual standards
+   - Format slides professionally
+4. User receives: Structured document + Slide deck
+```
+
+**Note**: Always use document-agent first for content, then presentation-agent for slides. This ensures content rigor before visual design.
+
 ### Mandatory Usage Rules
 
 **MUST** use specialized agent/skill when:
@@ -309,6 +369,9 @@ This project has access to specialized Claude agents and skills. Using the appro
 - ✅ Making architectural decisions (thinking-agent)
 - ✅ Reviewing code before merge (code-review-agent)
 - ✅ Writing user stories (agile-scrum-agent)
+- ✅ Creating business documents or analyses (document-agent)
+- ✅ Converting documents to slides (presentation-agent)
+- ✅ Creating complete presentations (document-agent → presentation-agent)
 
 **MAY** use specialized agent/skill for:
 - Simple bug fixes (can use coding-agent or handle directly)
