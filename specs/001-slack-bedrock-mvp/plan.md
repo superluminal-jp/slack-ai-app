@@ -20,7 +20,7 @@ Create a minimal Slack bot that integrates with Amazon Bedrock to provide AI-gen
 **Performance Goals**: 10-second maximum response time (per spec), acknowledge within 2-3 seconds (Slack timeout)
 **Constraints**:
 - Slack enforces 3-second HTTP response timeout (requires async pattern per constitution)
-- Bedrock API calls take 5-30 seconds (per constitution)
+- Bedrock API calls take variable time (unpredictable; note: design-time estimate was 5-30 seconds per constitution)
 - AWS Lambda 15-minute maximum execution time
 - Must implement HMAC SHA256 signature verification (per constitution)
 **Scale/Scope**: Single workspace MVP, minimal user concurrency expected for testing phase
@@ -34,7 +34,7 @@ Create a minimal Slack bot that integrates with Amazon Bedrock to provide AI-gen
 | Principle | MVP Status | Compliance | Justification |
 |-----------|-----------|------------|---------------|
 | I. Security-First Architecture | ⚠️ PARTIAL VIOLATION | HMAC SHA256 signature verification: YES<br>Authorization checks: DEFERRED<br>Input sanitization: DEFERRED<br>AI protections (Guardrails, PII): DEFERRED | **VIOLATION JUSTIFIED**: Spec explicitly states "ベストプラクティスに従った構成や要件は全て後回しに" (defer all best practices). MVP prioritizes basic connectivity. Signature verification included as minimum security. Full multi-layer defense deferred to post-MVP. |
-| II. Non-Blocking Async Processing | ✅ COMPLIANT | Must implement async pattern | Slack's 3-second timeout and Bedrock's 5-30 second latency mandate async processing (Slack Event Handler acknowledgment + Bedrock Processor background processing). |
+| II. Non-Blocking Async Processing | ✅ COMPLIANT | Must implement async pattern | Slack's 3-second timeout and Bedrock's unpredictable processing time (varies based on model, input length, and load conditions) mandate async processing (Slack Event Handler acknowledgment + Bedrock Processor background processing). |
 | III. Context History Management | ⚠️ VIOLATION | DEFERRED | **VIOLATION JUSTIFIED**: Spec explicitly lists "Multi-turn conversations with context retention" and "Conversation history storage" as Out of Scope. Single-turn interactions only for MVP. |
 | IV. Observability & Monitoring | ⚠️ PARTIAL VIOLATION | Basic CloudWatch: YES<br>Structured JSON logs: DEFERRED<br>Correlation IDs: DEFERRED<br>PII filtering in logs: DEFERRED | **VIOLATION JUSTIFIED**: Spec defers "Comprehensive monitoring and alerting" to post-MVP. Basic CloudWatch logs sufficient for MVP debugging. |
 | V. Error Handling & Resilience | ✅ PARTIAL COMPLIANT | Basic error handling: YES<br>Production-grade retry logic: DEFERRED | Spec requires "graceful error handling" (User Story 3, P2) with user-friendly messages. Advanced retry logic explicitly deferred. |

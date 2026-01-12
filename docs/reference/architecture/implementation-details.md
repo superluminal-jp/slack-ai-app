@@ -454,7 +454,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "message_length": len(text)
         }))
 
-        # Slackに即座に応答（3秒以内）
+        # Slackに応答（Lambda関数タイムアウト: 10秒）
         return {
             "statusCode": 200,
             "body": json.dumps({

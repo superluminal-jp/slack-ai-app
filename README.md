@@ -16,7 +16,7 @@ This application enables teams to use AI capabilities directly from Slack. Team 
 
 - **Zero learning curve**: Use AI directly from Slack—no new tools to learn
 - **Instant acknowledgment**: Get confirmation within 2 seconds that your request is being processed
-- **Fast responses**: Receive AI-generated answers in 5-30 seconds
+- **Fast responses**: Receive AI-generated answers after Bedrock processing completes (processing time varies based on model, input length, and load conditions)
 - **Team knowledge sharing**: See how colleagues effectively use AI, creating network effects
 - **Enterprise security**: Multi-layered defense protects against unauthorized access and data breaches
 
@@ -42,6 +42,7 @@ This application enables teams to use AI capabilities directly from Slack. Team 
 This project uses two independent stacks (VerificationStack and ExecutionStack) that can be deployed separately, supporting cross-account deployments.
 
 **Deployment Steps**:
+
 1. Deploy ExecutionStack → Get `ExecutionApiUrl`
 2. Deploy VerificationStack → Get `VerificationLambdaRoleArn` and `ExecutionResponseQueueUrl`
 3. Update ExecutionStack → Set resource policy and SQS queue URL
@@ -102,7 +103,7 @@ The system processes requests through two independent zones that can be deployed
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ Slack Workspace                                              │
-│ User: @bot question or /ask "question"                      │
+│ User: @bot question                                          │
 └────────────────────┬────────────────────────────────────────┘
                      │ [1] HTTPS POST
                      │ X-Slack-Signature (HMAC SHA256)
@@ -126,8 +127,8 @@ The system processes requests through two independent zones that can be deployed
 │ Execution Zone                                               │
 │ ┌─────────────────────────────────────────────────────────┐ │
 │ │ Execution API (API Gateway)                             │ │
-│ │ - IAM authentication only                                │ │
-│ │ - Resource policy: Verification Lambda role only        │ │
+│ │ - Dual auth: IAM or API key (default: API key)          │ │
+│ │ - Resource policy: Verification Lambda role + API key   │ │
 │ └──────────────────────┬──────────────────────────────────┘ │
 │                        │                                     │
 │ ┌─────────────────────▼──────────────────────────────────┐ │
@@ -157,32 +158,16 @@ The system processes requests through two independent zones that can be deployed
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ Slack Workspace                                              │
-│ [6] AI response displayed in thread                         │
+│ [6] AI response displayed in thread (👀 → ✅/❌)              │
 └────────────────────────────────────────────────────────────┘
-│ │ - Processes attachments (images, documents)            │ │
-│ │ [4] → Posts response to Slack (thread reply)           │ │
-│ └────────────────────┬───────────────────────────────────┘ │
-│                      │ [4] HTTPS POST to Slack API         │
-│                      ↓                                       │
-│ ┌─────────────────────────────────────────────────────────┐ │
-│ │ AWS Bedrock Converse API                                 │ │
-│ │ - Foundation Model (Claude, Nova, etc.)                │ │
-│ │ - Multimodal input (text + images)                      │ │
-│ └─────────────────────────────────────────────────────────┘ │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-                       ↓
-┌──────────────────────────────────────────────────────────────┐
-│ Slack Workspace                                               │
-│ [5] AI response displayed in thread (5-30 seconds)          │
-└──────────────────────────────────────────────────────────────┘
 
 Flow:
 [1] User sends request via Slack
-[2] Verification Zone responds immediately (<3 seconds)
-[3] Verification Zone calls Execution API (IAM authenticated)
-[4] Execution Zone processes with Bedrock and posts to Slack
-[5] Response appears in Slack thread (5-30 seconds)
+[2] Verification Zone responds with reaction (Lambda function timeout: 10 seconds)
+[3] Verification Zone calls Execution API (IAM or API key auth, default: API key)
+[4] Execution Zone processes with Bedrock and sends response to SQS
+[5] SlackResponseHandler in Verification Zone consumes SQS and posts to Slack
+[6] Response appears in Slack thread (after Bedrock processing completes)
 ```
 
 **Verification Zone** ensures requests are legitimate:
@@ -214,12 +199,15 @@ This separation enables:
 - HMAC SHA256 signature verification
 - Slack API existence checks (validates users, channels, workspaces are real)
 - Whitelist authorization (team_id, user_id, channel_id)
+
+**AI Security**:
+
 - PII masking in AI responses
 - Prompt injection detection
 
 ### Performance
 
-- **Async processing**: Acknowledgment within 3 seconds, full response in 5-30 seconds
+- **Async processing**: Acknowledgment (Lambda function timeout: 10 seconds), full response after Bedrock processing completes (processing time varies based on model, input length, and load conditions, and is unpredictable)
 - **Event deduplication**: Prevents processing the same request twice
 - **Structured logging**: Complete audit trail with correlation IDs
 
@@ -306,232 +294,223 @@ aws logs tail /aws/lambda/bedrock-processor --follow
 
 See [CLAUDE.md](CLAUDE.md) for development guidelines.
 
-## AWS MCP Servers
-
-This project includes AWS Model Context Protocol (MCP) servers for enhanced AI-assisted development. The servers provide access to AWS documentation, API operations, and Infrastructure-as-Code assistance.
-
-### Available Servers
-
-| Server | Purpose | Authentication |
-|--------|---------|----------------|
-| **aws-documentation-mcp-server** | Access AWS documentation and search content | None |
-| **aws-knowledge-mcp-server** | Up-to-date AWS documentation, code samples, regional availability | None (rate limited) |
-| **aws-api-mcp-server** | Interact with 15,000+ AWS APIs via natural language | AWS credentials required |
-| **aws-iac-mcp-server** | CDK and CloudFormation documentation, template validation | AWS credentials required |
-
-### Prerequisites
-
-Install the `uv` package manager:
-
-```bash
-# macOS/Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Or using Homebrew
-brew install uv
-```
-
-### Configuration
-
-The project includes a pre-configured `.claude/mcp.json` file with all four AWS MCP servers. The configuration uses environment variable expansion for flexible setup:
-
-```json
-{
-  "mcpServers": {
-    "aws-documentation-mcp-server": { ... },
-    "aws-knowledge-mcp-server": { ... },
-    "aws-api-mcp-server": { ... },
-    "aws-iac-mcp-server": { ... }
-  }
-}
-```
-
-### Environment Variables
-
-The MCP servers use these environment variables (with defaults):
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `AWS_REGION` | `ap-northeast-1` | AWS region for API operations |
-| `AWS_PROFILE` | `default` | AWS credential profile to use |
-| `HOME` | System default | User home directory |
-
-### Usage
-
-Once configured, Claude Code will automatically detect and use the MCP servers. You can:
-
-- Ask questions about AWS services and get documentation snippets
-- Execute AWS API operations through natural language
-- Get help with CDK and CloudFormation templates
-- Search for code examples and best practices
-
-### Approval
-
-When first using project-scoped MCP servers, Claude Code will prompt for approval. To reset approval choices:
-
-```bash
-claude mcp reset-project-choices
-```
-
-### References
-
-- [AWS MCP Servers Documentation](https://awslabs.github.io/mcp/)
-- [GitHub Repository](https://github.com/awslabs/mcp)
-- [Claude Code MCP Guide](https://code.claude.com/docs/en/mcp)
-
-## AWS MCP Orchestrator Skill
-
-This project includes an intelligent AWS MCP Orchestrator skill that automatically routes AWS-related queries to the most appropriate MCP server with built-in safety gates and transparency.
-
-### What It Does
-
-The orchestrator analyzes your AWS queries and:
-
-- **Classifies intent** - Determines what you're trying to accomplish
-- **Routes intelligently** - Selects the best MCP server(s) for your query
-- **Enforces safety** - Prevents accidental resource modifications with confirmation gates
-- **Provides transparency** - Explains which server is being used and why
-- **Manages fallbacks** - Automatically switches servers if rate-limited
-
-### Design Priorities
-
-1. **Safety** - Prevents accidental AWS resource modifications
-2. **Accuracy** - Ensures correct information from the right server
-3. **Freshness** - Uses latest AWS documentation when needed
-4. **Transparency** - Always explains routing decisions
-5. **Speed** - Optimizes for fast responses
-6. **Cost** - Minimizes unnecessary API calls
-
-### Intent Types
-
-The orchestrator recognizes six query types:
-
-| Intent | Description | Example | Server Used |
-|--------|-------------|---------|-------------|
-| **DOCUMENTATION_LOOKUP** | General AWS concepts and how-to questions | "How do I configure Lambda environment variables?" | knowledge-mcp |
-| **LATEST_INFORMATION** | Recent updates, new features, regional availability | "Latest Bedrock models in 2025?" | documentation-mcp |
-| **IAC_ASSISTANCE** | CDK/CloudFormation code generation and validation | "Generate CDK code for Lambda + DynamoDB" | iac-mcp |
-| **ACCOUNT_INSPECTION** | Read-only AWS account resource queries | "List my Lambda functions" | account-mcp |
-| **RESOURCE_MODIFICATION** | Create/update/delete AWS resources | "Update Lambda function memory to 512MB" | resource-mcp (with safety gate) |
-| **ARCHITECTURAL_GUIDANCE** | Multi-step architectural decisions | "Best way to implement API authentication?" | Multiple servers |
-
-### Safety Gates
-
-For resource modification queries, the orchestrator:
-
-1. **Detects write operations** - Identifies create/update/delete intent
-2. **Shows preview** - Displays exactly what will be executed
-3. **Requires confirmation** - Waits for explicit "CONFIRM" response
-4. **Analyzes impact** - Warns about irreversibility, cost, dependencies
-5. **Provides alternatives** - Suggests safer options when available
-
-**Example**:
-
-```
-User: "Delete DynamoDB table my-test-table"
-
-Orchestrator:
-⚠️  HIGH RISK OPERATION DETECTED
-
-Operation: DeleteTable
-Service: DynamoDB
-Resource: my-test-table
-
-Impact:
-❌ Permanent data loss (table and all items)
-❌ Cannot be undone
-⚠️  Dependent resources may break
-
-To proceed, type exactly: CONFIRM DELETE my-test-table
-```
-
-### Usage
-
-The orchestrator activates automatically when you ask AWS-related questions:
-
-```bash
-# General documentation
-"How does Lambda concurrency work?"
-→ Routes to: knowledge-mcp (fast, cached)
-
-# Latest information
-"What are the latest Lambda runtime versions in 2025?"
-→ Routes to: documentation-mcp (fresh, up-to-date)
-
-# Infrastructure code
-"Generate CDK code for API Gateway with API key authentication"
-→ Routes to: iac-mcp (specialized for IaC)
-
-# Account inspection
-"List my DynamoDB tables in ap-northeast-1"
-→ Routes to: account-mcp (read-only, requires AWS auth)
-
-# Resource modification (with safety gate)
-"Update Lambda function timeout to 60 seconds"
-→ Routes to: resource-mcp (preview + confirmation required)
-```
-
-### Project Context Optimization
-
-The orchestrator is optimized for this Slack AI App project and recognizes:
-
-- **Technologies**: Lambda, DynamoDB, API Gateway, CDK, Secrets Manager, Bedrock
-- **Common patterns**: Slack event handling, Bedrock API integration, API authentication
-- **Language preferences**: Python 3.11 for Lambda, TypeScript for CDK
-
-When you ask project-specific questions, the orchestrator automatically:
-- Filters results for relevant technologies
-- Provides code examples in the right languages
-- Suggests patterns that fit the project architecture
-
-### Fallback Chain
-
-If the primary server is unavailable or rate-limited:
-
-```
-documentation-mcp (rate-limited)
-    ↓
-knowledge-mcp (fallback)
-    + Warning: "Using cached docs (may not reflect latest updates)"
-```
-
-### Transparency
-
-Every response includes:
-
-```
-📋 Intent: DOCUMENTATION_LOOKUP
-🔍 Server: knowledge-mcp
-💡 Reason: General AWS concept, stable documentation
-✅ Safety: No auth required, read-only
-
-[Response content]
-
----
-Powered by knowledge-mcp
-```
-
-### Documentation
-
-- **Skill Definition**: `.claude/skills/aws-mcp-orchestrator/SKILL.md`
-- **Usage Guide**: `.claude/skills/aws-mcp-orchestrator/README.md`
-- **Examples**: `.claude/skills/aws-mcp-orchestrator/examples.md` (28 comprehensive examples)
-
 ## Environment Variables
 
-| Variable                        | Description                                                      | Default     |
-| ------------------------------- | ---------------------------------------------------------------- | ----------- |
-| `SLACK_SIGNING_SECRET`          | Slack app signing secret (first deploy only)                     | -           |
-| `SLACK_BOT_TOKEN`               | Slack bot OAuth token (first deploy only)                        | -           |
-| `BEDROCK_MODEL_ID`              | Bedrock model (configured in cdk.json)                          | -           |
-| `EXECUTION_API_AUTH_METHOD`     | Authentication method for Execution API (`iam` or `api_key`)     | `api_key`   |
-| `EXECUTION_API_KEY_SECRET_NAME` | Secrets Manager secret name for API key (if using API key auth)  | `execution-api-key-{env}` (environment-specific) |
+| Variable                        | Description                                                     | Default                                          |
+| ------------------------------- | --------------------------------------------------------------- | ------------------------------------------------ |
+| `SLACK_SIGNING_SECRET`          | Slack app signing secret (first deploy only)                    | -                                                |
+| `SLACK_BOT_TOKEN`               | Slack bot OAuth token (first deploy only)                       | -                                                |
+| `BEDROCK_MODEL_ID`              | Bedrock model (configured in cdk.json)                          | -                                                |
+| `EXECUTION_API_AUTH_METHOD`     | Authentication method for Execution API (`iam` or `api_key`)    | `api_key`                                        |
+| `EXECUTION_API_KEY_SECRET_NAME` | Secrets Manager secret name for API key (if using API key auth) | `execution-api-key-{env}` (environment-specific) |
 
 **Authentication Methods**:
+
 - **IAM Authentication**: Uses AWS Signature Version 4 (SigV4) signing with IAM credentials
 - **API Key Authentication**: Uses API key stored in AWS Secrets Manager (default)
 
 Secrets are stored in AWS Secrets Manager after first deployment.
+
+## Key Management
+
+This system uses multiple keys to ensure secure communication. All keys are securely stored in **AWS Secrets Manager** and retrieved at runtime.
+
+### Two-Key Defense Model
+
+Slack request verification uses a **Two-Key Defense** model with two independent keys. Even if one key is leaked, an attack cannot succeed without the other.
+
+**Why Both Keys Are Required**:
+
+For a request to be processed, **both verifications must pass**:
+
+1. **Signature Verification (Key 1)**: Requires Signing Secret
+   - Verifies that the request contains a valid signature
+   - Without Signing Secret, a valid signature cannot be generated
+
+2. **Existence Check (Key 2)**: Requires Bot Token
+   - Calls Slack API to verify entity existence
+   - Without Bot Token, Slack API cannot be called
+
+**If Only One Key Is Leaked**:
+
+- **Only Signing Secret leaked**: Signature verification passes, but Existence Check fails because Bot Token is required → **Attack blocked**
+- **Only Bot Token leaked**: Existence Check is possible, but signature verification fails because Signing Secret is required → **Attack blocked**
+
+**Only When Both Keys Are Leaked**:
+
+- Signature verification (Key 1) passes
+- Existence Check (Key 2) also passes
+- All verifications pass → **Attack may succeed**
+
+#### Key 1: Signing Secret
+
+- **Purpose**: Verify Slack request signatures
+- **Storage**: AWS Secrets Manager (`{StackName}/slack/signing-secret`)
+- **Usage**: HMAC SHA256 signature verification (**executed for each request**)
+  - Slack adds `X-Slack-Signature` header and `X-Slack-Request-Timestamp` header to requests
+  - Lambda function **executes for each request**:
+    1. Timestamp validation (within ±5 minutes, prevents replay attacks)
+    2. Signature recalculation: Computes HMAC SHA256 from `v0:{timestamp}:{body}`
+    3. Compares provided signature with recalculated signature (constant-time comparison)
+  - Request is accepted only if signatures match
+- **Protection**: Request authenticity (proves request was sent from Slack)
+
+**Important Point**: While Signing Secret is stored as a fixed value, **signature verification is executed for each request**. Each request's signature depends on the request body and timestamp, so it differs for each request.
+
+**Impact of Signing Secret Leakage**:
+
+If Signing Secret is leaked, an attacker can generate valid signatures for any request body and timestamp. In other words, **after registering Signing Secret and Bot Token in the verification zone, if they are leaked, it is technically possible to pass spoofed requests**.
+
+**Defense Mechanisms**:
+
+1. **Two-Key Defense**: If only Signing Secret is leaked, Existence Check requires Bot Token, so attacks using non-existent entity IDs are blocked
+2. **Timestamp Validation**: Only timestamps within ±5 minutes are valid (prevents replay attacks)
+3. **Event Deduplication**: Prevents duplicate processing of the same request
+4. **Whitelist Authorization**: Blocks requests from entities not in the whitelist
+
+**Possibility of Spoofing Attacks Without Key Leakage**:
+
+**Regarding replay attacks by intercepting legitimate Slack requests**:
+
+If an attacker intercepts a legitimate Slack request (e.g., via man-in-the-middle attack) and replays it:
+
+1. **Replaying the exact same request**:
+   - Signature verification passes (signature, timestamp, body are the same)
+   - However, **blocked by event deduplication** (same `event_id`)
+   - **Result**: Returns 200 OK but does not process the request
+
+2. **Modifying the request body and replaying**:
+   - Since signature is computed from `v0:{timestamp}:{body}`, modifying the body causes signature mismatch
+   - **Result**: Signature verification fails, returns 401 Unauthorized
+
+3. **Modifying the timestamp and replaying**:
+   - Since signature is computed from `v0:{timestamp}:{body}`, modifying the timestamp causes signature mismatch
+   - Timestamps older than 5 minutes fail validation
+   - **Result**: Signature verification fails, returns 401 Unauthorized
+
+**Conclusion**: As long as keys are not leaked, even if an attacker intercepts legitimate requests, **replaying the exact same request is blocked by event deduplication, and modifying the request causes signature verification to fail**. In other words, **spoofed requests cannot pass unless keys are leaked**.
+
+**However, an attack may succeed only if ALL of the following conditions are met**:
+
+- Both Signing Secret and Bot Token are leaked
+- Attacker can intercept legitimate requests (e.g., man-in-the-middle attack)
+- Attacker can generate requests with new `event_id` (if they have access to Slack's internal systems)
+
+This is an extremely rare case and difficult to achieve in normal attack scenarios.
+
+**If Both Keys Are Leaked**:
+
+If both Signing Secret + Bot Token are leaked, an attacker can:
+- Generate valid signatures for any request (using Signing Secret)
+- Pass Existence Check with real entity IDs (using Bot Token)
+- If using whitelisted user IDs, pass all verifications
+
+**Recommendations**:
+
+- Immediately rotate both keys if key leakage is suspected
+- Detect anomalous access patterns through monitoring and alerts
+- Regular security audits and key rotation
+
+#### Key 2: Bot Token
+
+- **Purpose**: Existence Check via Slack API
+- **Storage**: AWS Secrets Manager (`{StackName}/slack/bot-token`)
+- **Usage**: Slack API calls
+  - `team.info`: Verify `team_id` exists
+  - `users.info`: Verify `user_id` exists
+  - `conversations.info`: Verify `channel_id` exists
+- **Protection**: Entity existence (blocks requests from deleted users/channels)
+
+**Defense Against Spoofing Attacks Using Real User IDs**:
+
+For attacks using real `team_id`/`user_id`/`channel_id` (when both Signing Secret and Bot Token are leaked), the system is protected by **Whitelist Authorization (Layer 3c)**:
+
+- Signature verification (Key 1) passes
+- Existence Check (Key 2) also passes (real entities)
+- **Blocked by Whitelist Authorization**: Requests from entities not in the whitelist are rejected with 403 Forbidden
+- When a whitelist is configured, even real user IDs cannot access the system unless they are included in the whitelist
+
+**Important Limitation: Spoofing Attacks Using Whitelisted User IDs**:
+
+**If both Signing Secret and Bot Token are leaked, it is technically possible for a third party to impersonate whitelisted users**. In this case:
+
+- Signature verification (Key 1) passes
+- Existence Check (Key 2) also passes (real entities)
+- Whitelist authorization (Key 3) also passes (whitelisted user IDs)
+
+**Defense and Mitigation**:
+
+1. **Key Leakage Detection and Immediate Rotation**: If leakage is detected, immediately rotate both keys
+2. **Monitoring and Alerts**: Detect anomalous access patterns (e.g., unusual IP addresses, time periods, request frequencies)
+3. **Rate Limiting**: Minimize attack impact through per-user rate limiting
+4. **Event Deduplication**: Prevent duplicate processing of the same request
+5. **Principle of Least Privilege**: Lambda execution roles have only necessary permissions, limiting key access
+
+**Recommendations**:
+
+- Regular security audits and key rotation
+- CloudWatch metrics and alert configuration
+- Monitor anomalous access patterns
+- Establish immediate response procedures when key leakage is suspected
+
+### Execution API Authentication Keys
+
+Communication from Verification Zone to Execution Zone uses one of the following authentication methods.
+
+#### API Key Authentication (Default)
+
+- **Purpose**: Authenticate to Execution API Gateway
+- **Storage**: AWS Secrets Manager (`execution-api-key-{env}`)
+  - Development: `execution-api-key-dev`
+  - Production: `execution-api-key-prod`
+- **Usage**: Set API key in `x-api-key` header
+- **Retrieval**: Lambda function retrieves from Secrets Manager at runtime
+
+#### IAM Authentication (Alternative)
+
+- **Purpose**: Authenticate to Execution API Gateway (alternative to API key)
+- **Storage**: IAM role (Lambda execution role)
+- **Usage**: AWS Signature Version 4 (SigV4) signing
+- **Configuration**: Set environment variable `EXECUTION_API_AUTH_METHOD=iam`
+
+### Key Retrieval and Caching
+
+- **Retrieval Timing**: Retrieved from Secrets Manager when Lambda function executes
+- **Caching**: In-memory caching (for performance)
+  - Reused within the same Lambda instance
+  - Secrets Manager accessed only on cold start
+- **Access Control**: Minimum permissions granted to Lambda execution role
+  - `secretsmanager:GetSecretValue` permission
+  - Access limited to specific secret ARNs
+
+### Key Rotation
+
+- **Signing Secret**: Regenerate in Slack app settings, then manually update Secrets Manager
+- **Bot Token**: Regenerate in Slack app settings, then manually update Secrets Manager
+- **Execution API Key**: Generate new API key in API Gateway, then update Secrets Manager (zero downtime)
+
+### Security Considerations
+
+1. **Response to Key Leakage**:
+   - Signing Secret only leaked: Blocked by Existence Check (requires Bot Token)
+   - Bot Token only leaked: Blocked by signature verification (requires Signing Secret)
+   - Both leaked: Immediately rotate both keys
+
+2. **Key Storage**:
+   - ✅ AWS Secrets Manager (recommended): Encryption, access control, audit logs
+   - ❌ Environment variables: May appear in logs, difficult to rotate
+   - ❌ In code: Exposed in version control, security risk
+
+3. **Principle of Least Privilege**:
+   - Lambda execution role can access only required secrets
+   - Cross-account configurations restrict access via resource policies
+
+4. **Importance of Whitelist Authorization**:
+   - When whitelist is configured: Even real user IDs cannot access unless included in whitelist (defends against spoofing attacks using real user IDs)
+   - When whitelist is empty (not configured): All requests are allowed (for flexible configuration)
+   - **Recommendation**: Configure whitelist in production to allow only authorized entities
+
+For details, see [Authentication & Authorization Security Guide](docs/reference/security/authentication-authorization.md).
 
 ## Troubleshooting
 
@@ -570,11 +549,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## Recent Updates
 
-- **2025-12-29**: Added AWS MCP Servers and AWS MCP Orchestrator Skill
-  - Configured 4 AWS MCP servers (documentation, knowledge, api, iac)
-  - Created intelligent orchestrator skill with 6 intent types
-  - Implemented safety gates for resource modification operations
-  - Project-optimized for Slack AI App (Lambda, DynamoDB, API Gateway, CDK, Bedrock)
 - **2025-12-28**: Added dual authentication support (IAM and API key) for Execution API Gateway
   - Default authentication method: API key (configurable via `EXECUTION_API_AUTH_METHOD`)
   - API keys stored securely in AWS Secrets Manager

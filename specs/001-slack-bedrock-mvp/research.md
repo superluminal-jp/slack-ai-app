@@ -125,7 +125,7 @@ TEMPERATURE = 1.0  # Default conversational temperature
 
 **Rationale**:
 - **Slack constraint**: Must respond to event within 3 seconds
-- **Bedrock latency**: 5-30 seconds per constitution
+- **Bedrock latency**: Varies based on model, input length, and load conditions (unpredictable; note: design-time estimate was 5-30 seconds per constitution)
 - **Pattern**: Slack Event Handler acknowledges immediately, invokes Bedrock Processor asynchronously, Bedrock Processor posts to response_url
 
 **Implementation Flow**:
@@ -135,7 +135,7 @@ TEMPERATURE = 1.0  # Default conversational temperature
 3. Slack Event Handler returns 200 OK to Slack (< 1 second total)
 4. Slack Event Handler invokes Bedrock Processor (bedrock-processor) with Event type
 5. Bedrock Processor executes asynchronously:
-   - Calls Bedrock API (5-30 seconds)
+   - Calls Bedrock API (processing time varies, unpredictable; note: design-time estimate was 5-30 seconds)
    - Posts response to Slack response_url
    - No response to Slack Event Handler
 ```
