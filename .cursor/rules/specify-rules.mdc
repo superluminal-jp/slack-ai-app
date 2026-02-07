@@ -1,22 +1,13 @@
 # slack-ai-app Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2025-12-06
+Auto-generated from all feature plans. Last updated: 2026-02-07
 
 ## Active Technologies
-- Python 3.11+ for Lambda functions, TypeScript for AWS CDK infrastructure + AWS CDK, boto3 (Bedrock SDK), slack-sdk (Python), AWS Lambda runtime, requests for file downloads, PyPDF2 for PDF extraction, python-docx for DOCX extraction, openpyxl for XLSX extraction, python-pptx for PPTX extraction, LibreOffice (Lambda Layer) for PPTX to image conversion, csv (built-in) for CSV extraction (004-slack-attachments)
-- N/A (attachments downloaded temporarily in Lambda memory; no persistent storage required per spec Out of Scope) (004-slack-attachments)
-- Python 3.11+ for Lambda functions, TypeScript for AWS CDK infrastructure + AWS CDK, boto3 (DynamoDB client), slack-sdk (Python WebClient), AWS Lambda runtime (006-existence-check)
-- DynamoDB table for caching verification results (TTL: 5 minutes, partition key: cache_key) (006-existence-check)
-- Python 3.11+ + slack-sdk>=3.27.0, boto3>=1.34.0, requests>=2.31.0 (007-whitelist-auth)
-- DynamoDB (whitelist configuration and cache), AWS Secrets Manager (optional whitelist storage) (007-whitelist-auth)
-- Python 3.11+ + boto3 (AWS SDK), slack-sdk (Python), AWS Lambda runtime (008-flexible-whitelist)
-- DynamoDB (whitelist configuration), AWS Secrets Manager (alternative), Environment variables (fallback) (008-flexible-whitelist)
-- Markdown (CommonMark), YAML 1.2 + markdown-link-check (npm, リンク検証用) (009-docs-reorganization)
-- Git (ファイルベース) (009-docs-reorganization)
-- TypeScript 5.x (CDK), Python 3.11 (Lambda) + AWS CDK 2.x, aws-cdk-lib, constructs (010-cross-account-zones)
-- DynamoDB (既存テーブル構造を維持) (010-cross-account-zones)
+- Python 3.11（Execution / Verification エージェント）、TypeScript 5.x（CDK） (014-a2a-file-to-slack)
+- 既存の DynamoDB / Secrets Manager は変更なし。ファイルは A2A レスポンス内で base64 等で運び、永続化しない。 (014-a2a-file-to-slack)
+- なし（ファイルは A2A レスポンスでメモリ上のみ受け渡し。永続化は本機能スコープ外） (014-a2a-file-to-slack)
 
-- Python 3.11+ for Lambda functions, TypeScript for AWS CDK infrastructure + AWS CDK, boto3 (Bedrock SDK), slack-sdk (Python), AWS Lambda runtime, requests/httpx for file downloads, PyPDF2/pdfplumber for PDF extraction, python-docx for DOCX extraction (004-slack-attachments)
+- Python 3.11（エージェントコード）、TypeScript 5.x（CDK インフラ） (013-agentcore-a2a-zones)
 
 ## Project Structure
 
@@ -31,13 +22,13 @@ cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLO
 
 ## Code Style
 
-Python 3.11+ for Lambda functions, TypeScript for AWS CDK infrastructure: Follow standard conventions
+Python 3.11（エージェントコード）、TypeScript 5.x（CDK インフラ）: Follow standard conventions
 
 ## Recent Changes
-- 010-cross-account-zones: Added TypeScript 5.x (CDK), Python 3.11 (Lambda) + AWS CDK 2.x, aws-cdk-lib, constructs
-- 009-docs-reorganization: Added Markdown (CommonMark), YAML 1.2 + markdown-link-check (npm, リンク検証用)
-- 008-flexible-whitelist: Added Python 3.11+ + boto3 (AWS SDK), slack-sdk (Python), AWS Lambda runtime
+- 014-a2a-file-to-slack: Added Python 3.11（Execution / Verification エージェント）、TypeScript 5.x（CDK）
+- 014-a2a-file-to-slack: Added Python 3.11（Execution / Verification エージェント）、TypeScript 5.x（CDK）
 
+- 013-agentcore-a2a-zones: Added Python 3.11（エージェントコード）、TypeScript 5.x（CDK インフラ）
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->
