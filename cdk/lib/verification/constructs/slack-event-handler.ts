@@ -18,6 +18,8 @@ export interface SlackEventHandlerProps {
   awsRegion: string; // AWS region (e.g., ap-northeast-1)
   bedrockModelId: string; // Bedrock model ID (e.g., amazon.nova-pro-v1:0)
   executionApiUrl: string; // API Gateway URL for Execution Layer (required)
+  useAgentCore?: boolean; // Feature flag: use AgentCore A2A path instead of API Gateway
+  verificationAgentArn?: string; // ARN of Verification Agent Runtime (required if useAgentCore=true)
 }
 
 export class SlackEventHandler extends Construct {
@@ -105,6 +107,9 @@ export class SlackEventHandler extends Construct {
         // API key secret name in Secrets Manager (required if EXECUTION_API_AUTH_METHOD is 'api_key')
         // Default: 'execution-api-key-{env}' (environment-specific)
         EXECUTION_API_KEY_SECRET_NAME: process.env.EXECUTION_API_KEY_SECRET_NAME || `execution-api-key-${deploymentEnv}`,
+        // AgentCore A2A feature flag and configuration
+        USE_AGENTCORE: props.useAgentCore ? "true" : "false",
+        ...(props.verificationAgentArn ? { VERIFICATION_AGENT_ARN: props.verificationAgentArn } : {}),
       },
     });
 
@@ -171,6 +176,17 @@ export class SlackEventHandler extends Construct {
         },
       })
     );
+
+    // Grant AgentCore Runtime invocation permission (when feature flag is enabled)
+    if (props.useAgentCore && props.verificationAgentArn) {
+      this.function.addToRolePolicy(
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ["bedrock-agentcore:InvokeAgentRuntime"],
+          resources: [props.verificationAgentArn],
+        })
+      );
+    }
 
     // Create Function URL (no auth - signature verification in code)
     this.functionUrl = this.function.addFunctionUrl({

@@ -2,7 +2,7 @@
 
 > **English version**: [README.md](README.md)
 
-Slack と Amazon Bedrock をセキュアに接続し、AI 生成レスポンスを提供するサーバーレス Slack ボット。エンタープライズレベルのセキュリティとパフォーマンスを実現します。
+Slack と Amazon Bedrock をセキュアに接続し、AI 生成レスポンスを提供する Slack ボット。Amazon Bedrock AgentCore Runtime と A2A（Agent-to-Agent）プロトコルによるゾーン間通信、エンタープライズレベルのセキュリティ多層防御を実現します。
 
 ## このシステムの目的
 
@@ -35,6 +35,8 @@ Slack と Amazon Bedrock をセキュアに接続し、AI 生成レスポンス�
 
 - Bedrock アクセスが有効な AWS アカウント
 - Node.js 18+ および Python 3.11+
+- Docker（ARM64 ビルド対応 — AgentCore コンテナ用）
+- AWS CDK CLI v2.215.0+
 - Slack ワークスペース管理者権限
 
 ### デプロイ
@@ -98,7 +100,9 @@ export DEPLOYMENT_ENV=prod
 
 ## 動作の仕組み
 
-システムは、セキュリティ強化のために個別にデプロイ可能な 2 つの独立したゾーンを通じてリクエストを処理します：
+システムは 2 つの独立したゾーンでリクエストを処理します。**AgentCore A2A パス**（推奨）と**レガシーパス**の 2 つの通信経路があり、Feature Flag (`USE_AGENTCORE`) で切り替え可能です。
+
+### AgentCore A2A パス（推奨）
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -111,65 +115,67 @@ export DEPLOYMENT_ENV=prod
 ┌─────────────────────────────────────────────────────────────┐
 │ 検証ゾーン (Verification Zone)                               │
 │ ┌─────────────────────────────────────────────────────────┐ │
-│ │ SlackEventHandler (Function URL)                        │ │
-│ │ - 署名検証（鍵 1）                                       │ │
-│ │ - Slack API 実在性チェック（鍵 2）                       │ │
-│ │ - ホワイトリスト認可                                    │ │
-│ │ - イベント重複排除                                      │ │
-│ │ [2] → リアクション（👀）で応答（Lambda関数タイムアウト: 10秒）        │ │
-│ │ [3] → Execution API を呼び出し（IAM 認証）              │ │
+│ │ SlackEventHandler Lambda (Function URL)                 │ │
+│ │ - 署名検証、リアクション(👀)応答                         │ │
+│ │ - USE_AGENTCORE=true → AgentCore A2A パス               │ │
+│ │ [2] InvokeAgentRuntime (SigV4)                          │ │
+│ └──────────────────────┬──────────────────────────────────┘ │
+│                        │                                     │
+│ ┌─────────────────────▼──────────────────────────────────┐ │
+│ │ Verification Agent (AgentCore Runtime, ARM64)           │ │
+│ │ - A2A プロトコル (JSON-RPC 2.0, port 9000)              │ │
+│ │ - セキュリティパイプライン: 存在確認 → 認可 → レート制限│ │
+│ │ - Agent Card: /.well-known/agent-card.json              │ │
+│ │ [3] InvokeAgentRuntime (SigV4, クロスアカウント対応)    │ │
 │ └──────────────────────┬──────────────────────────────────┘ │
 └────────────────────────┼────────────────────────────────────┘
-                         │ [3] API Gateway (IAM認証 または APIキー認証)
-                         │ POST /execute
-                         │ 認証: IAM (SigV4) または APIキー (x-api-key ヘッダー)
+                         │ [3] A2A (SigV4 認証)
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ 実行ゾーン (Execution Zone)                                  │
 │ ┌─────────────────────────────────────────────────────────┐ │
-│ │ Execution API (API Gateway)                             │ │
-│ │ - デュアル認証: IAM認証 または APIキー認証（デフォルト: APIキー認証）│ │
-│ │ - リソースポリシー: 検証 Lambda ロール + APIキー        │ │
+│ │ Execution Agent (AgentCore Runtime, ARM64)               │ │
+│ │ - 非同期タスク: add_async_task → バックグラウンド処理   │ │
+│ │ - Bedrock Converse API、添付ファイル処理                │ │
+│ │ [4] complete_async_task → 結果返却                       │ │
 │ └──────────────────────┬──────────────────────────────────┘ │
-│                        │                                     │
-│ ┌─────────────────────▼──────────────────────────────────┐ │
-│ │ BedrockProcessor                                        │ │
-│ │ - Amazon Bedrock Converse API を呼び出し               │ │
-│ │ - 添付ファイルを処理（画像、ドキュメント）            │ │
-│ │ [4] → SQS キューにレスポンスを送信                     │ │
-│ └──────────────────────┬──────────────────────────────────┘ │
-└────────────────────────┼────────────────────────────────────┘
-                         │ [4] SQS メッセージ
-                         ↓
+└──────────────────────┬──────────────────────────────────────┘
+                       │ [4] A2A レスポンス（非同期ポーリング）
+                       ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ 検証ゾーン（継続）                                           │
-│ ┌─────────────────────────────────────────────────────────┐ │
-│ │ ExecutionResponseQueue (SQS)                            │ │
-│ │ - 実行ゾーンからのレスポンスを受信                        │ │
-│ └──────────────────────┬──────────────────────────────────┘ │
-│                        │                                     │
-│ ┌─────────────────────▼──────────────────────────────────┐ │
-│ │ SlackResponseHandler                                    │ │
-│ │ - SQS メッセージを処理                                  │ │
-│ │ - Slack API にレスポンスを投稿                          │ │
-│ │ [5] → Slack に投稿 (chat.postMessage)                 │ │
-│ └──────────────────────┬──────────────────────────────────┘ │
-└────────────────────────┼────────────────────────────────────┘
-                         │ [5] HTTPS POST
-                         ↓
-┌─────────────────────────────────────────────────────────────┐
-│ Slack ワークスペース                                          │
-│ [6] スレッド内に AI レスポンスが表示（👀 → ✅/❌）            │
-└────────────────────────────────────────────────────────────┘
+│ Verification Agent → Slack API (chat.postMessage)          │
+│ [5] AI レスポンスをスレッドに投稿                            │
+└─────────────────────────────────────────────────────────────┘
 
-フロー:
-[1] ユーザーが Slack からリクエストを送信
-[2] 検証ゾーンがリアクション（👀）で応答（Lambda関数タイムアウト: 10秒）
-[3] 検証ゾーンが Execution API を呼び出し（IAM認証 または APIキー認証、デフォルト: APIキー認証）
-[4] 実行ゾーンが Bedrock で処理し、SQS にレスポンスを送信
-[5] 検証ゾーンの SlackResponseHandler が SQS を消費し Slack に投稿
-[6] レスポンスが Slack スレッド内に表示（Bedrock の処理完了後）
+フロー (AgentCore A2A):
+[1] ユーザーが @bot で質問を送信
+[2] SlackEventHandler → Verification Agent (InvokeAgentRuntime)
+[3] Verification Agent → Execution Agent (A2A, SigV4)
+[4] Execution Agent → Bedrock → 非同期結果返却
+[5] Verification Agent → Slack API → スレッド返信
 ```
+
+### レガシーパス（Feature Flag: USE_AGENTCORE=false）
+
+従来の API Gateway + Lambda + SQS 構成です。`USE_AGENTCORE=false` でフォールバック可能。
+
+```
+Slack → SlackEventHandler → API Gateway → BedrockProcessor → SQS → SlackResponseHandler → Slack
+```
+
+### AgentCore A2A vs レガシーパス比較
+
+| 項目 | レガシー (API Gateway + SQS) | AgentCore A2A |
+|------|------------------------------|---------------|
+| ゾーン間通信 | API Gateway + Lambda | AgentCore Runtime (A2A) |
+| 認証 | IAM SigV4 / API キー | SigV4（自動） |
+| レスポンス配信 | SQS → SlackResponseHandler | Verification Agent 直接投稿 |
+| 非同期処理 | SQS メッセージキュー | AgentCore async task |
+| コンテナ | Lambda（マネージド） | ARM64 Docker (microVM) |
+| Agent Discovery | なし | Agent Card (A2A 準拠) |
+
+### ゾーンの役割
 
 **検証ゾーン**は、リクエストが正当であることを確認します：
 
@@ -183,13 +189,14 @@ export DEPLOYMENT_ENV=prod
 - Amazon Bedrock を呼び出して回答を生成
 - 会話コンテキストとスレッド履歴を管理
 - 添付ファイル（画像、ドキュメント）を処理
-- レスポンスを SQS 経由で検証ゾーンに返却（SlackResponseHandler が Slack 投稿・リアクション更新を実施）
+- A2A レスポンスで検証ゾーンに結果を返却
 
 この分離により以下が可能になります：
 
 - **クロスアカウントデプロイ**: 検証と実行を異なる AWS アカウントにデプロイ
 - **独立した更新**: 一方のゾーンを更新しても他方に影響しない
-- **セキュリティ強化**: 検証と処理の間に強固なセキュリティ境界
+- **セキュリティ強化**: SigV4 + リソースベースポリシーによる強固なセキュリティ境界
+- **ゼロダウンタイムロールバック**: Feature Flag で即座にレガシーパスに切り替え可能
 
 ## 主な機能
 
@@ -221,24 +228,30 @@ export DEPLOYMENT_ENV=prod
 ### インフラストラクチャ
 
 - **AWS CDK**: TypeScript によるインフラストラクチャ as コード
+- **AgentCore Runtime**: A2A プロトコル対応の ARM64 コンテナ (microVM)
+- **ECR**: AgentCore エージェントの Docker イメージ管理
 - **DynamoDB**: トークンを保存し、検証結果をキャッシュし、重複を防止
 - **AWS Secrets Manager**: Slack 認証情報と API キーを安全に保存
-- **API Gateway**: デュアル認証（IAM 認証と API キー認証）によるスタック間通信
+- **API Gateway**: レガシーパス用デュアル認証（IAM 認証と API キー認証）
 - **独立したデプロイ**: 検証と実行ゾーンを別々のスタックとしてデプロイ可能
+- **Feature Flag**: `USE_AGENTCORE` でゼロダウンタイムのパス切り替え
 
 ## アーキテクチャ
 
-アプリケーションは、**2 つの独立したスタック**を使用し、個別にデプロイ可能です：
+アプリケーションは **2 つの独立したスタック**を使用し、個別にデプロイ可能です：
 
-- **VerificationStack**: SlackEventHandler + DynamoDB + Secrets Manager
-- **ExecutionStack**: BedrockProcessor + API Gateway
+- **VerificationStack**: SlackEventHandler Lambda + Verification Agent (AgentCore) + DynamoDB + Secrets Manager
+- **ExecutionStack**: Execution Agent (AgentCore) + BedrockProcessor (レガシー) + API Gateway (レガシー)
+
+各スタックには AgentCore Runtime + ECR リソースが含まれ、Feature Flag で有効化します。
 
 この構成は以下をサポートします：
 
-- ✅ クロスアカウントデプロイ
+- ✅ AgentCore A2A プロトコルによるゾーン間通信
+- ✅ クロスアカウントデプロイ（SigV4 + リソースベースポリシー）
+- ✅ Feature Flag による段階的移行とゼロダウンタイムロールバック
+- ✅ Agent Card (A2A 準拠) による Agent Discovery
 - ✅ 独立したライフサイクル管理
-- ✅ セキュリティ境界の強化
-- ✅ 柔軟なデプロイオプション
 
 技術的な詳細については、[アーキテクチャ概要](docs/reference/architecture/overview.md)を参照してください。
 
@@ -258,42 +271,76 @@ export DEPLOYMENT_ENV=prod
 
 ```
 slack-ai-app/
-├── cdk/                    # AWS CDK インフラストラクチャ
+├── cdk/                        # AWS CDK インフラストラクチャ
+│   ├── bin/                    # CDK エントリーポイント
 │   ├── lib/
-│   │   ├── execution/      # Execution Stack (完全自己完結)
+│   │   ├── execution/          # Execution Stack
 │   │   │   ├── execution-stack.ts
 │   │   │   ├── constructs/
-│   │   │   └── lambda/     # Lambdaコード
-│   │   │       └── bedrock-processor/
-│   │   ├── verification/   # Verification Stack (完全自己完結)
+│   │   │   │   ├── execution-agent-runtime.ts   # AgentCore Runtime (A2A)
+│   │   │   │   ├── execution-agent-ecr.ts       # ECR イメージビルド
+│   │   │   │   ├── bedrock-processor.ts         # レガシー Lambda
+│   │   │   │   └── execution-api.ts             # レガシー API Gateway
+│   │   │   ├── agent/
+│   │   │   │   └── execution-agent/             # Execution Agent コンテナ
+│   │   │   │       ├── main.py                  # A2A サーバー
+│   │   │   │       ├── agent_card.py            # Agent Card 定義
+│   │   │   │       ├── cloudwatch_metrics.py    # メトリクス
+│   │   │   │       └── tests/                   # Python テスト (41 tests)
+│   │   │   └── lambda/                          # レガシー Lambda コード
+│   │   ├── verification/       # Verification Stack
 │   │   │   ├── verification-stack.ts
 │   │   │   ├── constructs/
-│   │   │   └── lambda/     # Lambdaコード
-│   │   │       ├── slack-event-handler/
-│   │   │       └── slack-response-handler/
-│   │   └── types/         # 共通型定義
-│   └── bin/              # CDKエントリーポイント
-├── docs/                   # ドキュメント
-│   ├── reference/          # アーキテクチャ、セキュリティ、運用
-│   ├── explanation/        # 設計原則、ADR
-│   ├── tutorials/          # 入門ガイド
-│   └── how-to/             # トラブルシューティング
-└── specs/                  # 機能仕様
+│   │   │   │   ├── verification-agent-runtime.ts # AgentCore Runtime (A2A)
+│   │   │   │   ├── verification-agent-ecr.ts     # ECR イメージビルド
+│   │   │   │   └── slack-event-handler.ts        # Feature Flag 対応
+│   │   │   ├── agent/
+│   │   │   │   └── verification-agent/           # Verification Agent コンテナ
+│   │   │   │       ├── main.py                   # A2A サーバー
+│   │   │   │       ├── a2a_client.py             # Execution Agent A2A クライアント
+│   │   │   │       ├── agent_card.py             # Agent Card 定義
+│   │   │   │       ├── cloudwatch_metrics.py     # メトリクス
+│   │   │   │       └── tests/                    # Python テスト (32 tests)
+│   │   │   └── lambda/                           # レガシー Lambda コード
+│   │   └── types/              # 共通型定義
+│   └── test/                   # CDK/Jest テスト (24 tests)
+├── docs/                       # ドキュメント
+│   ├── reference/              # アーキテクチャ、セキュリティ、運用
+│   ├── explanation/            # 設計原則、ADR
+│   ├── tutorials/              # 入門ガイド
+│   └── how-to/                 # トラブルシューティング
+├── specs/                      # 機能仕様
+└── scripts/                    # デプロイスクリプト
 ```
 
 ## 開発
 
-```bash
-# テスト実行
-cd cdk/lib/verification/lambda/slack-event-handler && pytest tests/
-cd ../../execution/lambda/bedrock-processor && pytest tests/
+### テスト実行
 
-# ログ確認
-aws logs tail /aws/lambda/SlackAI-Verification-Dev-SlackEventHandler --follow
-aws logs tail /aws/lambda/SlackAI-Execution-Dev-BedrockProcessor --follow
+```bash
+# CDK コンストラクトテスト (Jest, 24 tests)
+cd cdk && npx jest test/agentcore-constructs.test.ts --verbose
+
+# Execution Agent テスト (pytest, 41 tests)
+cd cdk/lib/execution/agent/execution-agent && python -m pytest tests/ -v
+
+# Verification Agent テスト (pytest, 32 tests)
+cd cdk/lib/verification/agent/verification-agent && python -m pytest tests/ -v
+
+# レガシー Lambda テスト
+cd cdk/lib/verification/lambda/slack-event-handler && pytest tests/
+cd cdk/lib/execution/lambda/bedrock-processor && pytest tests/
 ```
 
-開発ガイドラインは [CLAUDE.md](CLAUDE.md) を参照。
+### ログ確認
+
+```bash
+# Lambda ログ
+aws logs tail /aws/lambda/SlackAI-Verification-Dev-SlackEventHandler --follow
+
+# AgentCore Runtime ログ（AgentCore 有効時）
+aws logs tail /aws/lambda/SlackAI-Execution-Dev-BedrockProcessor --follow
+```
 
 ## 環境変数
 
@@ -302,13 +349,16 @@ aws logs tail /aws/lambda/SlackAI-Execution-Dev-BedrockProcessor --follow
 | `SLACK_SIGNING_SECRET`          | Slack アプリ署名シークレット（初回デプロイのみ）    | -                                              |
 | `SLACK_BOT_TOKEN`               | Slack ボット OAuth トークン（初回デプロイのみ）     | -                                              |
 | `BEDROCK_MODEL_ID`              | Bedrock モデル（cdk.json で設定）                   | -                                              |
-| `EXECUTION_API_AUTH_METHOD`     | Execution API の認証方法（`iam` または `api_key`）  | `api_key`                                      |
+| `USE_AGENTCORE`                 | AgentCore A2A パスの有効化                          | `false`                                        |
+| `VERIFICATION_AGENT_ARN`        | Verification Agent の AgentCore Runtime ARN         | -                                              |
+| `EXECUTION_AGENT_ARN`           | Execution Agent の AgentCore Runtime ARN            | -                                              |
+| `EXECUTION_API_AUTH_METHOD`     | レガシー Execution API の認証方法                   | `api_key`                                      |
 | `EXECUTION_API_KEY_SECRET_NAME` | API キー認証使用時の Secrets Manager シークレット名 | `execution-api-key-{env}` (環境ごとに自動設定) |
 
-**認証方法**:
+**通信パス切り替え**:
 
-- **IAM 認証**: AWS Signature Version 4 (SigV4) 署名による認証
-- **API キー認証**: AWS Secrets Manager に保存された API キーを使用（デフォルト）
+- **`USE_AGENTCORE=true`**: AgentCore A2A パス（推奨）— SigV4 自動認証、非同期タスク管理、Agent Card
+- **`USE_AGENTCORE=false`**: レガシーパス — API Gateway + Lambda + SQS
 
 シークレットは初回デプロイ後、AWS Secrets Manager に保存されます。
 
@@ -553,11 +603,16 @@ Signing Secret + Bot Token の両方が漏洩した場合、攻撃者は：
 
 ---
 
-**最終更新日**: 2025-12-29
+**最終更新日**: 2026-02-07
 
 ## 最近の更新
 
+- **2026-02-07**: AgentCore A2A ゾーン間通信を実装
+  - Amazon Bedrock AgentCore Runtime と A2A プロトコルによるゾーン間通信
+  - Verification Agent / Execution Agent のコンテナ化 (ARM64 Docker)
+  - SigV4 認証 + リソースベースポリシーによるクロスアカウント対応
+  - Agent Card (`/.well-known/agent-card.json`) による Agent Discovery
+  - 非同期タスク管理 (`add_async_task` / `complete_async_task`)
+  - Feature Flag (`USE_AGENTCORE`) でゼロダウンタイムロールバック対応
+  - TDD テスト 97 件全パス（Python 73 + CDK/Jest 24）
 - **2025-12-28**: Execution API Gateway にデュアル認証サポート（IAM 認証と API キー認証）を追加
-  - デフォルト認証方法: API キー認証（`EXECUTION_API_AUTH_METHOD` 環境変数で設定可能）
-  - API キーは AWS Secrets Manager に安全に保存
-  - 将来的な非 AWS API との統合に対応

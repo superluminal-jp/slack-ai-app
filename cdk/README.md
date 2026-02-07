@@ -1,13 +1,15 @@
 # Slack AI App - CDK Infrastructure
 
-This CDK project deploys the Slack AI application infrastructure to AWS using two independent stacks.
+This CDK project deploys the Slack AI application infrastructure to AWS using two independent stacks, with Amazon Bedrock AgentCore Runtime and A2A protocol support.
 
 ## Deployment Architecture
 
 The application uses two independent stacks that can be deployed separately, supporting both same-account and cross-account deployments:
 
-- **ExecutionStack**: BedrockProcessor + API Gateway
-- **VerificationStack**: SlackEventHandler + DynamoDB + Secrets
+- **ExecutionStack**: Execution Agent (AgentCore Runtime) + BedrockProcessor (legacy) + API Gateway (legacy)
+- **VerificationStack**: SlackEventHandler Lambda + Verification Agent (AgentCore Runtime) + DynamoDB + Secrets
+
+Each stack includes AgentCore Runtime + ECR resources, enabled via Feature Flag (`USE_AGENTCORE`).
 
 ### Stack Independence
 
@@ -101,7 +103,11 @@ cp cdk.config.json.example cdk.config.prod.json
   "executionApiUrl": "",
   "executionResponseQueueUrl": "",
   "slackBotToken": "",
-  "slackSigningSecret": ""
+  "slackSigningSecret": "",
+  "executionAgentName": "SlackAI-ExecutionAgent",
+  "verificationAgentName": "SlackAI-VerificationAgent",
+  "useAgentCore": true,
+  "executionAgentArn": ""
 }
 ```
 
@@ -252,20 +258,23 @@ Then follow the same steps as above. The deployment script (`scripts/deploy-spli
 
 ### ExecutionStack
 
-| Output              | Description                                         |
-| ------------------- | --------------------------------------------------- |
-| ExecutionApiUrl     | API Gateway URL for VerificationStack configuration |
-| ExecutionApiArn     | API Gateway ARN for IAM policy                      |
-| BedrockProcessorArn | Lambda function ARN                                 |
-| ExecutionApiKeyId   | API Gateway API Key ID (if API key auth is enabled) |
+| Output                      | Description                                             |
+| --------------------------- | ------------------------------------------------------- |
+| ExecutionApiUrl             | API Gateway URL for VerificationStack configuration     |
+| ExecutionApiArn             | API Gateway ARN for IAM policy                          |
+| BedrockProcessorArn         | Lambda function ARN                                     |
+| ExecutionApiKeyId           | API Gateway API Key ID (if API key auth is enabled)     |
+| ExecutionAgentRuntimeArn    | AgentCore Runtime ARN (when `useAgentCore` is enabled)  |
+| ExecutionAgentEndpointUrl   | AgentCore Runtime Endpoint URL                          |
 
 ### VerificationStack
 
-| Output                    | Description                                 |
-| ------------------------- | ------------------------------------------- |
-| SlackEventHandlerUrl      | Function URL for Slack Event Subscriptions  |
-| VerificationLambdaRoleArn | Role ARN for ExecutionStack resource policy |
-| SlackEventHandlerArn      | Lambda function ARN                         |
+| Output                        | Description                                           |
+| ----------------------------- | ----------------------------------------------------- |
+| SlackEventHandlerUrl          | Function URL for Slack Event Subscriptions            |
+| VerificationLambdaRoleArn     | Role ARN for ExecutionStack resource policy           |
+| SlackEventHandlerArn          | Lambda function ARN                                   |
+| VerificationAgentRuntimeArn   | AgentCore Runtime ARN (when `useAgentCore` is enabled)|
 
 ## Useful Commands
 
@@ -360,6 +369,10 @@ cdk/
 | `executionResponseQueueUrl` | No       | string | SQS queue URL from Verification Stack (populated after Verification Stack deployment)   |
 | `slackBotToken`             | No       | string | Slack Bot OAuth Token (can be set via environment variable `SLACK_BOT_TOKEN`)           |
 | `slackSigningSecret`        | No       | string | Slack Signing Secret (can be set via environment variable `SLACK_SIGNING_SECRET`)       |
+| `executionAgentName`        | No       | string | AgentCore Execution Agent name (e.g., `SlackAI-ExecutionAgent`)                        |
+| `verificationAgentName`     | No       | string | AgentCore Verification Agent name (e.g., `SlackAI-VerificationAgent`)                  |
+| `useAgentCore`              | No       | boolean| Enable AgentCore A2A path (`true` to enable, `false` for legacy path)                  |
+| `executionAgentArn`         | No       | string | Execution Agent ARN (populated after Execution Stack deployment with AgentCore)        |
 
 ### Configuration Validation
 
@@ -397,46 +410,86 @@ The CDK project follows a fully separated stack structure where each stack is se
 ```
 cdk/
 ├── bin/
-│   └── cdk.ts                    # CDK application entry point
+│   └── cdk.ts                        # CDK application entry point
 ├── lib/
-│   ├── execution/                # Execution Stack (完全自己完結)
-│   │   ├── execution-stack.ts    # Stack definition
+│   ├── execution/                     # Execution Stack
+│   │   ├── execution-stack.ts         # Stack definition
 │   │   ├── constructs/
-│   │   │   ├── bedrock-processor.ts
-│   │   │   ├── execution-api.ts
+│   │   │   ├── execution-agent-runtime.ts  # AgentCore Runtime (A2A)
+│   │   │   ├── execution-agent-ecr.ts      # ECR image build
+│   │   │   ├── bedrock-processor.ts        # Legacy Lambda
+│   │   │   ├── execution-api.ts            # Legacy API Gateway
 │   │   │   └── api-gateway-monitoring.ts
-│   │   └── lambda/               # Lambda code
+│   │   ├── agent/
+│   │   │   └── execution-agent/            # Execution Agent container
+│   │   │       ├── Dockerfile              # ARM64 container
+│   │   │       ├── requirements.txt
+│   │   │       ├── main.py                 # A2A server (port 9000)
+│   │   │       ├── agent_card.py           # Agent Card
+│   │   │       ├── cloudwatch_metrics.py
+│   │   │       ├── bedrock_client_converse.py
+│   │   │       ├── attachment_processor.py
+│   │   │       └── tests/                  # Python tests (41 tests)
+│   │   └── lambda/                         # Legacy Lambda code
 │   │       └── bedrock-processor/
-│   ├── verification/              # Verification Stack (完全自己完結)
-│   │   ├── verification-stack.ts # Stack definition
+│   ├── verification/                  # Verification Stack
+│   │   ├── verification-stack.ts      # Stack definition
 │   │   ├── constructs/
-│   │   │   ├── slack-event-handler.ts
-│   │   │   ├── slack-response-handler.ts
+│   │   │   ├── verification-agent-runtime.ts  # AgentCore Runtime (A2A)
+│   │   │   ├── verification-agent-ecr.ts      # ECR image build
+│   │   │   ├── slack-event-handler.ts         # Feature Flag support
+│   │   │   ├── slack-response-handler.ts      # Legacy
 │   │   │   └── (other constructs)
-│   │   └── lambda/               # Lambda code
+│   │   ├── agent/
+│   │   │   └── verification-agent/            # Verification Agent container
+│   │   │       ├── Dockerfile                 # ARM64 container
+│   │   │       ├── requirements.txt
+│   │   │       ├── main.py                    # A2A server (port 9000)
+│   │   │       ├── a2a_client.py              # Execution Agent A2A client
+│   │   │       ├── agent_card.py              # Agent Card
+│   │   │       ├── cloudwatch_metrics.py
+│   │   │       └── tests/                     # Python tests (32 tests)
+│   │   └── lambda/                            # Legacy Lambda code
 │   │       ├── slack-event-handler/
 │   │       └── slack-response-handler/
-│   └── types/                    # Shared type definitions
-├── test/                         # Unit tests
+│   └── types/                         # Shared type definitions
+├── test/                              # CDK/Jest tests (24 tests)
+│   └── agentcore-constructs.test.ts   # AgentCore construct tests
 ├── package.json
 ├── tsconfig.json
 └── cdk.json
 ```
 
 **Key Benefits of This Structure**:
-- **Complete Stack Isolation**: Each stack contains both CDK code and Lambda code
-- **Clear Separation**: Directory structure reflects stack independence
-- **Simple Paths**: Lambda paths are simple (e.g., `../lambda/bedrock-processor`)
+- **Complete Stack Isolation**: Each stack contains CDK code, Lambda code, and AgentCore agent code
+- **AgentCore + Legacy Coexistence**: Both paths exist side-by-side, controlled by Feature Flag
+- **Comprehensive Testing**: 97 tests (41 + 32 Python + 24 CDK/Jest)
 - **Maintainability**: Changes to one stack don't affect the other
 - **Best Practices**: Follows monorepo patterns for feature-based separation
 
 ## Testing
 
 ```bash
-# Run unit tests
+# Run all CDK/Jest tests
 npm run test
 
-# Run specific test file
-npm run test -- execution-stack.test.ts
-npm run test -- verification-stack.test.ts
+# Run AgentCore construct tests (24 tests)
+npx jest test/agentcore-constructs.test.ts --verbose
+
+# Run specific stack tests
+npx jest test/execution-stack.test.ts
+npx jest test/verification-stack.test.ts
+
+# Run Python agent tests
+cd lib/execution/agent/execution-agent && python -m pytest tests/ -v     # 41 tests
+cd lib/verification/agent/verification-agent && python -m pytest tests/ -v  # 32 tests
 ```
+
+### Test Coverage
+
+| Test Suite | Framework | Tests | Description |
+|------------|-----------|-------|-------------|
+| AgentCore Constructs | Jest | 24 | Runtime, IAM, cross-account policies, Feature Flag |
+| Execution Agent | pytest | 41 | A2A server, async tasks, Bedrock, Agent Card, metrics |
+| Verification Agent | pytest | 32 | Security pipeline, A2A client, Slack posting, Agent Card |
+| **Total** | | **97** | **All passing** |

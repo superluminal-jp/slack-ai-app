@@ -197,7 +197,85 @@
 
 ---
 
-## 2.4 デプロイメントアーキテクチャ
+## 2.4 AgentCore A2A アーキテクチャ（Feature Flag: USE_AGENTCORE）
+
+> **注意**: この機能は Feature Flag (`USE_AGENTCORE=true`) で有効化されます。
+> 無効時は従来の API Gateway + Lambda + SQS パスが使用されます。
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Slackワークスペース                                           │
+│ ユーザートリガー: @AIアプリ名 質問                            │
+└────────────────────┬────────────────────────────────────────┘
+                     │ [1] HTTPS POST (同期)
+                     ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Verification Zone (Account A)                               │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ SlackEventHandler Lambda (Function URL)                 │ │
+│ │ - Slack署名検証、リアクション(👀)応答                   │ │
+│ │ - USE_AGENTCORE=true → AgentCore A2A パス               │ │
+│ │ [2] InvokeAgentRuntime (SigV4)                          │ │
+│ └──────────────────────┬──────────────────────────────────┘ │
+│                        │                                     │
+│ ┌─────────────────────▼──────────────────────────────────┐ │
+│ │ Verification Agent (AgentCore Runtime, ARM64)           │ │
+│ │ - A2Aプロトコル (JSON-RPC 2.0, port 9000)              │ │
+│ │ - セキュリティパイプライン: 存在確認 → 認可 → レート制限│ │
+│ │ - Agent Card: /.well-known/agent-card.json              │ │
+│ │ - Health: /ping (Healthy / HealthyBusy)                 │ │
+│ │ [3] InvokeAgentRuntime (SigV4, クロスアカウント対応)    │ │
+│ └──────────────────────┬──────────────────────────────────┘ │
+└────────────────────────┼────────────────────────────────────┘
+                         │ [3] A2A (SigV4認証)
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Execution Zone (Account B)                                  │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ Execution Agent (AgentCore Runtime, ARM64)               │ │
+│ │ - A2Aプロトコル (JSON-RPC 2.0, port 9000)              │ │
+│ │ - 非同期タスク: add_async_task → バックグラウンド処理   │ │
+│ │ - Bedrock Converse API呼び出し                          │ │
+│ │ - 添付ファイル処理 (画像 / ドキュメント)                 │ │
+│ │ - Agent Card: /.well-known/agent-card.json              │ │
+│ │ [4] complete_async_task → 結果返却                       │ │
+│ └──────────────────────┬──────────────────────────────────┘ │
+│                        ↓                                     │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ Amazon Bedrock Converse API                             │ │
+│ └─────────────────────────────────────────────────────────┘ │
+└──────────────────────┬──────────────────────────────────────┘
+                       │ [4] A2Aレスポンス (非同期ポーリング)
+                       ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Verification Zone (継続)                                    │
+│ Verification Agent → Slack API (chat.postMessage)          │
+│ [5] AIレスポンスをスレッドに投稿                            │
+└─────────────────────────────────────────────────────────────┘
+
+フロー (AgentCore A2A):
+[1] ユーザーが @AIアプリ名 リクエスト を実行
+[2] SlackEventHandler → Verification Agent (InvokeAgentRuntime)
+[3] Verification Agent → Execution Agent (A2A, SigV4)
+[4] Execution Agent → Bedrock → 非同期結果返却
+[5] Verification Agent → Slack API → スレッド返信
+```
+
+### AgentCore A2A vs レガシーパス比較
+
+| 項目 | レガシー (API Gateway + SQS) | AgentCore A2A |
+|------|------------------------------|---------------|
+| ゾーン間通信 | API Gateway + Lambda | AgentCore Runtime (A2A) |
+| 認証 | IAM SigV4 / APIキー | SigV4 (自動) |
+| レスポンス配信 | SQS → SlackResponseHandler | Verification Agent 直接投稿 |
+| 非同期処理 | SQS メッセージキュー | AgentCore async task |
+| コンテナ | Lambda (マネージド) | ARM64 Docker (microVM) |
+| Agent Discovery | なし | Agent Card (A2A準拠) |
+| Feature Flag | デフォルト | `USE_AGENTCORE=true` |
+
+---
+
+## 2.5 デプロイメントアーキテクチャ
 
 ### 単一スタック構成（レガシー）
 
@@ -243,6 +321,7 @@ Verification Zone と Execution Zone を独立したスタックに分離。ク�
 - [ユーザー体験](./user-experience.md) - エンドユーザーフローと UX
 - [実装詳細](./implementation-details.md) - Lambda 構成とデータフロー
 - [クロスアカウントアーキテクチャ](./cross-account.md) - 分離スタック構成と IAM 認証
+- [ゾーン間通信](./zone-communication.md) - Slack→検証ゾーン、検証ゾーン→実行ゾーン、実行ゾーン→検証ゾーンの通信方式
 - [セキュリティ要件](../security/requirements.md) - 機能的・非機能的セキュリティ要件
 - [脅威モデル](../security/threat-model.md) - リスク分析とアクター
 - [セキュリティ実装](../security/implementation.md) - 多層防御の実装詳細

@@ -146,6 +146,18 @@ const verificationLambdaRoleArn = getConfigString("verificationLambdaRoleArn");
 const executionApiUrl = getConfigString("executionApiUrl");
 const executionResponseQueueUrl = getConfigString("executionResponseQueueUrl");
 
+// AgentCore configuration (optional)
+const executionAgentName = getConfigString(
+  "executionAgentName",
+  "SlackAI_ExecutionAgent"
+);
+const verificationAgentName = getConfigString(
+  "verificationAgentName",
+  "SlackAI_VerificationAgent"
+);
+const useAgentCore = getConfigValue<boolean>("useAgentCore", false);
+const executionAgentArn = getConfigString("executionAgentArn");
+
 /**
  * Set loaded config values to CDK context for backward compatibility
  * This ensures that app.node.tryGetContext() calls work as expected
@@ -178,6 +190,14 @@ function setContextFromConfig(config: CdkConfig | null): void {
   }
   if (config.slackSigningSecret) {
     app.node.setContext("slackSigningSecret", config.slackSigningSecret);
+  }
+
+  // AgentCore configuration
+  app.node.setContext("executionAgentName", executionAgentName);
+  app.node.setContext("verificationAgentName", verificationAgentName);
+  app.node.setContext("useAgentCore", String(useAgentCore));
+  if (executionAgentArn) {
+    app.node.setContext("executionAgentArn", executionAgentArn);
   }
 }
 
@@ -295,13 +315,19 @@ function createExecutionStack(
   env: cdk.Environment,
   verificationLambdaRoleArn?: string,
   verificationAccountId?: string,
-  executionResponseQueueUrl?: string
-): void {
-  new ExecutionStack(app, stackName, {
+  executionResponseQueueUrl?: string,
+  options?: {
+    executionAgentName?: string;
+    useAgentCore?: boolean;
+  }
+): ExecutionStack {
+  return new ExecutionStack(app, stackName, {
     env: env,
     verificationLambdaRoleArn: verificationLambdaRoleArn,
     verificationAccountId: verificationAccountId,
     executionResponseQueueUrl: executionResponseQueueUrl,
+    executionAgentName: options?.executionAgentName,
+    useAgentCore: options?.useAgentCore,
   });
 }
 
@@ -321,13 +347,21 @@ function createVerificationStack(
   env: cdk.Environment,
   executionApiUrl: string,
   executionApiArn: string,
-  executionAccountId?: string
+  executionAccountId?: string,
+  options?: {
+    verificationAgentName?: string;
+    useAgentCore?: boolean;
+    executionAgentArn?: string;
+  }
 ): void {
   new VerificationStack(app, stackName, {
     env: env,
     executionApiUrl: executionApiUrl,
     executionApiArn: executionApiArn,
     executionAccountId: executionAccountId,
+    verificationAgentName: options?.verificationAgentName,
+    useAgentCore: options?.useAgentCore,
+    executionAgentArn: options?.executionAgentArn,
   });
 }
 
@@ -397,13 +431,17 @@ function printDeploymentInstructions(
 }
 
 // Create Execution Stack
-createExecutionStack(
+const executionStack = createExecutionStack(
   app,
   executionStackName,
   executionEnv,
   verificationLambdaRoleArn || undefined,
   verificationAccountId || undefined,
-  executionResponseQueueUrl || undefined
+  executionResponseQueueUrl || undefined,
+  {
+    executionAgentName: executionAgentName || undefined,
+    useAgentCore: useAgentCore || undefined,
+  }
 );
 
 // Create Verification Stack (requires Execution API URL from first deployment)
@@ -420,13 +458,22 @@ if (executionApiUrl) {
     );
   }
 
+  // Use the executionAgentArn from config or from the execution stack output
+  const resolvedExecutionAgentArn =
+    executionAgentArn || executionStack.executionAgentArn;
+
   createVerificationStack(
     app,
     verificationStackName,
     verificationEnv,
     executionApiUrl,
     executionApiArn,
-    executionAccountId || undefined
+    executionAccountId || undefined,
+    {
+      verificationAgentName: verificationAgentName || undefined,
+      useAgentCore: useAgentCore || undefined,
+      executionAgentArn: resolvedExecutionAgentArn || undefined,
+    }
   );
 } else {
   // If no API URL, only synthesize Execution Stack

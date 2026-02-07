@@ -1,8 +1,8 @@
-# Slack Bedrock MVP ドキュメント
+# Slack AI App ドキュメント
 
 > **English version**: Coming soon
 
-Slack から AWS Bedrock AI を利用するためのアーキテクチャと実装ガイド。
+Slack から Amazon Bedrock AI を利用するためのアーキテクチャと実装ガイド。AgentCore A2A プロトコルによるゾーン間通信をサポート。
 
 ## 🚀 クイックナビゲーション
 
@@ -56,7 +56,10 @@ Slack から AWS Bedrock AI を利用するためのアーキテクチャと実�
 ### Reference（情報指向）
 
 **アーキテクチャ**:
-- [概要](./reference/architecture/overview.md) | [実装詳細](./reference/architecture/implementation-details.md) | [ユーザー体験](./reference/architecture/user-experience.md)
+- [概要](./reference/architecture/overview.md) | [**システム構成図**](./reference/architecture/system-architecture-diagram.md) | [**draw.io（AWS アイコン）**](./reference/architecture/slack-ai-app-architecture.drawio) | [実装詳細](./reference/architecture/implementation-details.md) | [ユーザー体験](./reference/architecture/user-experience.md) | [クロスアカウント](./reference/architecture/cross-account.md) | [**ゾーン間通信**](./reference/architecture/zone-communication.md)
+
+**AgentCore A2A**:
+- [AgentCore A2A 仕様](../specs/013-agentcore-a2a-zones/spec.md) | [実装計画](../specs/013-agentcore-a2a-zones/plan.md) | [リサーチ](../specs/013-agentcore-a2a-zones/research.md) | [クイックスタート](../specs/013-agentcore-a2a-zones/quickstart.md)
 
 **セキュリティ**:
 - [要件](./reference/security/requirements.md) | [脅威モデル](./reference/security/threat-model.md) | [実装](./reference/security/implementation.md) | [認証・認可](./reference/security/authentication-authorization.md)
@@ -85,11 +88,14 @@ Slack から AWS Bedrock AI を利用するためのアーキテクチャと実�
 
 ---
 
-**最終更新日**: 2025-12-28
+**最終更新日**: 2026-02-07
 
 ## 最近の更新
 
-- **2025-12-28**: Execution API Gateway にデュアル認証サポート（IAM認証とAPIキー認証）を追加
-  - デフォルト認証方法: APIキー認証（`EXECUTION_API_AUTH_METHOD` 環境変数で設定可能）
-  - APIキーは AWS Secrets Manager に安全に保存
-  - 将来的な非AWS APIとの統合に対応
+- **2026-02-07**: AgentCore A2A ゾーン間通信を実装
+  - AgentCore Runtime + A2A プロトコルによるゾーン間通信
+  - Verification Agent / Execution Agent のコンテナ化
+  - Agent Card による Agent Discovery
+  - Feature Flag (`USE_AGENTCORE`) で段階的移行対応
+  - アーキテクチャ概要、ゾーン間通信、システム構成図を更新
+- **2025-12-28**: Execution API Gateway にデュアル認証サポートを追加

@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import time
 import boto3
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
@@ -713,6 +714,76 @@ def lambda_handler(event, context):
                             "channel": channel,
                             "timestamp": slack_event.get("ts"),
                         }, e)
+
+                # ─── AgentCore A2A Path (Feature Flag: USE_AGENTCORE) ───
+                use_agentcore = os.environ.get("USE_AGENTCORE", "false").lower() == "true"
+                verification_agent_arn = os.environ.get("VERIFICATION_AGENT_ARN", "")
+
+                if use_agentcore and verification_agent_arn:
+                    try:
+                        agentcore_client = boto3.client(
+                            "bedrock-agentcore-runtime",
+                            region_name=os.environ.get("AWS_REGION_NAME", "ap-northeast-1"),
+                        )
+
+                        # Create A2A payload for Verification Agent
+                        a2a_payload = {
+                            "channel": channel,
+                            "text": user_text,
+                            "bot_token": bot_token,
+                            "thread_ts": message_timestamp,
+                            "attachments": attachments if attachments else [],
+                            "correlation_id": str(
+                                context.aws_request_id if context else ""
+                            ),
+                            "team_id": team_id,
+                            "user_id": slack_event.get("user"),
+                        }
+
+                        session_id = f"slack-{team_id}-{int(time.time())}"
+
+                        log_info(
+                            "agentcore_invocation_started",
+                            {
+                                "verification_agent_arn": verification_agent_arn,
+                                "channel": channel,
+                                "session_id": session_id,
+                            },
+                        )
+
+                        agentcore_client.invoke_agent_runtime(
+                            agentRuntimeArn=verification_agent_arn,
+                            sessionId=session_id,
+                            prompt=json.dumps(a2a_payload),
+                        )
+
+                        log_info(
+                            "agentcore_invocation_success",
+                            {
+                                "verification_agent_arn": verification_agent_arn,
+                                "channel": channel,
+                            },
+                        )
+
+                    except Exception as e:
+                        log_exception(
+                            "agentcore_invocation_failed",
+                            {
+                                "verification_agent_arn": verification_agent_arn,
+                                "channel": channel,
+                            },
+                            e,
+                        )
+                        # Fall through to return 200 OK to Slack
+
+                    # Return 200 OK to Slack (acknowledgment) — AgentCore handles the rest
+                    return {
+                        "statusCode": 200,
+                        "headers": {"Content-Type": "application/json"},
+                        "body": json.dumps({"ok": True}),
+                    }
+
+                # ─── Legacy API Gateway Path (USE_AGENTCORE=false or not set) ───
 
                 # Invoke Execution Layer via API Gateway with IAM authentication
                 execution_api_url = os.environ.get("EXECUTION_API_URL", "")

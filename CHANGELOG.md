@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **AgentCore A2A Inter-Zone Communication** (013-agentcore-a2a-zones)
+  - Amazon Bedrock AgentCore Runtime with A2A (Agent-to-Agent) protocol
+  - Verification Agent container (ARM64 Docker) — security pipeline, Slack posting
+  - Execution Agent container (ARM64 Docker) — Bedrock processing, attachment handling
+  - A2A client with SigV4 authentication and async task polling (exponential backoff)
+  - Agent Card (`/.well-known/agent-card.json`) for A2A-compliant Agent Discovery
+  - Health check endpoints (`/ping`) with Healthy / HealthyBusy status
+  - CDK L1 constructs: `ExecutionAgentRuntime`, `VerificationAgentRuntime`, ECR image builds
+  - Cross-account resource-based policies for `InvokeAgentRuntime` permissions
+  - Feature Flag (`USE_AGENTCORE`) for zero-downtime migration and rollback
+  - `validate_agentcore` step in deployment script with ACTIVE status polling
+  - CloudWatch custom metrics for both agents (A2A tasks, Bedrock errors, security events)
+  - Structured JSON logging with correlation_id and PII masking
+  - 97 TDD tests (41 Execution Agent + 32 Verification Agent + 24 CDK/Jest)
 - **Complete Stack Separation Architecture** (Structure Reorganization)
   - Fully separated stack structure with self-contained directories
   - Each stack (Execution/Verification) contains both CDK code and Lambda code
@@ -33,6 +47,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Architecture overview (`docs/reference/architecture/overview.md`) now includes AgentCore A2A section
+- Zone communication docs (`zone-communication.md`) updated with A2A protocol path
+- System architecture diagram (`system-architecture-diagram.md`) includes AgentCore resources
+- Deployment script (`deploy-split-stacks.sh`) includes AgentCore validation phase
+- CDK config types updated with `executionAgentName`, `verificationAgentName`, `useAgentCore`, `executionAgentArn`
+- SlackEventHandler Lambda updated with Feature Flag routing (`USE_AGENTCORE` environment variable)
+- README.md and README.ja.md updated with AgentCore A2A architecture documentation
+- cdk/README.md updated with AgentCore resources, config fields, and test coverage
+- docs/README.md updated with AgentCore documentation links
 - Restructured docs/ directory with tutorials/, how-to/, reference/, explanation/ categories
 - Simplified README.md to focus on overview and navigation
 - Converted docs/README.md to navigation hub
@@ -47,14 +70,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fixed `IndentationError` in `verification-agent/main.py` line 132 (12 spaces → 8 spaces)
+- Fixed `useAgentCore` variable declaration order in `verification-stack.ts` (temporal dead zone)
 - Resolved DynamoDB table name conflicts between existing and new stacks
 - Fixed CloudFormation Early Validation errors for cross-stack resource references
 - Improved error handling for Execution API unavailability
 
 ### Removed
 
-- `SlackBedrockStack` single-stack deployment - コードベースから完全に削除されました。2 つの独立したスタック（VerificationStack + ExecutionStack）が標準です。
-- Single-stack deployment mode - `cdk/bin/cdk.ts` から削除されました。デフォルトは 2 つの独立したスタックのデプロイです。
+- `SlackBedrockStack` single-stack deployment — removed from codebase. Two independent stacks (VerificationStack + ExecutionStack) are the standard.
+- Single-stack deployment mode — removed from `cdk/bin/cdk.ts`. Default is two independent stacks deployment.
 
 ## [1.0.0] - 2025-12-27
 

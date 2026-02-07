@@ -325,6 +325,85 @@ update_execution_stack() {
     log_success "Execution Stack updated with resource policy"
 }
 
+validate_agentcore() {
+    # Skip if AgentCore is not enabled
+    if [[ "${USE_AGENTCORE:-false}" != "true" ]]; then
+        log_info "AgentCore not enabled (USE_AGENTCORE != true). Skipping AgentCore validation."
+        return 0
+    fi
+
+    log_info "=========================================="
+    log_info "AgentCore Validation"
+    log_info "=========================================="
+
+    local profile_args=""
+    if [[ -n "${AWS_PROFILE}" ]]; then
+        profile_args="--profile ${AWS_PROFILE}"
+    fi
+
+    # Check Execution Agent Runtime status
+    local exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn" 2>/dev/null || echo "")
+    if [[ -n "${exec_agent_arn}" ]]; then
+        log_info "Checking Execution Agent Runtime status..."
+        local max_wait=120
+        local elapsed=0
+        local interval=10
+
+        while [[ ${elapsed} -lt ${max_wait} ]]; do
+            local status=$(aws bedrock-agentcore get-agent-runtime \
+                --agent-runtime-arn "${exec_agent_arn}" \
+                --region "${AWS_REGION}" \
+                ${profile_args} \
+                --query 'status' --output text 2>/dev/null || echo "UNKNOWN")
+
+            if [[ "${status}" == "ACTIVE" ]]; then
+                log_success "Execution Agent Runtime is ACTIVE"
+                break
+            fi
+
+            log_info "Execution Agent status: ${status}. Waiting ${interval}s... (${elapsed}/${max_wait}s)"
+            sleep ${interval}
+            elapsed=$((elapsed + interval))
+        done
+
+        if [[ ${elapsed} -ge ${max_wait} ]]; then
+            log_warning "Execution Agent did not reach ACTIVE within ${max_wait}s. Current: ${status}"
+        fi
+    fi
+
+    # Check Verification Agent Runtime status
+    local verify_agent_arn=$(get_stack_output "${VERIFICATION_STACK_NAME}" "VerificationAgentRuntimeArn" 2>/dev/null || echo "")
+    if [[ -n "${verify_agent_arn}" ]]; then
+        log_info "Checking Verification Agent Runtime status..."
+        local max_wait=120
+        local elapsed=0
+        local interval=10
+
+        while [[ ${elapsed} -lt ${max_wait} ]]; do
+            local status=$(aws bedrock-agentcore get-agent-runtime \
+                --agent-runtime-arn "${verify_agent_arn}" \
+                --region "${AWS_REGION}" \
+                ${profile_args} \
+                --query 'status' --output text 2>/dev/null || echo "UNKNOWN")
+
+            if [[ "${status}" == "ACTIVE" ]]; then
+                log_success "Verification Agent Runtime is ACTIVE"
+                break
+            fi
+
+            log_info "Verification Agent status: ${status}. Waiting ${interval}s... (${elapsed}/${max_wait}s)"
+            sleep ${interval}
+            elapsed=$((elapsed + interval))
+        done
+
+        if [[ ${elapsed} -ge ${max_wait} ]]; then
+            log_warning "Verification Agent did not reach ACTIVE within ${max_wait}s. Current: ${status}"
+        fi
+    fi
+
+    log_success "AgentCore validation complete."
+}
+
 print_summary() {
     local function_url=$(get_stack_output "${VERIFICATION_STACK_NAME}" "SlackEventHandlerUrl")
     local api_url=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionApiUrl")
@@ -340,9 +419,25 @@ print_summary() {
     echo "Execution API URL (internal):"
     echo "  ${api_url}"
     echo ""
+
+    # Show AgentCore outputs if enabled
+    if [[ "${USE_AGENTCORE:-false}" == "true" ]]; then
+        local exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn" 2>/dev/null || echo "N/A")
+        local verify_agent_arn=$(get_stack_output "${VERIFICATION_STACK_NAME}" "VerificationAgentRuntimeArn" 2>/dev/null || echo "N/A")
+
+        echo "AgentCore (A2A):"
+        echo "  Execution Agent ARN:     ${exec_agent_arn}"
+        echo "  Verification Agent ARN:  ${verify_agent_arn}"
+        echo ""
+    fi
+
     echo "Next steps:"
     echo "  1. Configure Slack app Event Subscriptions with the Function URL above"
     echo "  2. Test by sending a message to your Slack bot"
+    if [[ "${USE_AGENTCORE:-false}" == "true" ]]; then
+        echo "  3. Verify AgentCore Agent Cards at /.well-known/agent-card.json"
+        echo "  4. Check health at /ping endpoints"
+    fi
     echo ""
 }
 
@@ -361,6 +456,9 @@ main() {
 
     # Phase 3: Update Execution Stack with resource policy
     update_execution_stack
+
+    # Phase 4: Validate AgentCore (if enabled)
+    validate_agentcore
 
     # Print summary
     print_summary
