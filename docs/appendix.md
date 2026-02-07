@@ -11,6 +11,12 @@ A: 用語集
 | **Bedrock Guardrails**                      | AWS Bedrock の安全機能。有害コンテンツを検出                                    |
 | **トークン**                                | LLM が処理するテキストの最小単位。日本語では約 4 文字 = 1 トークン             |
 | **fail-closed**                             | セキュリティ失敗時にリクエストを拒否する原則（セキュリティを可用性より優先）   |
+| **AgentCore Runtime**                       | Amazon Bedrock AgentCore が提供するマネージドコンテナランタイム。ARM64 Docker イメージを microVM 上で実行 |
+| **A2A (Agent-to-Agent)**                    | AgentCore のエージェント間通信プロトコル。JSON-RPC 2.0 over HTTP で標準化されたインターフェース |
+| **Agent Card**                              | A2A 仕様に準拠したエージェントのメタデータ（`/.well-known/agent-card.json`）。Agent Discovery に使用 |
+| **Feature Flag**                            | 機能のオン/オフを制御するフラグ。本システムでは `USE_AGENTCORE` で A2A パスの有効化を制御 |
+| **SigV4 (Signature Version 4)**             | AWS の標準的なリクエスト署名プロトコル。AgentCore A2A 通信の認証にも使用 |
+| **JSON-RPC 2.0**                            | JSON ベースの Remote Procedure Call プロトコル。A2A 通信の基盤プロトコル |
 
 ---
 
@@ -24,6 +30,8 @@ A: 用語集
 - [AWS Bedrock Guardrails](https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails.html)
 - [AWS Bedrock Security Best Practices](https://docs.aws.amazon.com/bedrock/latest/userguide/security-best-practices.html)
 - [AWS DynamoDB TTL](https://docs.aws.amazon.com/amazon-dynamodb/latest/developerguide/TTL.html)
+- [Amazon Bedrock AgentCore](https://docs.aws.amazon.com/bedrock/latest/userguide/agentcore.html)
+- [A2A Protocol (Agent-to-Agent)](https://google.github.io/A2A/)
 - [OWASP Top 10 for LLM Applications](https://owasp.org/www-project-top-10-for-large-language-model-applications/)
 - [NIST AI Risk Management Framework](https://www.nist.gov/itl/ai-risk-management-framework)
 - [EU AI Act](https://artificialintelligenceact.eu/)

@@ -56,7 +56,7 @@ Slack から Amazon Bedrock AI を利用するためのアーキテクチャと�
 ### Reference（情報指向）
 
 **アーキテクチャ**:
-- [概要](./reference/architecture/overview.md) | [**システム構成図**](./reference/architecture/system-architecture-diagram.md) | [**draw.io（AWS アイコン）**](./reference/architecture/slack-ai-app-architecture.drawio) | [実装詳細](./reference/architecture/implementation-details.md) | [ユーザー体験](./reference/architecture/user-experience.md) | [クロスアカウント](./reference/architecture/cross-account.md) | [**ゾーン間通信**](./reference/architecture/zone-communication.md)
+- [概要](./reference/architecture/overview.md) | [**システム構成図**](./reference/architecture/system-architecture-diagram.md) | [実装詳細](./reference/architecture/implementation-details.md) | [ユーザー体験](./reference/architecture/user-experience.md) | [クロスアカウント](./reference/architecture/cross-account.md) | [**ゾーン間通信**](./reference/architecture/zone-communication.md)
 
 **AgentCore A2A**:
 - [AgentCore A2A 仕様](../specs/013-agentcore-a2a-zones/spec.md) | [実装計画](../specs/013-agentcore-a2a-zones/plan.md) | [リサーチ](../specs/013-agentcore-a2a-zones/research.md) | [クイックスタート](../specs/013-agentcore-a2a-zones/quickstart.md)

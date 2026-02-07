@@ -1,4 +1,4 @@
-# Getting Started: Slack Bedrock MVP チュートリアル
+# Getting Started: Slack AI App チュートリアル
 
 ---
 
@@ -7,13 +7,13 @@ type: Tutorial
 audience: [Developer]
 status: Published
 created: 2025-12-27
-updated: 2025-12-27
+updated: 2026-02-07
 
 ---
 
 ## 概要
 
-このチュートリアルでは、Slack Bedrock MVP を初めて使用する開発者向けに、プロジェクトの理解から最初のデプロイまでを段階的に説明します。
+このチュートリアルでは、Slack AI App を初めて使用する開発者向けに、プロジェクトの理解から最初のデプロイまでを段階的に説明します。レガシーパス（API Gateway + SQS）と AgentCore A2A パスの両方に対応しています。
 
 ## 学習目標
 
@@ -31,24 +31,36 @@ updated: 2025-12-27
 - Node.js 18+ がインストールされていること
 - Python 3.11+ がインストールされていること
 - AWS CLI が設定されていること
+- Docker（ARM64 対応、AgentCore コンテナビルド用。macOS の場合は Colima 推奨）
 
 ## ステップ 1: プロジェクトの理解（10 分）
 
 ### アーキテクチャの概要
 
-Slack Bedrock MVP は、以下のコンポーネントで構成されています：
+Slack AI App は、以下の 2 つの通信パスをサポートしています：
+
+**レガシーパス（API Gateway + SQS）**:
 
 ```
-Slack → API Gateway → Lambda① (検証) → API Gateway② → Lambda② (処理) → Bedrock
-                                                                            ↓
-                                                                        Slack API
+Slack → Function URL → SlackEventHandler → API Gateway → BedrockProcessor → Bedrock
+                                                                              ↓
+                                                          SQS → SlackResponseHandler → Slack API
+```
+
+**AgentCore A2A パス（Feature Flag: USE_AGENTCORE=true）**:
+
+```
+Slack → Function URL → SlackEventHandler → Verification Agent → Execution Agent → Bedrock
+                                                                                    ↓
+                                               Verification Agent → Slack API (直接投稿)
 ```
 
 **主要コンポーネント**:
 
-1. **Lambda① (SlackEventHandler)**: Slack からのリクエストを検証
-2. **Lambda② (BedrockProcessor)**: Bedrock API を呼び出して応答を生成
-3. **API Gateway**: 外部からのアクセスポイント
+1. **SlackEventHandler (Lambda)**: Slack からのリクエストを検証（署名検証、Existence Check、認可）
+2. **BedrockProcessor (Lambda)**: Bedrock API を呼び出して応答を生成（レガシー）
+3. **Verification Agent (AgentCore)**: セキュリティ検証パイプライン（A2A パス）
+4. **Execution Agent (AgentCore)**: Bedrock API 呼び出し、非同期タスク管理（A2A パス）
 
 詳細は [アーキテクチャ概要](../reference/architecture/overview.md) を参照してください。
 
@@ -65,14 +77,14 @@ cd slack-ai-app
 ### CDK 依存関係
 
 ```bash
-cd src
+cd cdk
 npm install
 ```
 
 ### Lambda 依存関係
 
 ```bash
-cd ../cdk/lib/verification/lambda/slack-event-handler
+cd cdk/lib/verification/lambda/slack-event-handler
 pip install -r requirements.txt
 ```
 
@@ -81,7 +93,7 @@ pip install -r requirements.txt
 1. AWS Console にログイン
 2. Amazon Bedrock に移動
 3. **Model access** をクリック
-4. **Claude 3.5 Sonnet** を有効化
+4. 使用するモデル（Claude 4.5 Haiku、Claude 4.5 Sonnet など）を有効化
 5. アクセスが承認されるまで待機（通常は即座）
 
 ## ステップ 5: Slack App の作成（10 分）
@@ -122,21 +134,25 @@ aws secretsmanager create-secret \
 ## ステップ 7: デプロイ（10 分）
 
 ```bash
-cd src
+cd cdk
 
 # CDK Bootstrap（初回のみ）
 npx cdk bootstrap
 
-# デプロイ
-npx cdk deploy
+# デプロイスクリプト（推奨）
+export DEPLOYMENT_ENV=dev
+chmod +x ../scripts/deploy-split-stacks.sh
+../scripts/deploy-split-stacks.sh
 ```
 
-デプロイ完了後、API Gateway の URL がコンソールに表示されます。
+デプロイ完了後、Function URL がコンソールに表示されます。
+
+詳細なデプロイ手順は [クイックスタート](../quickstart.md#初回デプロイ) を参照してください。
 
 ## ステップ 8: Slack Event Subscriptions の設定（2 分）
 
 1. Slack App の設定ページに戻る
-2. **Event Subscriptions** → **Request URL** にデプロイした URL を入力
+2. **Event Subscriptions** → **Request URL** にデプロイで出力された Function URL を入力
 3. URL 検証が成功することを確認
 4. **Subscribe to bot events** で `app_mention` を追加
 
@@ -158,7 +174,7 @@ npx cdk deploy
 
 ## まとめ
 
-おめでとうございます！Slack Bedrock MVP のセットアップが完了しました。
+おめでとうございます！Slack AI App のセットアップが完了しました。
 
 **学んだこと**:
 

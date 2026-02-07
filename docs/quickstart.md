@@ -4,8 +4,8 @@
 
 **ドキュメントタイプ**: セットアップガイド  
 **ステータス**: 推奨  
-**バージョン**: 1.0  
-**最終更新日**: 2025-12-28  
+**バージョン**: 1.1  
+**最終更新日**: 2026-02-07  
 **対象読者**: 開発者、DevOps エンジニア、システム管理者
 
 ---
@@ -36,6 +36,7 @@
 - ✅ **Python 3.11 以上**（Lambda 関数用）
 - ✅ **AWS CLI**（設定済み、認証情報設定済み）
 - ✅ **AWS CDK CLI**（`npm install -g aws-cdk`）
+- ✅ **Docker**（ARM64 対応、AgentCore コンテナビルド用。macOS の場合は Colima 推奨）
 
 ### AWS サービス要件
 
@@ -48,6 +49,8 @@
 - CloudWatch
 - IAM
 - Bedrock（使用するモデルへのアクセス権限）
+- ECR（AgentCore コンテナイメージ保管）
+- Amazon Bedrock AgentCore（AgentCore A2A 通信使用時）
 
 ---
 
@@ -622,16 +625,6 @@ aws logs tail /aws/lambda/SlackAI-Execution-BedrockProcessor-XXXXX --follow
      --filter-pattern "whitelist"
    ```
 
-```bash
-# DynamoDB テーブルの内容を確認
-aws dynamodb scan --table-name slack-whitelist-config
-
-# Lambda ロールの権限を確認
-aws iam get-role-policy \
-  --role-name SlackBedrockStack-SlackEventHandler-XXXXX \
-  --policy-name <policy-name>
-```
-
 ### 問題 5: タイムアウトエラー
 
 **原因**: Lambda 関数のタイムアウト設定が短すぎる、または Bedrock の処理が遅い
@@ -732,7 +725,7 @@ aws iam get-role-policy \
 
 ### Q: どの Bedrock モデルを使用できますか？
 
-A: AWS Bedrock で利用可能なすべての Foundation Model を使用できます。デフォルトは `amazon.nova-pro-v1:0` です。環境変数 `BEDROCK_MODEL_ID` で変更可能です。
+A: AWS Bedrock で利用可能なすべての Foundation Model を使用できます。デフォルトは `jp.anthropic.claude-haiku-4-5-20251001-v1:0` です。環境変数 `BEDROCK_MODEL_ID` で変更可能です。
 
 ### Q: ホワイトリスト認可は必須ですか？
 
@@ -772,5 +765,5 @@ A: すべてのエラーは CloudWatch Logs に記録され、ユーザーには
 
 ---
 
-**最終更新**: 2025-12-27  
-**バージョン**: 1.0
+**最終更新**: 2026-02-07  
+**バージョン**: 1.1

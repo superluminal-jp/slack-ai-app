@@ -1055,9 +1055,41 @@ def invoke_bedrock(
     return ai_response
 ```
 
+## 7.4.1 AgentCore Agent の実装（Feature Flag: USE_AGENTCORE）
+
+AgentCore A2A パスでは、Verification Agent と Execution Agent が Docker コンテナ（ARM64）で動作します。
+
+**Verification Agent**: `cdk/lib/verification/agent/`
+
+- `main.py` - A2A エントリーポイント (JSON-RPC 2.0, port 9000)
+- `a2a_client.py` - Execution Agent への A2A クライアント
+- `agent_card.py` - Agent Card (`/.well-known/agent-card.json`)
+- `authorization.py` - ホワイトリスト認可
+- `existence_check.py` - Slack API Existence Check
+- `rate_limiter.py` - DynamoDB ベースのレート制限
+- `slack_poster.py` - Slack API 投稿
+- `slack_verifier.py` - Slack 署名検証
+
+**Execution Agent**: `cdk/lib/execution/agent/`
+
+- `main.py` - A2A エントリーポイント (JSON-RPC 2.0, port 9000)
+- `agent_card.py` - Agent Card
+- `cloudwatch_metrics.py` - CloudWatch メトリクス発行
+- `thread_history.py` - スレッド履歴取得
+
+**共通パターン**:
+
+- A2A プロトコル: JSON-RPC 2.0 over HTTP (port 9000)
+- 非同期タスク: `add_async_task` → バックグラウンド処理 → `complete_async_task`
+- Agent Discovery: `/.well-known/agent-card.json`
+- ヘルスチェック: `/ping` (Healthy / HealthyBusy)
+
+---
+
 ## 関連ドキュメント
 
 - [アーキテクチャ概要](./overview.md) - システム全体像
+
 ## 7.5 レート制限の実装
 
 **ファイル**: `cdk/lib/verification/lambda/slack-event-handler/rate_limiter.py`
@@ -1165,9 +1197,6 @@ inference_config = {
     "temperature": TEMPERATURE,
 }
 ```
-<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>
-grep
-
 - [ユーザー体験](./user-experience.md) - UX設計とフロー
 - [セキュリティ実装](../security/implementation.md) - セキュリティコード実装
 - [ADR-003](../explanation/adr/003-response-url-async.md) - 非同期パターンの採用理由

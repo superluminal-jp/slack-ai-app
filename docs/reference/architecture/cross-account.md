@@ -264,9 +264,51 @@ npx cdk deploy SlackAI-Execution
 2. **ネットワーク設定を確認**
    - VPC 設定がある場合、NAT Gateway が設定されているか
 
+## AgentCore A2A クロスアカウント通信（Feature Flag: USE_AGENTCORE）
+
+> **注意**: この機能は Feature Flag (`USE_AGENTCORE=true`) で有効化されます。
+
+### アーキテクチャ
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Account A (Verification Zone)                                │
+│                                                              │
+│  Slack → Function URL → SlackEventHandler Lambda            │
+│                              │                               │
+│                              ↓                               │
+│  Verification Agent (AgentCore Runtime, ARM64)               │
+│    └─→ InvokeAgentRuntime (SigV4)                           │
+│    └─→ DynamoDB (5 tables), Secrets Manager                 │
+└──────────────────────────────┼──────────────────────────────┘
+                               │ A2A (SigV4 認証, クロスアカウント)
+                               ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Account B (Execution Zone)                                   │
+│                                                              │
+│  Execution Agent (AgentCore Runtime, ARM64)                  │
+│    └─→ Bedrock Converse API                                 │
+│  RuntimeResourcePolicy:                                      │
+│    └─→ Allow: Account A / InvokeAgentRuntime                │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 認証
+
+AgentCore A2A 通信は SigV4 認証を使用します。クロスアカウント時は、Execution Agent の **RuntimeResourcePolicy** で Verification Account の Principal に `bedrock-agentcore:InvokeAgentRuntime` を許可します。
+
+### レガシーパスとの違い
+
+| 項目 | レガシー (API Gateway) | AgentCore A2A |
+|------|----------------------|---------------|
+| クロスアカウント認証 | API Gateway リソースポリシー | RuntimeResourcePolicy |
+| レスポンス配信 | SQS (クロスアカウント SendMessage) | AgentCore async task (SigV4) |
+| 追加設定 | `executionResponseQueueUrl` | `EXECUTION_AGENT_ALIAS_ARN` |
+
 ## 関連ドキュメント
 
 - [アーキテクチャ概要](./overview.md) - システム全体のアーキテクチャ
+- [ゾーン間通信](./zone-communication.md) - 通信パスの詳細
 - [セキュリティ要件](../security/requirements.md) - セキュリティ要件の詳細
 - [CDK README](../../../cdk/README.md) - デプロイ手順
 

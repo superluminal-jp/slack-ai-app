@@ -2,7 +2,7 @@
 
 > 本ドキュメントは AWS MCP により検証した AWS サービス仕様と、プロジェクトの CDK・ドキュメントに基づき作成しています。
 
-**draw.io 版**: [system-architecture-diagram.drawio](./system-architecture-diagram.drawio) — diagrams.net / draw.io で編集可能。**AWS 公式アーキテクチャアイコン**（[Asset-Package 2025-07](https://aws.amazon.com/architecture/icons/)）を [assets/aws-icons/](./assets/aws-icons/) に配置して使用。draw.io で `system-architecture-diagram.drawio` を開くとき、`assets/aws-icons` が drawio と同じ `docs/reference/architecture/` 配下にある必要があります（リポジトリをクローンしていればその構造です）。各コンポーネントの詳細は下表を参照。
+各コンポーネントの詳細は下表を参照。
 
 ## 1. ハイレベルシステム構成図
 

@@ -7,20 +7,23 @@ type: How-to
 audience: [Developer, Operations]
 status: Published
 created: 2025-12-27
-updated: 2025-12-27
+updated: 2026-02-07
 
 ---
 
 ## 概要
 
-このガイドでは、Slack Bedrock MVP の運用中に発生する可能性のある一般的な問題と、その解決方法を説明します。
+このガイドでは、Slack AI App の運用中に発生する可能性のある一般的な問題と、その解決方法を説明します。レガシーパス（API Gateway + SQS）と AgentCore A2A パスの両方をカバーします。
 
 ## 目次
 
 - [接続エラー](#接続エラー)
 - [認証エラー](#認証エラー)
+- [API キー / シークレット関連](#api-キー--シークレット関連)
 - [タイムアウトエラー](#タイムアウトエラー)
 - [Bedrock エラー](#bedrock-エラー)
+- [JSON シリアライゼーションエラー](#json-シリアライゼーションエラー)
+- [AgentCore A2A エラー](#agentcore-a2a-エラー)
 - [ログの確認方法](#ログの確認方法)
 
 ---
@@ -89,6 +92,44 @@ timedatectl status
 
 ---
 
+## API キー / シークレット関連
+
+### 症状: `execution_api_invocation_failed` ログエラー
+
+**考えられる原因**:
+
+1. `execution-api-key-{env}` シークレットが Secrets Manager に存在しない
+2. シークレットの値が正しくない
+
+**解決手順**:
+
+1. Secrets Manager でシークレットの存在を確認:
+
+```bash
+# 開発環境
+aws secretsmanager describe-secret --secret-id execution-api-key-dev
+
+# シークレットが存在しない場合は作成
+API_KEY_ID=$(aws cloudformation describe-stacks \
+  --stack-name SlackAI-Execution-Dev \
+  --query 'Stacks[0].Outputs[?OutputKey==`ExecutionApiKeyId`].OutputValue' \
+  --output text)
+
+API_KEY_VALUE=$(aws apigateway get-api-key \
+  --api-key $API_KEY_ID \
+  --include-value \
+  --query 'value' \
+  --output text)
+
+aws secretsmanager create-secret \
+  --name execution-api-key-dev \
+  --secret-string "$API_KEY_VALUE"
+```
+
+2. Lambda 環境変数 `EXECUTION_API_KEY_SECRET_NAME` が正しいシークレット名を指しているか確認
+
+---
+
 ## タイムアウトエラー
 
 ### 症状: "処理中です..." メッセージの後、応答がない
@@ -149,6 +190,79 @@ aws lambda update-function-configuration \
 
 ---
 
+## JSON シリアライゼーションエラー
+
+### 症状: `TypeError: Object of type Decimal is not JSON serializable`
+
+**考えられる原因**:
+
+DynamoDB から取得した値に `Decimal` 型が含まれており、標準の `json.dumps` ではシリアライズできない。
+
+**解決手順**:
+
+1. `logger.py` でカスタム JSON エンコーダーを使用しているか確認:
+
+```python
+from decimal import Decimal
+
+class _DecimalEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return int(obj) if obj == int(obj) else float(obj)
+        return super().default(obj)
+
+# json.dumps 呼び出し時に cls=_DecimalEncoder を指定
+print(json.dumps(log_entry, cls=_DecimalEncoder))
+```
+
+2. DynamoDB クエリ結果をログに記録する箇所をすべて確認
+
+---
+
+## AgentCore A2A エラー
+
+### 症状: AgentCore Agent が起動しない
+
+**考えられる原因**:
+
+1. Docker イメージのビルド失敗（ARM64 アーキテクチャの不一致）
+2. ECR へのプッシュ権限不足
+3. AgentCore Runtime のプロビジョニング失敗
+
+**解決手順**:
+
+```bash
+# Docker が ARM64 ビルドに対応しているか確認
+docker buildx inspect
+
+# ECR リポジトリの確認
+aws ecr describe-repositories --repository-names "*agent*"
+
+# AgentCore Runtime のステータス確認
+aws bedrock-agentcore list-agent-runtimes
+```
+
+### 症状: A2A 通信で `InvokeAgentRuntime` が失敗
+
+**考えられる原因**:
+
+1. Execution Agent の Alias ARN が正しく設定されていない
+2. クロスアカウント時の RuntimeResourcePolicy が未設定
+3. SigV4 署名の認証エラー
+
+**解決手順**:
+
+1. 環境変数 `EXECUTION_AGENT_ALIAS_ARN` を確認
+2. CloudWatch ログで A2A 呼び出しエラーを確認:
+
+```bash
+aws logs filter-log-events \
+  --log-group-name /aws/lambda/SlackAI-Verification-Dev-SlackEventHandler \
+  --filter-pattern "a2a"
+```
+
+---
+
 ## ログの確認方法
 
 ### CloudWatch ログの確認
@@ -166,12 +280,16 @@ aws logs filter-log-events \
 
 ### 重要なログパターン
 
-| パターン                 | 意味                     |
-| ------------------------ | ------------------------ |
-| `signature_valid=false`  | 署名検証失敗             |
-| `existence_check_failed` | Slack API 実在性確認失敗 |
-| `bedrock_error`          | Bedrock API エラー       |
-| `timeout`                | 処理タイムアウト         |
+| パターン                              | 意味                               |
+| ------------------------------------- | ---------------------------------- |
+| `signature_valid=false`               | 署名検証失敗                       |
+| `existence_check_failed`              | Slack API 実在性確認失敗           |
+| `bedrock_error`                       | Bedrock API エラー                 |
+| `timeout`                             | 処理タイムアウト                   |
+| `execution_api_invocation_failed`     | Execution API 呼び出し失敗         |
+| `rate_limit_unexpected_error`         | レート制限の予期しないエラー       |
+| `whitelist_authorization_failed`      | ホワイトリスト認可失敗             |
+| `a2a_invocation_failed`              | AgentCore A2A 呼び出し失敗        |
 
 ---
 
