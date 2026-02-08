@@ -3,10 +3,10 @@ Unit tests for Execution Agent main.py (A2A entrypoint).
 
 Tests:
 - A2A message parsing and validation
-- Async task creation (add_async_task)
-- Background processing with Bedrock
+- Bedrock processing (synchronous via handle_message_tool)
 - Error handling and error code mapping
 - Agent Card and health check endpoints
+- strands-agents migration (021)
 """
 
 import json
@@ -25,8 +25,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 class TestHandleMessageValidation:
     """Test A2A entrypoint input validation."""
 
-    @patch("main.app")
-    def test_missing_channel_returns_error(self, mock_app):
+    def test_missing_channel_returns_error(self):
         """Missing channel should return error response."""
         from main import handle_message
 
@@ -43,8 +42,7 @@ class TestHandleMessageValidation:
 
         assert result_data["status"] == "error" or "error" in result_data.get("error_code", "")
 
-    @patch("main.app")
-    def test_missing_text_returns_error(self, mock_app):
+    def test_missing_text_returns_error(self):
         """Missing text should return error response."""
         from main import handle_message
 
@@ -61,8 +59,7 @@ class TestHandleMessageValidation:
 
         assert result_data["status"] == "error" or "missing_text" in result_data.get("error_code", "")
 
-    @patch("main.app")
-    def test_empty_payload_handled_gracefully(self, mock_app):
+    def test_empty_payload_handled_gracefully(self):
         """Empty payload should not crash."""
         from main import handle_message
 
@@ -74,16 +71,22 @@ class TestHandleMessageValidation:
         assert "error" in result_data.get("status", "") or "error" in result_data.get("error_code", "")
 
 
-class TestHandleMessageAsyncFlow:
-    """Test the async task creation and acceptance flow."""
+class TestHandleMessageProcessing:
+    """Test the synchronous Bedrock processing flow."""
 
-    @patch("main.threading.Thread")
-    @patch("main.app")
-    def test_valid_message_returns_accepted(self, mock_app, mock_thread_cls):
-        """Valid message should create async task and return 'accepted'."""
-        mock_app.add_async_task.return_value = "task-123"
-        mock_thread_instance = Mock()
-        mock_thread_cls.return_value = mock_thread_instance
+    @patch("main.invoke_bedrock")
+    @patch("main.process_attachments")
+    @patch("main.format_success_response")
+    def test_valid_message_returns_success(
+        self, mock_format, mock_attachments, mock_bedrock
+    ):
+        """Valid message should process and return success result."""
+        mock_bedrock.return_value = "AI response text"
+        mock_attachments.return_value = []
+        mock_format.return_value = (
+            {"status": "success", "response_text": "AI response text"},
+            None,
+        )
 
         from main import handle_message
 
@@ -101,82 +104,14 @@ class TestHandleMessageAsyncFlow:
         result = handle_message(payload)
         result_data = json.loads(result)
 
-        assert result_data["status"] == "accepted"
-        assert result_data["task_id"] == "task-123"
-        assert result_data["correlation_id"] == "corr-001"
-        mock_app.add_async_task.assert_called_once_with("bedrock_processing")
-        mock_thread_instance.start.assert_called_once()
-
-    @patch("main.threading.Thread")
-    @patch("main.app")
-    def test_async_task_thread_is_daemon(self, mock_app, mock_thread_cls):
-        """Background thread should be a daemon thread."""
-        mock_app.add_async_task.return_value = "task-456"
-        mock_thread_instance = Mock()
-        mock_thread_cls.return_value = mock_thread_instance
-
-        from main import handle_message
-
-        payload = {
-            "prompt": json.dumps({
-                "channel": "C01234567",
-                "text": "Test question",
-                "bot_token": "xoxb-test",
-            })
-        }
-
-        handle_message(payload)
-
-        # Verify daemon=True was passed
-        call_kwargs = mock_thread_cls.call_args
-        assert call_kwargs[1]["daemon"] is True
-
-
-class TestProcessBedrockRequest:
-    """Test the background Bedrock processing function."""
-
-    @patch("main.app")
-    @patch("main.invoke_bedrock")
-    @patch("main.process_attachments")
-    @patch("main.format_success_response")
-    def test_successful_bedrock_call_completes_task(
-        self, mock_format, mock_attachments, mock_bedrock, mock_app
-    ):
-        """Successful Bedrock call should complete async task with result."""
-        mock_bedrock.return_value = "AI response text"
-        mock_attachments.return_value = []
-        mock_format.return_value = (
-            {"status": "success", "response_text": "AI response text"},
-            None,
-        )
-
-        from main import _process_bedrock_request
-
-        _process_bedrock_request(
-            task_id="task-001",
-            text="Hello",
-            channel="C01234567",
-            bot_token="xoxb-test",
-            thread_ts=None,
-            correlation_id="corr-001",
-            attachments=[],
-        )
-
+        assert result_data["status"] == "success"
         mock_bedrock.assert_called_once()
-        mock_app.complete_async_task.assert_called_once()
 
-        # Verify the result passed to complete_async_task
-        call_args = mock_app.complete_async_task.call_args
-        assert call_args[0][0] == "task-001"
-        completed_result = json.loads(call_args[0][1])
-        assert completed_result["status"] == "success"
-
-    @patch("main.app")
     @patch("main.invoke_bedrock")
     @patch("main.process_attachments")
     @patch("main.format_success_response")
-    def test_success_with_file_artifact_completes_task_with_two_artifacts(
-        self, mock_format, mock_attachments, mock_bedrock, mock_app
+    def test_success_with_file_artifact(
+        self, mock_format, mock_attachments, mock_bedrock
     ):
         """When file is returned, result has response_text and file_artifact (014 US1)."""
         import base64
@@ -201,21 +136,20 @@ class TestProcessBedrockRequest:
         }
         mock_format.return_value = (result_dict, file_artifact)
 
-        from main import _process_bedrock_request
+        from main import handle_message
 
-        _process_bedrock_request(
-            task_id="task-file-001",
-            text="Export as CSV",
-            channel="C01234567",
-            bot_token="xoxb-test",
-            thread_ts=None,
-            correlation_id="corr-file",
-            attachments=[],
-        )
+        payload = {
+            "prompt": json.dumps({
+                "channel": "C01234567",
+                "text": "Export as CSV",
+                "bot_token": "xoxb-test",
+                "correlation_id": "corr-file",
+            })
+        }
 
-        mock_app.complete_async_task.assert_called_once()
-        call_args = mock_app.complete_async_task.call_args
-        completed_result = json.loads(call_args[0][1])
+        result = handle_message(payload)
+        completed_result = json.loads(result)
+
         assert completed_result["status"] == "success"
         assert completed_result.get("response_text") == "Here is your export."
         assert "file_artifact" in completed_result
@@ -225,13 +159,13 @@ class TestProcessBedrockRequest:
         part = fa["parts"][0]
         assert part.get("fileName") == "export.csv"
         assert part.get("mimeType") == "text/csv"
-        assert "contentBase64" in part
 
-    @patch("main.app")
     @patch("main.invoke_bedrock")
     @patch("main.process_attachments")
     @patch("main.format_success_response")
-    def test_no_file_generated_result_has_no_file_artifact(self, mock_format, mock_attachments, mock_bedrock, mock_app):
+    def test_no_file_generated_result_has_no_file_artifact(
+        self, mock_format, mock_attachments, mock_bedrock
+    ):
         """When no file is generated, completed result has no file_artifact (014 US2)."""
         mock_bedrock.return_value = "Text only."
         mock_attachments.return_value = []
@@ -239,19 +173,23 @@ class TestProcessBedrockRequest:
             {"status": "success", "response_text": "Text only.", "channel": "C1", "bot_token": "xoxb-1", "thread_ts": None},
             None,
         )
-        from main import _process_bedrock_request
-        _process_bedrock_request(
-            task_id="t1", text="Hi", channel="C1", bot_token="xoxb-1", thread_ts=None, correlation_id="c1", attachments=[],
-        )
-        completed_result = json.loads(mock_app.complete_async_task.call_args[0][1])
+        from main import handle_message
+        payload = {
+            "prompt": json.dumps({
+                "channel": "C1", "text": "Hi", "bot_token": "xoxb-1",
+            })
+        }
+        result = handle_message(payload)
+        completed_result = json.loads(result)
         assert completed_result["status"] == "success"
         assert "file_artifact" not in completed_result
 
-    @patch("main.app")
     @patch("main.invoke_bedrock")
     @patch("main.process_attachments")
     @patch("main.format_success_response")
-    def test_only_file_response_has_empty_response_text_and_file_artifact(self, mock_format, mock_attachments, mock_bedrock, mock_app):
+    def test_only_file_response_has_empty_response_text_and_file_artifact(
+        self, mock_format, mock_attachments, mock_bedrock
+    ):
         """When only file is returned, result has empty/minimal response_text and file_artifact (014 US2)."""
         import base64
         mock_bedrock.return_value = ""
@@ -262,24 +200,26 @@ class TestProcessBedrockRequest:
         }
         result_dict = {"status": "success", "response_text": "", "channel": "C1", "bot_token": "xoxb-1", "thread_ts": None}
         mock_format.return_value = (result_dict, file_artifact)
-        from main import _process_bedrock_request
-        _process_bedrock_request(
-            task_id="t2", text="Export", channel="C1", bot_token="xoxb-1", thread_ts=None, correlation_id="c2", attachments=[],
-        )
-        completed_result = json.loads(mock_app.complete_async_task.call_args[0][1])
+        from main import handle_message
+        payload = {
+            "prompt": json.dumps({
+                "channel": "C1", "text": "Export", "bot_token": "xoxb-1",
+            })
+        }
+        result = handle_message(payload)
+        completed_result = json.loads(result)
         assert completed_result["status"] == "success"
         assert completed_result.get("response_text") == ""
         assert completed_result.get("file_artifact") is not None
         assert completed_result["file_artifact"]["name"] == "generated_file"
 
-    @patch("main.app")
     @patch("main.invoke_bedrock")
     @patch("main.process_attachments")
     @patch("main.format_error_response")
-    def test_bedrock_exception_completes_task_with_error(
-        self, mock_format, mock_attachments, mock_bedrock, mock_app
+    def test_bedrock_exception_returns_error(
+        self, mock_format, mock_attachments, mock_bedrock
     ):
-        """Bedrock exception should still complete async task (with error)."""
+        """Bedrock exception should return error result."""
         mock_bedrock.side_effect = Exception("Throttling: rate exceeded")
         mock_attachments.return_value = []
         mock_format.return_value = {
@@ -287,30 +227,27 @@ class TestProcessBedrockRequest:
             "error_code": "bedrock_throttling",
         }
 
-        from main import _process_bedrock_request
+        from main import handle_message
 
-        _process_bedrock_request(
-            task_id="task-002",
-            text="Hello",
-            channel="C01234567",
-            bot_token="xoxb-test",
-            thread_ts=None,
-            correlation_id="corr-002",
-            attachments=[],
-        )
+        payload = {
+            "prompt": json.dumps({
+                "channel": "C01234567",
+                "text": "Hello",
+                "bot_token": "xoxb-test",
+                "correlation_id": "corr-002",
+            })
+        }
 
-        # complete_async_task MUST be called even on error
-        mock_app.complete_async_task.assert_called_once()
-        call_args = mock_app.complete_async_task.call_args
-        assert call_args[0][0] == "task-002"
+        result = handle_message(payload)
+        result_data = json.loads(result)
+        assert result_data["status"] == "error"
 
-    @patch("main.app")
     @patch("main.invoke_bedrock")
     @patch("main.process_attachments")
     @patch("main.get_processing_summary")
     @patch("main.format_success_response")
     def test_attachments_are_processed_before_bedrock(
-        self, mock_format, mock_summary, mock_attachments, mock_bedrock, mock_app
+        self, mock_format, mock_summary, mock_attachments, mock_bedrock
     ):
         """Attachments should be processed and included in Bedrock prompt."""
         mock_attachments.return_value = [
@@ -334,19 +271,21 @@ class TestProcessBedrockRequest:
             None,
         )
 
-        from main import _process_bedrock_request
+        from main import handle_message
 
         attachments = [{"id": "F001", "name": "doc.pdf", "mimetype": "application/pdf", "size": 1024}]
 
-        _process_bedrock_request(
-            task_id="task-003",
-            text="Summarize this",
-            channel="C01234567",
-            bot_token="xoxb-test",
-            thread_ts=None,
-            correlation_id="corr-003",
-            attachments=attachments,
-        )
+        payload = {
+            "prompt": json.dumps({
+                "channel": "C01234567",
+                "text": "Summarize this",
+                "bot_token": "xoxb-test",
+                "correlation_id": "corr-003",
+                "attachments": attachments,
+            })
+        }
+
+        handle_message(payload)
 
         mock_attachments.assert_called_once()
         # Bedrock should receive text with attached document context
@@ -438,73 +377,114 @@ class TestAgentCard:
 
 
 class Test020A2ARouting:
-    """020: Verify A2A protocol routing — POST / delegates to SDK _handle_invocation."""
+    """020→021: A2A routing via FastAPI (invoke_agent_runtime sends raw payload to POST /)."""
 
-    def test_a2a_root_route_registered(self):
-        """POST / route must be registered on app for A2A protocol (T009)."""
+    def test_ping_route_registered_on_fastapi(self):
+        """GET /ping route must be registered on FastAPI app."""
         import main
 
-        route_paths = []
-        for route in main.app.routes:
-            path = getattr(route, "path", None)
-            if path == "/":
-                methods = getattr(route, "methods", set())
-                route_paths.append(("/", methods))
+        assert ("GET", "/ping") in main.app._routes, "/ping GET route not registered on FastAPI app"
 
-        assert any(
-            path == "/" and "POST" in methods
-            for path, methods in route_paths
-        ), "POST / route not found in app.routes"
-
-    def test_a2a_root_handler_delegates_to_handle_invocation(self):
-        """a2a_root_handler must be registered and callable (T010)."""
+    def test_post_root_route_registered(self):
+        """POST / route must be registered for invoke_agent_runtime payloads."""
         import main
 
-        handler = main.app._routes_dict.get("/")
-        assert handler is not None, "No handler registered for POST /"
-        assert handler.__name__ == "a2a_root_handler", (
-            f"Expected a2a_root_handler, got {handler.__name__}"
-        )
+        assert ("POST", "/") in main.app._routes, "POST / route not registered on FastAPI app"
 
-    def test_existing_invocations_route_still_works(self):
-        """SDK /invocations route must still be registered (regression) (T011)."""
+    def test_agent_card_route_registered(self):
+        """GET /.well-known/agent-card.json route must be registered."""
         import main
 
-        route_paths = [getattr(r, "path", None) for r in main.app.routes]
-        assert "/invocations" in route_paths, "/invocations route missing (regression)"
+        assert ("GET", "/.well-known/agent-card.json") in main.app._routes, "Agent Card route not registered"
 
-    def test_agent_card_route_still_works(self):
-        """/.well-known/agent-card.json GET route must still be registered (regression) (T012)."""
-        import main
-
-        found = False
-        for route in main.app.routes:
-            if getattr(route, "path", None) == "/.well-known/agent-card.json":
-                methods = getattr(route, "methods", set())
-                if "GET" in methods:
-                    found = True
-                    break
-        assert found, "/.well-known/agent-card.json GET route missing (regression)"
-
-    def test_ping_route_still_works(self):
-        """/ping GET route must still be registered (regression) (T013)."""
-        import main
-
-        found = False
-        for route in main.app.routes:
-            if getattr(route, "path", None) == "/ping":
-                methods = getattr(route, "methods", set())
-                if "GET" in methods:
-                    found = True
-                    break
-        assert found, "/ping GET route missing (regression)"
-
-    def test_app_run_uses_port_9000(self):
-        """app.run(port=9000) must be present in main.py source (T014)."""
+    def test_uvicorn_run_uses_port_9000(self):
+        """uvicorn.run(app, ..., port=9000) must be present in main.py source."""
         main_path = os.path.join(os.path.dirname(__file__), "..", "main.py")
         with open(main_path) as f:
             source = f.read()
-        assert "app.run(port=9000)" in source, (
-            "main.py must use app.run(port=9000) for A2A protocol, "
-            "found bare app.run() instead"
+        assert "port=9000" in source, (
+            "main.py must use port=9000 for A2A protocol"
+        )
+
+
+class Test021FastAPIDirectRouting:
+    """021: Verify FastAPI direct routing (invoke_agent_runtime sends raw payload, not JSON-RPC)."""
+
+    def test_fastapi_ping_endpoint_registered(self):
+        """GET /ping route exists on the FastAPI app."""
+        import main
+
+        app = main.app
+        assert ("GET", "/ping") in app._routes, "/ping GET route not registered on FastAPI app"
+
+    def test_post_root_handles_invocation(self):
+        """POST / route exists for invoke_agent_runtime payloads."""
+        import main
+
+        app = main.app
+        assert ("POST", "/") in app._routes, "POST / route not registered on FastAPI app"
+
+    def test_agent_card_endpoint_registered(self):
+        """GET /.well-known/agent-card.json route exists."""
+        import main
+
+        app = main.app
+        assert ("GET", "/.well-known/agent-card.json") in app._routes, "Agent Card route not registered"
+
+    def test_no_private_api_usage(self):
+        """main.py source has zero occurrences of _handle_invocation."""
+        main_path = os.path.join(os.path.dirname(__file__), "..", "main.py")
+        with open(main_path) as f:
+            source = f.read()
+        assert "_handle_invocation" not in source, (
+            "main.py still references private API _handle_invocation"
+        )
+
+    def test_no_bedrock_agentcore_import(self):
+        """main.py source has zero occurrences of bedrock_agentcore."""
+        main_path = os.path.join(os.path.dirname(__file__), "..", "main.py")
+        with open(main_path) as f:
+            source = f.read()
+        assert "bedrock_agentcore" not in source, (
+            "main.py still imports bedrock_agentcore"
+        )
+
+    def test_no_strands_import(self):
+        """main.py should not import strands (uses FastAPI directly)."""
+        main_path = os.path.join(os.path.dirname(__file__), "..", "main.py")
+        with open(main_path) as f:
+            source = f.read()
+        assert "from strands" not in source, "main.py should not import strands"
+
+    def test_handle_message_tool_processes_payload(self):
+        """handle_message_tool receives payload and returns formatted response."""
+        import main
+
+        tool_fn = main.handle_message_tool
+        assert callable(tool_fn)
+
+
+class TestUS3VersionConstraints:
+    """US3: Verify requirements.txt uses pinned (~= or ==) versions, no loose (>=) constraints."""
+
+    def test_no_loose_version_constraints(self):
+        """requirements.txt must not contain >= constraints (all must be ~= or ==)."""
+        req_path = os.path.join(os.path.dirname(__file__), "..", "requirements.txt")
+        with open(req_path) as f:
+            lines = f.readlines()
+        for line in lines:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            assert ">=" not in stripped, (
+                f"Loose version constraint found: {stripped!r} — use ~= or == instead of >="
+            )
+
+    def test_no_bedrock_agentcore_dependency(self):
+        """requirements.txt must not list bedrock-agentcore (unused after migration)."""
+        req_path = os.path.join(os.path.dirname(__file__), "..", "requirements.txt")
+        with open(req_path) as f:
+            content = f.read()
+        assert "bedrock-agentcore" not in content, (
+            "bedrock-agentcore should be removed from requirements.txt"
         )

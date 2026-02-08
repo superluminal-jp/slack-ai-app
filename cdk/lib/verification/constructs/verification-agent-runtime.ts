@@ -134,8 +134,8 @@ export class VerificationAgentRuntime extends Construct {
         actions: ["cloudwatch:PutMetricData"],
         resources: ["*"],
         conditions: {
-          StringEquals: {
-            "cloudwatch:namespace": "bedrock-agentcore",
+          StringLike: {
+            "cloudwatch:namespace": ["SlackEventHandler", "SlackAI/*"],
           },
         },
       })

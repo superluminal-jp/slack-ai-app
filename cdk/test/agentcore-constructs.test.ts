@@ -123,6 +123,25 @@ describe("ExecutionAgentRuntime", () => {
       });
     });
 
+    it("should grant CloudWatch Metrics with StringLike condition for SlackEventHandler and SlackAI/* namespaces", () => {
+      template.hasResourceProperties("AWS::IAM::Policy", {
+        PolicyDocument: {
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Sid: "CloudWatchMetrics",
+              Action: "cloudwatch:PutMetricData",
+              Effect: "Allow",
+              Condition: {
+                StringLike: {
+                  "cloudwatch:namespace": ["SlackEventHandler", "SlackAI/*"],
+                },
+              },
+            }),
+          ]),
+        },
+      });
+    });
+
     it("should grant X-Ray tracing permissions", () => {
       template.hasResourceProperties("AWS::IAM::Policy", {
         PolicyDocument: {
@@ -289,6 +308,25 @@ describe("VerificationAgentRuntime", () => {
     beforeEach(() => {
       new VerificationAgentRuntime(stack, "VerifyAgent", testProps);
       template = Template.fromStack(stack);
+    });
+
+    it("should grant CloudWatch Metrics with StringLike condition for SlackEventHandler and SlackAI/* namespaces", () => {
+      template.hasResourceProperties("AWS::IAM::Policy", {
+        PolicyDocument: {
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Sid: "CloudWatchMetrics",
+              Action: "cloudwatch:PutMetricData",
+              Effect: "Allow",
+              Condition: {
+                StringLike: {
+                  "cloudwatch:namespace": ["SlackEventHandler", "SlackAI/*"],
+                },
+              },
+            }),
+          ]),
+        },
+      });
     });
 
     it("should grant AgentCore InvokeAgentRuntime and GetAsyncTaskResult permissions", () => {

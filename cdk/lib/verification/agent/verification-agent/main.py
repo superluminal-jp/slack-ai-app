@@ -1,68 +1,89 @@
 """
-Verification Agent A2A Server — 公式契約のみの最小実装.
+Verification Agent A2A Server — FastAPI on port 9000.
 
-Amazon Bedrock AgentCore Runtime の A2A プロトコル契約に従い、以下だけを実装する。
-- POST / : InvokeAgentRuntime のペイロードを受けるエントリポイント（@app.entrypoint）
-- GET /.well-known/agent-card.json : Agent Card（Discovery）
+Amazon Bedrock AgentCore Runtime の A2A プロトコル契約に従う。
+invoke_agent_runtime API は raw JSON ペイロードを POST / に送信するため、
+FastAPI で直接ルーティングする。
+
+- POST / : invoke_agent_runtime ペイロード受信 → pipeline.run()
+- GET /.well-known/agent-card.json : Agent Card
 - GET /ping : ヘルスチェック
 
-ビジネスロジックは pipeline.run() に集約。公式ドキュメント:
-- A2A protocol contract: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-a2a-protocol-contract.html
-- Service contract: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-service-contract.html
-- Deploy A2A servers: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-a2a.html
+ビジネスロジックは pipeline.run() に集約。
 """
 
 import json
+import os
+import time
 
-from starlette.responses import Response
-from bedrock_agentcore.runtime import BedrockAgentCoreApp
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+import uvicorn
+
 from agent_card import get_agent_card, get_health_status
 from pipeline import run as run_pipeline, is_processing
 
-app = BedrockAgentCoreApp()
+
+def _log(level: str, event_type: str, data: dict) -> None:
+    """Structured JSON logging for CloudWatch."""
+    entry = {"level": level, "event_type": event_type, "service": "verification-agent-main", "timestamp": time.time()}
+    entry.update(data)
+    print(json.dumps(entry, default=str))
 
 
-def _json_response(data: dict) -> Response:
-    """Return JSON response for GET routes (framework expects Response, not str)."""
-    return Response(
-        content=json.dumps(data),
-        media_type="application/json",
-    )
+app = FastAPI()
 
 
-@app.route("/.well-known/agent-card.json", methods=["GET"])
-def agent_card_endpoint(request=None):
-    """A2A Agent Card for discovery (required by contract)."""
-    return _json_response(get_agent_card())
+@app.get("/ping")
+def ping_endpoint():
+    """Health check (required by AgentCore service contract)."""
+    return get_health_status(is_busy=is_processing)
 
 
-@app.route("/ping", methods=["GET"])
-def ping_endpoint(request=None):
-    """Health check (required by contract)."""
-    return _json_response(get_health_status(is_busy=is_processing))
+@app.get("/.well-known/agent-card.json")
+def agent_card_endpoint():
+    """Agent Card endpoint (A2A discovery)."""
+    return get_agent_card()
 
 
-@app.route("/", methods=["POST"])
-async def a2a_root_handler(request):
-    """A2A protocol: POST / (root) routes to SDK invocation handler.
+@app.post("/")
+async def handle_invocation(request: Request):
+    """Handle invoke_agent_runtime payload — parse and run pipeline."""
+    start_time = time.time()
+    body = await request.body()
+    payload = json.loads(body)
 
-    AWS A2A Service Contract requires POST / on port 9000.
-    See: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-service-contract.html
-    """
-    return await app._handle_invocation(request)
+    # Extract correlation_id from nested prompt for tracing
+    raw_prompt = payload.get("prompt", "{}")
+    task_payload = json.loads(raw_prompt) if isinstance(raw_prompt, str) else raw_prompt
+    correlation_id = task_payload.get("correlation_id", "")
+
+    _log("INFO", "request_received", {
+        "correlation_id": correlation_id,
+        "channel": task_payload.get("channel", ""),
+        "text_length": len(task_payload.get("text", "")),
+        "has_thread_ts": bool(task_payload.get("thread_ts")),
+        "payload_bytes": len(body),
+    })
+
+    result = run_pipeline(payload)
+    duration_ms = (time.time() - start_time) * 1000
+
+    result_data = json.loads(result) if isinstance(result, str) else result
+    _log("INFO", "request_completed", {
+        "correlation_id": correlation_id,
+        "status": result_data.get("status", ""),
+        "duration_ms": round(duration_ms, 2),
+    })
+
+    return JSONResponse(content=result_data)
 
 
-@app.entrypoint
+# Backward-compatible entrypoint for tests (delegates to pipeline.run)
 def handle_message(payload):
-    """
-    A2A entrypoint: InvokeAgentRuntime から渡されるペイロードをそのまま pipeline に渡す.
-
-    payload は InvokeAgentRuntime のバイナリペイロードが JSON として渡された形。
-    本プロジェクトでは {"prompt": "<JSON task_payload>"} を想定。
-    """
+    """Legacy entrypoint wrapper — used by existing tests."""
     return run_pipeline(payload)
 
 
 if __name__ == "__main__":
-    # A2A protocol contract requires port 9000 (not SDK default 8080)
-    app.run(port=9000)
+    uvicorn.run(app, host="0.0.0.0", port=9000)

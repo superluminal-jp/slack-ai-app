@@ -29,9 +29,8 @@ class TestHandleMessageParsing:
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
-    @patch("main.app")
     def test_valid_payload_is_parsed(
-        self, mock_app, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
         """Valid payload should be parsed and processed."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
@@ -62,8 +61,7 @@ class TestHandleMessageParsing:
         mock_invoke.assert_called_once()
         mock_send.assert_called_once()
 
-    @patch("main.app")
-    def test_malformed_prompt_handled_gracefully(self, mock_app):
+    def test_malformed_prompt_handled_gracefully(self):
         """Malformed prompt JSON should not crash."""
         from main import handle_message
 
@@ -83,9 +81,8 @@ class TestSecurityPipeline:
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
-    @patch("main.app")
     def test_existence_check_failure_blocks_request(
-        self, mock_app, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
         """Failed existence check should return error, not delegate."""
         from existence_check import ExistenceCheckError
@@ -116,9 +113,8 @@ class TestSecurityPipeline:
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
-    @patch("main.app")
     def test_authorization_failure_blocks_request(
-        self, mock_app, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
         """Unauthorized request should return error, not delegate."""
         mock_auth.return_value = Mock(authorized=False, unauthorized_entities=["T_BAD"])
@@ -147,9 +143,8 @@ class TestSecurityPipeline:
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
-    @patch("main.app")
     def test_rate_limit_exceeded_blocks_request(
-        self, mock_app, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
         """Exceeding rate limit should return error, not delegate."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
@@ -183,9 +178,8 @@ class TestExecutionDelegation:
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
-    @patch("main.app")
     def test_success_response_posted_to_slack(
-        self, mock_app, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
         """Successful execution response should be enqueued to Slack Poster (019)."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
@@ -223,9 +217,8 @@ class TestExecutionDelegation:
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
-    @patch("main.app")
     def test_success_with_file_artifact_posts_text_then_file(
-        self, mock_app, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
         """When result has response_text and file_artifact, send one request with both (019)."""
         import base64
@@ -274,9 +267,8 @@ class TestExecutionDelegation:
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
-    @patch("main.app")
     def test_success_text_only_does_not_call_post_file_to_slack(
-        self, mock_app, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
         """When result has no generated_file, only send_slack_post_request with text (019)."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
@@ -305,9 +297,8 @@ class TestExecutionDelegation:
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
-    @patch("main.app")
     def test_success_file_only_calls_post_file_to_slack_not_post_to_slack_for_content(
-        self, mock_app, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
         """When only file (no/empty response_text), send one request with file_artifact only (019)."""
         import base64
@@ -349,9 +340,8 @@ class TestExecutionDelegation:
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
-    @patch("main.app")
     def test_post_file_to_slack_failure_posts_error_message_to_thread(
-        self, mock_app, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
         """019: Agent sends one message with text+file; Lambda posts and on file failure posts error (FR-007)."""
         import base64
@@ -392,9 +382,8 @@ class TestExecutionDelegation:
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
-    @patch("main.app")
     def test_error_response_posts_friendly_message(
-        self, mock_app, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
         """Error from Execution Agent should enqueue user-friendly message (019)."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
@@ -428,9 +417,8 @@ class TestExecutionDelegation:
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
-    @patch("main.app")
     def test_execution_agent_exception_posts_generic_error(
-        self, mock_app, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
         """Exception from invoke should enqueue generic error (019)."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
@@ -464,9 +452,8 @@ class Test018EchoModeAtRuntime:
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
-    @patch("main.app")
     def test_echo_mode_on_does_not_call_invoke_execution_agent_posts_echo_returns_success(
-        self, mock_app, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
         """When VALIDATION_ZONE_ECHO_MODE is 'true', handle_message does NOT call invoke_execution_agent; calls send_slack_post_request with [Echo] + text and returns success (T003)."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
@@ -504,9 +491,8 @@ class Test018EchoModeAtRuntime:
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
-    @patch("main.app")
     def test_echo_mode_on_post_to_slack_called_with_channel_thread_ts_and_echo_text(
-        self, mock_app, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
         """When echo mode is on, send_slack_post_request is called with channel, thread_ts, and text '[Echo] ' + task text (T004)."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
@@ -546,9 +532,8 @@ class Test018EchoContentAndTarget:
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
-    @patch("main.app")
     def test_echo_uses_task_channel_thread_ts_text_only_post_to_slack_matching(
-        self, mock_app, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
         """Verification Agent echo uses task channel, task thread_ts, and task text only; send_slack_post_request called with matching args (T012)."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
@@ -590,9 +575,8 @@ class Test018EchoModeOff:
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
-    @patch("main.app")
     def test_echo_mode_unset_calls_invoke_execution_agent_does_not_post_echo(
-        self, mock_app, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
         """When VALIDATION_ZONE_ECHO_MODE is unset, handle_message calls invoke_execution_agent and sends result to Slack Poster (T010)."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
@@ -634,9 +618,8 @@ class Test018EchoModeOff:
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
-    @patch("main.app")
     def test_echo_mode_false_calls_invoke_execution_agent_does_not_post_echo(
-        self, mock_app, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
         """When VALIDATION_ZONE_ECHO_MODE is 'false', handle_message calls invoke_execution_agent and sends result to Slack Poster (T010)."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
@@ -699,67 +682,25 @@ class TestErrorMessageMapping:
 
 
 class Test020A2ARouting:
-    """020: Verify A2A protocol routing — POST / delegates to SDK _handle_invocation."""
+    """020→021: A2A routing via FastAPI (invoke_agent_runtime sends raw payload to POST /)."""
 
-    def test_a2a_root_route_registered(self):
-        """POST / route must be registered on app for A2A protocol (T001)."""
+    def test_ping_route_registered_on_fastapi(self):
+        """GET /ping route must be registered on FastAPI app."""
         import main
 
-        route_paths = []
-        for route in main.app.routes:
-            path = getattr(route, "path", None)
-            if path == "/":
-                methods = getattr(route, "methods", set())
-                route_paths.append(("/" , methods))
+        assert ("GET", "/ping") in main.app._routes, "/ping GET route not registered on FastAPI app"
 
-        assert any(
-            path == "/" and "POST" in methods
-            for path, methods in route_paths
-        ), "POST / route not found in app.routes"
-
-    def test_a2a_root_handler_delegates_to_handle_invocation(self):
-        """a2a_root_handler must be registered and callable (T002)."""
+    def test_post_root_route_registered(self):
+        """POST / route must be registered for invoke_agent_runtime payloads."""
         import main
 
-        # Verify the handler was registered via @app.route("/", ...)
-        handler = main.app._routes_dict.get("/")
-        assert handler is not None, "No handler registered for POST /"
-        assert handler.__name__ == "a2a_root_handler", (
-            f"Expected a2a_root_handler, got {handler.__name__}"
-        )
+        assert ("POST", "/") in main.app._routes, "POST / route not registered on FastAPI app"
 
-    def test_existing_invocations_route_still_works(self):
-        """SDK /invocations route must still be registered (regression) (T003)."""
+    def test_agent_card_route_registered(self):
+        """GET /.well-known/agent-card.json route must be registered."""
         import main
 
-        route_paths = [getattr(r, "path", None) for r in main.app.routes]
-        assert "/invocations" in route_paths, "/invocations route missing (regression)"
-
-    def test_agent_card_route_still_works(self):
-        """/.well-known/agent-card.json GET route must still be registered (regression) (T004)."""
-        import main
-
-        found = False
-        for route in main.app.routes:
-            if getattr(route, "path", None) == "/.well-known/agent-card.json":
-                methods = getattr(route, "methods", set())
-                if "GET" in methods:
-                    found = True
-                    break
-        assert found, "/.well-known/agent-card.json GET route missing (regression)"
-
-    def test_ping_route_still_works(self):
-        """/ping GET route must still be registered (regression) (T005)."""
-        import main
-
-        found = False
-        for route in main.app.routes:
-            if getattr(route, "path", None) == "/ping":
-                methods = getattr(route, "methods", set())
-                if "GET" in methods:
-                    found = True
-                    break
-        assert found, "/ping GET route missing (regression)"
+        assert ("GET", "/.well-known/agent-card.json") in main.app._routes, "Agent Card route not registered"
 
 
 class TestVerificationAgentCard:
@@ -798,3 +739,86 @@ class TestVerificationAgentCard:
 
         status = get_health_status(is_busy=True)
         assert status["status"] == "HealthyBusy"
+
+
+class Test021FastAPIDirectRouting:
+    """021: Verify FastAPI direct routing (invoke_agent_runtime sends raw payload, not JSON-RPC)."""
+
+    def test_fastapi_ping_endpoint_registered(self):
+        """GET /ping route exists on the FastAPI app."""
+        import main
+
+        app = main.app
+        assert ("GET", "/ping") in app._routes, "/ping GET route not registered on FastAPI app"
+
+    def test_post_root_handles_invocation(self):
+        """POST / route exists for invoke_agent_runtime payloads."""
+        import main
+
+        app = main.app
+        assert ("POST", "/") in app._routes, "POST / route not registered on FastAPI app"
+
+    def test_agent_card_endpoint_registered(self):
+        """GET /.well-known/agent-card.json route exists."""
+        import main
+
+        app = main.app
+        assert ("GET", "/.well-known/agent-card.json") in app._routes, "Agent Card route not registered"
+
+    def test_no_private_api_usage(self):
+        """main.py source has zero occurrences of _handle_invocation."""
+        main_path = os.path.join(os.path.dirname(__file__), "..", "main.py")
+        with open(main_path) as f:
+            source = f.read()
+        assert "_handle_invocation" not in source, (
+            "main.py still references private API _handle_invocation"
+        )
+
+    def test_no_bedrock_agentcore_import(self):
+        """main.py source has zero occurrences of bedrock_agentcore."""
+        main_path = os.path.join(os.path.dirname(__file__), "..", "main.py")
+        with open(main_path) as f:
+            source = f.read()
+        assert "bedrock_agentcore" not in source, (
+            "main.py still imports bedrock_agentcore"
+        )
+
+    def test_uvicorn_run_uses_port_9000(self):
+        """uvicorn.run(app, ..., port=9000) must be present in main.py source."""
+        main_path = os.path.join(os.path.dirname(__file__), "..", "main.py")
+        with open(main_path) as f:
+            source = f.read()
+        assert "port=9000" in source, "main.py must use port=9000 for A2A protocol"
+
+    def test_no_strands_import(self):
+        """main.py should not import strands (uses FastAPI directly)."""
+        main_path = os.path.join(os.path.dirname(__file__), "..", "main.py")
+        with open(main_path) as f:
+            source = f.read()
+        assert "from strands" not in source, "main.py should not import strands"
+
+
+class TestUS3VersionConstraints:
+    """US3: Verify requirements.txt uses pinned (~= or ==) versions, no loose (>=) constraints."""
+
+    def test_no_loose_version_constraints(self):
+        """requirements.txt must not contain >= constraints (all must be ~= or ==)."""
+        req_path = os.path.join(os.path.dirname(__file__), "..", "requirements.txt")
+        with open(req_path) as f:
+            lines = f.readlines()
+        for line in lines:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            assert ">=" not in stripped, (
+                f"Loose version constraint found: {stripped!r} — use ~= or == instead of >="
+            )
+
+    def test_no_bedrock_agentcore_dependency(self):
+        """requirements.txt must not list bedrock-agentcore (unused after migration)."""
+        req_path = os.path.join(os.path.dirname(__file__), "..", "requirements.txt")
+        with open(req_path) as f:
+            content = f.read()
+        assert "bedrock-agentcore" not in content, (
+            "bedrock-agentcore should be removed from requirements.txt"
+        )

@@ -1,35 +1,29 @@
 """
-Execution Agent A2A Server Entry Point.
+Execution Agent A2A Server — FastAPI on port 9000.
 
-Receives A2A messages from Verification Agent, processes with Bedrock,
-and returns AI-generated responses. Supports asynchronous task management
-via AgentCore's add_async_task / complete_async_task for long-running operations.
+Receives raw payloads from invoke_agent_runtime (Verification Agent),
+processes with Bedrock, and returns AI-generated responses.
 
-Port: 9000 (A2A protocol)
-Protocol: JSON-RPC 2.0
-
-Async Model:
-  - @app.entrypoint returns immediately with "accepted" status
-  - Background thread processes Bedrock request
-  - complete_async_task called on completion (success or failure)
+Port: 9000 (AgentCore A2A protocol)
 """
 
 import json
 import os
-import threading
 import time
+import threading
 import traceback
 import uuid
 
-from bedrock_agentcore.runtime import BedrockAgentCoreApp
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+import uvicorn
+
 from bedrock_client_converse import invoke_bedrock
 from response_formatter import format_success_response, format_error_response
 from attachment_processor import process_attachments, get_processing_summary
 from agent_card import get_agent_card, get_health_status
 
-app = BedrockAgentCoreApp()
-
-# Track active processing threads for health status
+# Track active processing for health status
 _active_tasks = 0
 _active_tasks_lock = threading.Lock()
 
@@ -57,15 +51,7 @@ def _log(level: str, event_type: str, data: dict) -> None:
 
 
 def _map_error_to_response(error: Exception) -> tuple:
-    """
-    Map an exception to a user-friendly error code and message.
-
-    Args:
-        error: The exception to map
-
-    Returns:
-        Tuple of (error_code, user_message)
-    """
+    """Map an exception to a user-friendly error code and message."""
     error_type = type(error).__name__
     error_msg = str(error)
 
@@ -81,244 +67,27 @@ def _map_error_to_response(error: Exception) -> tuple:
         return "generic", ERROR_MESSAGES["generic"]
 
 
-def _increment_active_tasks() -> None:
-    """Increment active task counter (thread-safe)."""
-    global _active_tasks
-    with _active_tasks_lock:
-        _active_tasks += 1
+# ─── strands-agents Tool: Bedrock processing entrypoint ───
 
-
-def _decrement_active_tasks() -> None:
-    """Decrement active task counter (thread-safe)."""
-    global _active_tasks
-    with _active_tasks_lock:
-        _active_tasks = max(0, _active_tasks - 1)
-
-
-# ─── A2A Discovery Endpoints ───
-
-@app.route("/.well-known/agent-card.json", methods=["GET"])
-def agent_card_endpoint():
-    """
-    A2A Agent Card endpoint for Agent Discovery.
-
-    Returns the agent's metadata, capabilities, and skills in JSON format.
-    Standard A2A discovery endpoint as per the A2A protocol specification.
-    """
-    return json.dumps(get_agent_card())
-
-
-@app.route("/ping", methods=["GET"])
-def ping_endpoint():
-    """
-    Health check endpoint for A2A protocol.
-
-    Returns Healthy or HealthyBusy status based on active processing threads.
-    """
-    with _active_tasks_lock:
-        is_busy = _active_tasks > 0
-    return json.dumps(get_health_status(is_busy=is_busy))
-
-
-@app.route("/", methods=["POST"])
-async def a2a_root_handler(request):
-    """A2A protocol: POST / (root) routes to SDK invocation handler.
-
-    AWS A2A Service Contract requires POST / on port 9000.
-    See: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-service-contract.html
-    """
-    return await app._handle_invocation(request)
-
-
-# ─── Background Processing ───
-
-def _process_bedrock_request(
-    task_id: str,
-    text: str,
-    channel: str,
-    bot_token: str,
-    thread_ts: str,
-    correlation_id: str,
-    attachments: list,
-) -> None:
-    """
-    Background thread: process Bedrock request and complete the async task.
-
-    This function runs in a separate thread to avoid blocking the A2A entrypoint.
-    It processes the AI request (with optional attachments), then calls
-    complete_async_task to signal completion.
+def handle_message_tool(payload_json: str) -> str:
+    """Process an A2A message: parse, invoke Bedrock, return formatted response.
 
     Args:
-        task_id: AgentCore async task ID
-        text: User's message text
-        channel: Slack channel ID
-        bot_token: Slack bot token
-        thread_ts: Thread timestamp for reply
-        correlation_id: Correlation ID for tracing
-        attachments: List of attachment metadata from Slack
-    """
-    start_time = time.time()
-    _increment_active_tasks()
-
-    try:
-        _log("INFO", "async_processing_started", {
-            "correlation_id": correlation_id,
-            "task_id": task_id,
-            "channel": channel,
-            "text_length": len(text) if text else 0,
-            "attachment_count": len(attachments) if attachments else 0,
-        })
-
-        # Process attachments if present
-        processed_attachments = []
-        attachment_context = ""
-
-        if attachments:
-            try:
-                processed_attachments = process_attachments(
-                    attachments, bot_token, correlation_id
-                )
-                summary = get_processing_summary(processed_attachments)
-
-                _log("INFO", "attachments_processed", {
-                    "correlation_id": correlation_id,
-                    "task_id": task_id,
-                    **summary,
-                })
-
-                # Build attachment context for Bedrock prompt
-                doc_texts = []
-                for att in processed_attachments:
-                    if att.get("processing_status") == "success" and att.get("content_type") == "document":
-                        doc_texts.append(
-                            f"[Document: {att.get('file_name', 'unknown')}]\n{att.get('content', '')}"
-                        )
-
-                if doc_texts:
-                    attachment_context = (
-                        "\n\n--- Attached Documents ---\n"
-                        + "\n\n".join(doc_texts)
-                        + "\n--- End of Documents ---\n"
-                    )
-
-            except Exception as e:
-                _log("ERROR", "attachment_processing_error", {
-                    "correlation_id": correlation_id,
-                    "task_id": task_id,
-                    "error": str(e),
-                    "error_type": type(e).__name__,
-                })
-                # Continue with text-only processing
-
-        # Build full prompt with attachment context
-        full_prompt = text
-        if attachment_context:
-            full_prompt = text + attachment_context
-
-        # Invoke Bedrock for AI response
-        ai_response = invoke_bedrock(full_prompt)
-
-        duration_ms = (time.time() - start_time) * 1000
-
-        _log("INFO", "bedrock_response_received", {
-            "correlation_id": correlation_id,
-            "task_id": task_id,
-            "channel": channel,
-            "response_length": len(ai_response),
-            "duration_ms": round(duration_ms, 2),
-            "had_attachments": bool(attachments),
-        })
-
-        result, file_artifact = format_success_response(
-            channel=channel,
-            response_text=ai_response,
-            bot_token=bot_token,
-            thread_ts=thread_ts,
-            correlation_id=correlation_id,
-        )
-        if file_artifact is not None:
-            result["file_artifact"] = file_artifact
-
-        # Complete the async task with success result
-        try:
-            app.complete_async_task(task_id, json.dumps(result))
-            _log("INFO", "async_task_completed", {
-                "correlation_id": correlation_id,
-                "task_id": task_id,
-                "status": "success",
-                "duration_ms": round(duration_ms, 2),
-            })
-        except Exception as complete_err:
-            _log("ERROR", "complete_async_task_failed", {
-                "correlation_id": correlation_id,
-                "task_id": task_id,
-                "error": str(complete_err),
-                "error_type": type(complete_err).__name__,
-            })
-        finally:
-            _decrement_active_tasks()
-
-    except Exception as e:
-        duration_ms = (time.time() - start_time) * 1000
-        error_code, user_message = _map_error_to_response(e)
-
-        _log("ERROR", "async_processing_error", {
-            "correlation_id": correlation_id,
-            "task_id": task_id,
-            "channel": channel,
-            "error_type": type(e).__name__,
-            "error_code": error_code,
-            "error_message": str(e),
-            "duration_ms": round(duration_ms, 2),
-            "traceback": traceback.format_exc(),
-        })
-
-        error_result = format_error_response(
-            channel=channel,
-            error_code=error_code,
-            error_message=user_message,
-            bot_token=bot_token,
-            thread_ts=thread_ts,
-            correlation_id=correlation_id,
-        )
-
-        # Always call complete_async_task, even on failure
-        try:
-            app.complete_async_task(task_id, json.dumps(error_result))
-            _log("INFO", "async_task_completed_with_error", {
-                "correlation_id": correlation_id,
-                "task_id": task_id,
-                "error_code": error_code,
-            })
-        except Exception as complete_err:
-            _log("ERROR", "complete_async_task_failed_on_error", {
-                "correlation_id": correlation_id,
-                "task_id": task_id,
-                "original_error": str(e),
-                "complete_error": str(complete_err),
-            })
-        finally:
-            _decrement_active_tasks()
-
-
-@app.entrypoint
-def handle_message(payload):
-    """
-    A2A entrypoint: receive message from Verification Agent.
-
-    Returns immediately with "accepted" status after creating an async task.
-    The actual Bedrock processing happens in a background thread to avoid
-    blocking the A2A response path.
-
-    Args:
-        payload: A2A message payload containing prompt field with JSON task data
+        payload_json: JSON string containing the task payload with prompt field.
 
     Returns:
-        str: JSON with "accepted" status and task_id for async tracking
+        JSON string with processing result.
     """
+    global _active_tasks
     correlation_id = str(uuid.uuid4())
+    start_time = time.time()
 
     try:
+        try:
+            payload = json.loads(payload_json) if isinstance(payload_json, str) else payload_json
+        except (json.JSONDecodeError, TypeError):
+            payload = {"prompt": payload_json}
+
         # Parse task payload from A2A message
         raw_prompt = payload.get("prompt", "{}")
         task_payload = json.loads(raw_prompt) if isinstance(raw_prompt, str) else raw_prompt
@@ -340,7 +109,6 @@ def handle_message(payload):
             "attachment_count": len(attachments),
         })
 
-        # Structured security audit log for A2A authentication
         _log("INFO", "a2a_auth_event", {
             "correlation_id": correlation_id,
             "action": "InvokeAgentRuntime",
@@ -366,39 +134,102 @@ def handle_message(payload):
                 correlation_id=correlation_id,
             ))
 
-        # Create async task for background processing
-        task_id = app.add_async_task("bedrock_processing")
+        # Process request (synchronous — strands executor handles async)
+        with _active_tasks_lock:
+            _active_tasks += 1
 
-        _log("INFO", "async_task_created", {
-            "correlation_id": correlation_id,
-            "task_id": task_id,
-            "channel": channel,
-        })
+        try:
+            _log("INFO", "processing_started", {
+                "correlation_id": correlation_id,
+                "channel": channel,
+                "text_length": len(text) if text else 0,
+                "attachment_count": len(attachments) if attachments else 0,
+            })
 
-        # Launch background thread for Bedrock processing
-        thread = threading.Thread(
-            target=_process_bedrock_request,
-            args=(
-                task_id,
-                text,
-                channel,
-                bot_token,
-                thread_ts,
-                correlation_id,
-                attachments,
-            ),
-            daemon=True,
-            name=f"bedrock-{correlation_id[:8]}",
-        )
-        thread.start()
+            # Process attachments if present
+            attachment_context = ""
+            if attachments:
+                try:
+                    processed_attachments = process_attachments(
+                        attachments, bot_token, correlation_id
+                    )
+                    summary = get_processing_summary(processed_attachments)
+                    _log("INFO", "attachments_processed", {
+                        "correlation_id": correlation_id,
+                        **summary,
+                    })
 
-        # Return immediately — don't block A2A response
-        return json.dumps({
-            "status": "accepted",
-            "task_id": task_id,
-            "correlation_id": correlation_id,
-            "message": "Request accepted for async processing",
-        })
+                    doc_texts = []
+                    for att in processed_attachments:
+                        if att.get("processing_status") == "success" and att.get("content_type") == "document":
+                            doc_texts.append(
+                                f"[Document: {att.get('file_name', 'unknown')}]\n{att.get('content', '')}"
+                            )
+                    if doc_texts:
+                        attachment_context = (
+                            "\n\n--- Attached Documents ---\n"
+                            + "\n\n".join(doc_texts)
+                            + "\n--- End of Documents ---\n"
+                        )
+                except Exception as e:
+                    _log("ERROR", "attachment_processing_error", {
+                        "correlation_id": correlation_id,
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                    })
+
+            # Build full prompt and invoke Bedrock
+            full_prompt = text + attachment_context if attachment_context else text
+            ai_response = invoke_bedrock(full_prompt)
+
+            duration_ms = (time.time() - start_time) * 1000
+            _log("INFO", "bedrock_response_received", {
+                "correlation_id": correlation_id,
+                "channel": channel,
+                "response_length": len(ai_response),
+                "duration_ms": round(duration_ms, 2),
+                "had_attachments": bool(attachments),
+            })
+
+            result, file_artifact = format_success_response(
+                channel=channel,
+                response_text=ai_response,
+                bot_token=bot_token,
+                thread_ts=thread_ts,
+                correlation_id=correlation_id,
+            )
+            if file_artifact is not None:
+                result["file_artifact"] = file_artifact
+
+            return json.dumps(result)
+
+        except Exception as e:
+            duration_ms = (time.time() - start_time) * 1000
+            error_code, user_message = _map_error_to_response(e)
+
+            _log("ERROR", "processing_error", {
+                "correlation_id": correlation_id,
+                "channel": channel,
+                "error_type": type(e).__name__,
+                "error_code": error_code,
+                "error_message": str(e),
+                "duration_ms": round(duration_ms, 2),
+                "traceback": traceback.format_exc(),
+            })
+
+            error_result = format_error_response(
+                channel=channel,
+                error_code=error_code,
+                error_message=user_message,
+                bot_token=bot_token,
+                thread_ts=thread_ts,
+                correlation_id=correlation_id,
+            )
+            return json.dumps(error_result)
+
+        finally:
+            with _active_tasks_lock:
+                _active_tasks = max(0, _active_tasks - 1)
 
     except Exception as e:
         _log("ERROR", "unhandled_exception", {
@@ -415,6 +246,64 @@ def handle_message(payload):
         })
 
 
+# Backward-compatible entrypoint for existing tests
+def handle_message(payload):
+    """Legacy entrypoint wrapper — used by existing tests."""
+    return handle_message_tool(json.dumps(payload) if isinstance(payload, dict) else payload)
+
+
+# ─── FastAPI app ───
+
+app = FastAPI()
+
+
+@app.get("/ping")
+def ping_endpoint():
+    """Health check (required by AgentCore service contract)."""
+    with _active_tasks_lock:
+        is_busy = _active_tasks > 0
+    return get_health_status(is_busy=is_busy)
+
+
+@app.get("/.well-known/agent-card.json")
+def agent_card_endpoint():
+    """Agent Card endpoint (A2A discovery)."""
+    return get_agent_card()
+
+
+@app.post("/")
+async def handle_invocation(request: Request):
+    """Handle invoke_agent_runtime payload — parse and process."""
+    start_time = time.time()
+    body = await request.body()
+    payload = json.loads(body)
+
+    # Extract correlation_id from nested prompt for tracing
+    raw_prompt = payload.get("prompt", "{}")
+    task_payload = json.loads(raw_prompt) if isinstance(raw_prompt, str) else raw_prompt
+    correlation_id = task_payload.get("correlation_id", "")
+
+    _log("INFO", "request_received", {
+        "correlation_id": correlation_id,
+        "channel": task_payload.get("channel", ""),
+        "text_length": len(task_payload.get("text", "")),
+        "has_thread_ts": bool(task_payload.get("thread_ts")),
+        "attachment_count": len(task_payload.get("attachments", [])),
+        "payload_bytes": len(body),
+    })
+
+    result = handle_message_tool(json.dumps(payload))
+    duration_ms = (time.time() - start_time) * 1000
+
+    result_data = json.loads(result) if isinstance(result, str) else result
+    _log("INFO", "request_completed", {
+        "correlation_id": correlation_id,
+        "status": result_data.get("status", ""),
+        "duration_ms": round(duration_ms, 2),
+    })
+
+    return JSONResponse(content=result_data)
+
+
 if __name__ == "__main__":
-    # A2A protocol contract requires port 9000 (not SDK default 8080)
-    app.run(port=9000)
+    uvicorn.run(app, host="0.0.0.0", port=9000)
