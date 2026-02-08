@@ -8,17 +8,14 @@ describe("VerificationStack", () => {
   let template: Template;
 
   beforeEach(() => {
-    // Set required environment variables
     process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
     process.env.SLACK_SIGNING_SECRET = "test-signing-secret";
 
     app = new cdk.App();
     stack = new VerificationStack(app, "TestVerificationStack", {
       env: { account: "123456789012", region: "ap-northeast-1" },
-      executionApiUrl:
-        "https://abc123.execute-api.ap-northeast-1.amazonaws.com/prod/",
-      executionApiArn:
-        "arn:aws:execute-api:ap-northeast-1:123456789012:abc123/*",
+      executionAgentArn:
+        "arn:aws:bedrock-agentcore:ap-northeast-1:123456789012:runtime/TestExecutionAgent",
     });
     template = Template.fromStack(stack);
   });
@@ -28,12 +25,115 @@ describe("VerificationStack", () => {
     delete process.env.SLACK_SIGNING_SECRET;
   });
 
+  describe("A2A only (no legacy)", () => {
+    it("must NOT contain ExecutionResponseQueue SQS queue", () => {
+      const queues = template.findResources("AWS::SQS::Queue");
+      const executionResponseQueue = Object.entries(queues).find(
+        ([_, res]) =>
+          (res as { Properties?: { QueueName?: string } }).Properties?.QueueName?.includes?.(
+            "execution-response"
+          )
+      );
+      expect(executionResponseQueue).toBeUndefined();
+    });
+
+    it("must NOT contain SlackResponseHandler Lambda", () => {
+      const lambdas = template.findResources("AWS::Lambda::Function");
+      const slackResponseHandler = Object.entries(lambdas).find(
+        ([logicalId]) => logicalId.includes("SlackResponseHandler")
+      );
+      expect(slackResponseHandler).toBeUndefined();
+    });
+
+    it("must NOT have outputs ExecutionResponseQueueUrl, ExecutionResponseQueueArn", () => {
+      expect(template.toJSON().Outputs?.ExecutionResponseQueueUrl).toBeUndefined();
+      expect(template.toJSON().Outputs?.ExecutionResponseQueueArn).toBeUndefined();
+    });
+  });
+
+  describe("016 async invocation (SQS + Agent Invoker)", () => {
+    it("must contain SQS queue for agent-invocation-request", () => {
+      const queues = template.findResources("AWS::SQS::Queue");
+      const mainQueue = Object.entries(queues).find(
+        ([_, res]) =>
+          (res as { Properties?: { QueueName?: string } }).Properties?.QueueName?.includes?.(
+            "agent-invocation-request"
+          )
+      );
+      expect(mainQueue).toBeDefined();
+    });
+
+    it("must contain Lambda function for Agent Invoker", () => {
+      const lambdas = template.findResources("AWS::Lambda::Function");
+      const agentInvoker = Object.entries(lambdas).find(
+        ([logicalId]) =>
+          logicalId.includes("AgentInvoker") && !logicalId.includes("SlackEventHandler")
+      );
+      expect(agentInvoker).toBeDefined();
+    });
+
+    it("SlackEventHandler Lambda role must have sqs:SendMessage on agent-invocation queue", () => {
+      template.hasResourceProperties("AWS::IAM::Policy", {
+        PolicyDocument: {
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Action: Match.arrayWith(["sqs:SendMessage"]),
+              Effect: "Allow",
+            }),
+          ]),
+        },
+      });
+    });
+
+    it("Agent Invoker Lambda role must have bedrock-agentcore:InvokeAgentRuntime", () => {
+      const policies = template.findResources("AWS::IAM::Policy");
+      const hasInvokerWithAgentCore = Object.values(policies).some(
+        (res) => {
+          const doc = (res as { Properties?: { PolicyDocument?: { Statement?: unknown[] } } })
+            .Properties?.PolicyDocument;
+          const stmts = doc?.Statement ?? [];
+          return stmts.some(
+            (s: unknown) =>
+              typeof s === "object" &&
+              s !== null &&
+              "Action" in s &&
+              (Array.isArray((s as { Action: unknown }).Action)
+                ? (s as { Action: string[] }).Action.includes("bedrock-agentcore:InvokeAgentRuntime")
+                : (s as { Action: string }).Action === "bedrock-agentcore:InvokeAgentRuntime")
+          );
+        }
+      );
+      expect(hasInvokerWithAgentCore).toBe(true);
+    });
+
+    it("agent-invocation-request queue must have redrivePolicy with deadLetterTargetArn and maxReceiveCount 3", () => {
+      template.hasResourceProperties("AWS::SQS::Queue", {
+        QueueName: Match.stringLikeRegexp("agent-invocation-request"),
+        RedrivePolicy: Match.objectLike({
+          deadLetterTargetArn: Match.anyValue(),
+          maxReceiveCount: 3,
+        }),
+      });
+    });
+  });
+
   describe("SlackEventHandler Lambda", () => {
     it("should create SlackEventHandler Lambda function", () => {
       template.hasResourceProperties("AWS::Lambda::Function", {
         Runtime: "python3.11",
-        Timeout: 10,
+        Timeout: 120,
       });
+    });
+
+    it("should not have VALIDATION_ZONE_ECHO_MODE when not provided", () => {
+      const lambdas = template.findResources("AWS::Lambda::Function");
+      const slackHandler = Object.entries(lambdas).find(([logicalId]) =>
+        logicalId.includes("SlackEventHandler")
+      );
+      expect(slackHandler).toBeDefined();
+      const env = (slackHandler![1] as { Properties?: { Environment?: { Variables?: Record<string, string> } } })
+        .Properties?.Environment?.Variables ?? {};
+      expect(env.VALIDATION_ZONE_ECHO_MODE).toBeUndefined();
     });
 
     it("should have Function URL enabled", () => {
@@ -42,14 +142,13 @@ describe("VerificationStack", () => {
       });
     });
 
-    it("should have execute-api:Invoke permission for Execution API", () => {
+    it("should have bedrock-agentcore:InvokeAgentRuntime permission (A2A)", () => {
       template.hasResourceProperties("AWS::IAM::Policy", {
         PolicyDocument: {
           Statement: Match.arrayWith([
             Match.objectLike({
-              Action: "execute-api:Invoke",
+              Action: "bedrock-agentcore:InvokeAgentRuntime",
               Effect: "Allow",
-              Resource: "*", // Wildcard resource (access controlled by API Gateway resource policy)
             }),
           ]),
         },
@@ -130,6 +229,30 @@ describe("VerificationStack", () => {
     });
   });
 
+  describe("017 Validation Zone Echo mode", () => {
+    it("should set VALIDATION_ZONE_ECHO_MODE when validationZoneEchoMode is true", () => {
+      process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+      process.env.SLACK_SIGNING_SECRET = "test-signing-secret";
+      const appWithEcho = new cdk.App();
+      const stackWithEcho = new VerificationStack(appWithEcho, "VerificationStackWithEcho", {
+        env: { account: "123456789012", region: "ap-northeast-1" },
+        executionAgentArn:
+          "arn:aws:bedrock-agentcore:ap-northeast-1:123456789012:runtime/TestExecutionAgent",
+        validationZoneEchoMode: true,
+      });
+      const templateEcho = Template.fromStack(stackWithEcho);
+      templateEcho.hasResourceProperties("AWS::Lambda::Function", {
+        Environment: {
+          Variables: expect.objectContaining({
+            VALIDATION_ZONE_ECHO_MODE: "true",
+          }),
+        },
+      });
+      delete process.env.SLACK_BOT_TOKEN;
+      delete process.env.SLACK_SIGNING_SECRET;
+    });
+  });
+
   describe("Stack Outputs", () => {
     it("should output SlackEventHandlerUrl", () => {
       template.hasOutput("SlackEventHandlerUrl", {
@@ -149,37 +272,4 @@ describe("VerificationStack", () => {
       });
     });
   });
-
-  describe("Required props validation", () => {
-    it("should throw error when executionApiUrl is missing", () => {
-      process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
-      process.env.SLACK_SIGNING_SECRET = "test-signing-secret";
-
-      const testApp = new cdk.App();
-      expect(() => {
-        new VerificationStack(testApp, "MissingApiUrlStack", {
-          env: { account: "123456789012", region: "ap-northeast-1" },
-          executionApiUrl: "",
-          executionApiArn:
-            "arn:aws:execute-api:ap-northeast-1:123456789012:abc123/*",
-        });
-      }).toThrow("executionApiUrl is required");
-    });
-
-    it("should throw error when executionApiArn is missing", () => {
-      process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
-      process.env.SLACK_SIGNING_SECRET = "test-signing-secret";
-
-      const testApp = new cdk.App();
-      expect(() => {
-        new VerificationStack(testApp, "MissingApiArnStack", {
-          env: { account: "123456789012", region: "ap-northeast-1" },
-          executionApiUrl:
-            "https://abc123.execute-api.ap-northeast-1.amazonaws.com/prod/",
-          executionApiArn: "",
-        });
-      }).toThrow("executionApiArn is required");
-    });
-  });
 });
-
