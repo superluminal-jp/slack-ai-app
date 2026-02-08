@@ -36,7 +36,7 @@ class TestInvokeExecutionAgent:
         })
 
         mock_client.invoke_agent_runtime.return_value = {
-            "body": success_body,
+            "response": success_body,
         }
 
         from a2a_client import invoke_execution_agent
@@ -68,7 +68,7 @@ class TestInvokeExecutionAgent:
             "task_id": "async-task-789",
         })
         mock_client.invoke_agent_runtime.return_value = {
-            "body": accepted_body,
+            "response": accepted_body,
         }
 
         # Polling returns final result
@@ -120,9 +120,10 @@ class TestInvokeExecutionAgent:
         assert result_data["status"] == "error"
         assert "resourcenotfoundexception" in result_data["error_code"]
 
+    @patch("a2a_client.time.sleep")
     @patch("a2a_client._get_agentcore_client")
-    def test_throttling_error_returns_throttling_code(self, mock_get_client):
-        """ThrottlingException should return throttling error code."""
+    def test_throttling_error_returns_throttling_code_after_retries(self, mock_get_client, mock_sleep):
+        """ThrottlingException: retry with backoff, then return throttling error code."""
         from botocore.exceptions import ClientError
 
         mock_client = Mock()
@@ -132,7 +133,7 @@ class TestInvokeExecutionAgent:
             "InvokeAgentRuntime",
         )
 
-        from a2a_client import invoke_execution_agent
+        from a2a_client import invoke_execution_agent, INVOKE_RETRY_MAX_ATTEMPTS
 
         result = invoke_execution_agent(
             task_payload={
@@ -145,6 +146,8 @@ class TestInvokeExecutionAgent:
         result_data = json.loads(result)
         assert result_data["status"] == "error"
         assert result_data["error_code"] == "throttling"
+        assert mock_client.invoke_agent_runtime.call_count == INVOKE_RETRY_MAX_ATTEMPTS
+        assert mock_sleep.call_count == INVOKE_RETRY_MAX_ATTEMPTS - 1
 
     @patch("a2a_client._get_agentcore_client")
     def test_arn_from_env_used_as_fallback(self, mock_get_client):
@@ -152,7 +155,7 @@ class TestInvokeExecutionAgent:
         mock_client = Mock()
         mock_get_client.return_value = mock_client
         mock_client.invoke_agent_runtime.return_value = {
-            "body": json.dumps({"status": "success", "response_text": "ok"})
+            "response": json.dumps({"status": "success", "response_text": "ok"})
         }
 
         from a2a_client import invoke_execution_agent
@@ -322,8 +325,8 @@ class TestA2AClientSigV4:
     """Test that the client uses SigV4 authentication (boto3 default)."""
 
     @patch("a2a_client.boto3.client")
-    def test_uses_bedrock_agentcore_runtime_client(self, mock_boto_client):
-        """Should create a bedrock-agentcore-runtime boto3 client."""
+    def test_uses_bedrock_agentcore_client(self, mock_boto_client):
+        """Should create a bedrock-agentcore boto3 client (Data Plane per InvokeAgentRuntime API)."""
         # Reset cached client
         import a2a_client
         a2a_client._agentcore_client = None
@@ -334,7 +337,7 @@ class TestA2AClientSigV4:
 
         mock_boto_client.assert_called_once()
         call_args = mock_boto_client.call_args
-        assert call_args[0][0] == "bedrock-agentcore-runtime"
+        assert call_args[0][0] == "bedrock-agentcore"
 
     def test_polling_constants_defined(self):
         """Polling configuration constants should be defined."""

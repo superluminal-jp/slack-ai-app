@@ -19,8 +19,8 @@
 
 **Purpose**: ファイルサイズ・MIME 制限の設定を追加し、全ストーリーで利用する。
 
-- [ ] T001 [P] Add file limit config module in `cdk/lib/execution/agent/execution-agent/file_config.py`: MAX_FILE_SIZE_BYTES (default 5*1024*1024), ALLOWED_MIME_TYPES (default ["text/csv","application/json","text/plain"]), read from env with fallback to defaults per research R-003
-- [ ] T002 [P] Add unit tests for file_config in `cdk/lib/execution/agent/execution-agent/tests/test_file_config.py`: default values, env override, validation helpers (is_allowed_mime, is_within_size_limit)
+- [x] T001 [P] Add file limit config module in `cdk/lib/execution/agent/execution-agent/file_config.py`: MAX_FILE_SIZE_BYTES (default 5*1024*1024), ALLOWED_MIME_TYPES (default ["text/csv","application/json","text/plain"]), read from env with fallback to defaults per research R-003
+- [x] T002 [P] Add unit tests for file_config in `cdk/lib/execution/agent/execution-agent/tests/test_file_config.py`: default values, env override, validation helpers (is_allowed_mime, is_within_size_limit)
 
 ---
 
@@ -28,9 +28,9 @@
 
 **Purpose**: ファイル artifact の組み立てと検証に必要な定数・ヘルパーを定義する。A2A 契約（generated_file artifact 名・part キー）をコードで一箇所定義する。
 
-- [ ] T003 [P] Add A2A file artifact constants in `cdk/lib/execution/agent/execution-agent/response_formatter.py`: GENERATED_FILE_ARTIFACT_NAME, part keys (contentBase64, fileName, mimeType) per contracts/a2a-file-artifact.yaml
-- [ ] T004 [P] Add helper in `cdk/lib/execution/agent/execution-agent/response_formatter.py`: validate_file_for_artifact(file_bytes, file_name, mime_type) using file_config (size + MIME), returns (ok: bool, error_message: str | None)
-- [ ] T005 Add unit tests for validate_file_for_artifact in `cdk/lib/execution/agent/execution-agent/tests/test_response_formatter.py`: within limit + allowed MIME returns ok; over size or disallowed MIME returns error_message
+- [x] T003 [P] Add A2A file artifact constants in `cdk/lib/execution/agent/execution-agent/response_formatter.py`: GENERATED_FILE_ARTIFACT_NAME, part keys (contentBase64, fileName, mimeType) per contracts/a2a-file-artifact.yaml
+- [x] T004 [P] Add helper in `cdk/lib/execution/agent/execution-agent/response_formatter.py`: validate_file_for_artifact(file_bytes, file_name, mime_type) using file_config (size + MIME), returns (ok: bool, error_message: str | None)
+- [x] T005 Add unit tests for validate_file_for_artifact in `cdk/lib/execution/agent/execution-agent/tests/test_response_formatter.py`: within limit + allowed MIME returns ok; over size or disallowed MIME returns error_message
 
 ---
 
@@ -42,19 +42,19 @@
 
 ### Tests for User Story 1 (TDD: 先に書き、失敗を確認してから実装)
 
-- [ ] T006 [P] [US1] Add Execution Agent tests in `cdk/lib/execution/agent/execution-agent/tests/test_main.py`: A2A response contains exactly two artifacts when file is returned (execution_response + generated_file); generated_file has name "generated_file" and one part with contentBase64, fileName, mimeType; response_text and file artifact coexist
-- [ ] T007 [P] [US1] Add Verification Agent tests in `cdk/lib/verification/agent/verification-agent/tests/test_main.py`: when A2A result has generated_file artifact, post_file_to_slack is called with correct channel, thread_ts, file_bytes, file_name, mime_type, bot_token; when both text and file, post_to_slack is called before post_file_to_slack (order)
-- [ ] T008 [P] [US1] Add unit tests for post_file_to_slack in `cdk/lib/verification/agent/verification-agent/tests/test_slack_poster.py`: signature post_file_to_slack(channel, thread_ts, file_bytes, file_name, mime_type, bot_token); raises ValueError for empty channel/file_name/bot_token; documents that SlackApiError is raised on API failure (contract slack-file-poster.yaml)
+- [x] T006 [P] [US1] Add Execution Agent tests in `cdk/lib/execution/agent/execution-agent/tests/test_main.py`: A2A response contains exactly two artifacts when file is returned (execution_response + generated_file); generated_file has name "generated_file" and one part with contentBase64, fileName, mimeType; response_text and file artifact coexist
+- [x] T007 [P] [US1] Add Verification Agent tests in `cdk/lib/verification/agent/verification-agent/tests/test_main.py`: when A2A result has generated_file artifact, post_file_to_slack is called with correct channel, thread_ts, file_bytes, file_name, mime_type, bot_token; when both text and file, post_to_slack is called before post_file_to_slack (order)
+- [x] T008 [P] [US1] Add unit tests for post_file_to_slack in `cdk/lib/verification/agent/verification-agent/tests/test_slack_poster.py`: signature post_file_to_slack(channel, thread_ts, file_bytes, file_name, mime_type, bot_token); raises ValueError for empty channel/file_name/bot_token; documents that SlackApiError is raised on API failure (contract slack-file-poster.yaml)
 
 ### Implementation for User Story 1
 
-- [ ] T009 [US1] Extend `cdk/lib/execution/agent/execution-agent/response_formatter.py`: add build_file_artifact(file_bytes, file_name, mime_type) returning artifact dict per data-model and contracts/a2a-file-artifact.yaml (Base64 encode, artifactId UUID, name "generated_file", single part with kind "file")
-- [ ] T010 [US1] Extend `cdk/lib/execution/agent/execution-agent/response_formatter.py`: format_success_response accepts optional file_bytes, file_name, mime_type; when provided and validate_file_for_artifact passes, return (response_dict, file_artifact_dict) from build_file_artifact; otherwise return (response_dict, None); caller in main.py builds A2A result.artifacts from execution_response plus optional generated_file
-- [ ] T011 [US1] Update `cdk/lib/execution/agent/execution-agent/main.py`: after Bedrock success, if file generation produces (file_bytes, file_name, mime_type), call format_success_response with file args; build A2A result.artifacts with execution_response artifact first, then generated_file artifact if present; ensure existing text-only path unchanged
-- [ ] T012 [US1] Implement post_file_to_slack in `cdk/lib/verification/agent/verification-agent/slack_poster.py` per contracts/slack-file-poster.yaml: parameters channel, thread_ts, file_bytes, file_name, mime_type, bot_token; use Slack SDK upload_v2 or files.getUploadURLExternal → POST → files.completeUploadExternal; pass thread_ts if API supports; structured logging and raise SlackApiError on failure
-- [ ] T013 [US1] Add helper in `cdk/lib/verification/agent/verification-agent/main.py`: parse_file_artifact(artifacts: list) -> (file_bytes, file_name, mime_type) | None; find artifact with name "generated_file", decode Base64 from part, return tuple or None
-- [ ] T014 [US1] Update `cdk/lib/verification/agent/verification-agent/main.py`: after parsing execution_result (text artifact), call parse_file_artifact(result_data or A2A result); if file present, post text first (post_to_slack), then post_file_to_slack; on post_file_to_slack exception, post error message to thread (FR-007)
-- [ ] T015 [US1] Add CloudWatch metric or structured log in `cdk/lib/verification/agent/verification-agent/main.py` when file artifact is posted or when file post fails (observability)
+- [x] T009 [US1] Extend `cdk/lib/execution/agent/execution-agent/response_formatter.py`: add build_file_artifact(file_bytes, file_name, mime_type) returning artifact dict per data-model and contracts/a2a-file-artifact.yaml (Base64 encode, artifactId UUID, name "generated_file", single part with kind "file")
+- [x] T010 [US1] Extend `cdk/lib/execution/agent/execution-agent/response_formatter.py`: format_success_response accepts optional file_bytes, file_name, mime_type; when provided and validate_file_for_artifact passes, return (response_dict, file_artifact_dict) from build_file_artifact; otherwise return (response_dict, None); caller in main.py builds A2A result.artifacts from execution_response plus optional generated_file
+- [x] T011 [US1] Update `cdk/lib/execution/agent/execution-agent/main.py`: after Bedrock success, if file generation produces (file_bytes, file_name, mime_type), call format_success_response with file args; build A2A result.artifacts with execution_response artifact first, then generated_file artifact if present; ensure existing text-only path unchanged
+- [x] T012 [US1] Implement post_file_to_slack in `cdk/lib/verification/agent/verification-agent/slack_poster.py` per contracts/slack-file-poster.yaml: parameters channel, thread_ts, file_bytes, file_name, mime_type, bot_token; use Slack SDK upload_v2 or files.getUploadURLExternal → POST → files.completeUploadExternal; pass thread_ts if API supports; structured logging and raise SlackApiError on failure
+- [x] T013 [US1] Add helper in `cdk/lib/verification/agent/verification-agent/main.py`: parse_file_artifact(artifacts: list) -> (file_bytes, file_name, mime_type) | None; find artifact with name "generated_file", decode Base64 from part, return tuple or None
+- [x] T014 [US1] Update `cdk/lib/verification/agent/verification-agent/main.py`: after parsing execution_result (text artifact), call parse_file_artifact(result_data or A2A result); if file present, post text first (post_to_slack), then post_file_to_slack; on post_file_to_slack exception, post error message to thread (FR-007)
+- [x] T015 [US1] Add CloudWatch metric or structured log in `cdk/lib/verification/agent/verification-agent/main.py` when file artifact is posted or when file post fails (observability)
 
 **Checkpoint**: US1 完了。テキスト＋ファイルのフローが E2E で動作し、T006–T008 のテストがパスする。
 
@@ -68,13 +68,13 @@
 
 ### Tests for User Story 2 (TDD)
 
-- [ ] T016 [P] [US2] Add Execution Agent tests in `cdk/lib/execution/agent/execution-agent/tests/test_main.py`: when no file is generated, A2A response has exactly one artifact (execution_response); when only file (no response_text), execution_response has empty or minimal response_text and generated_file artifact is present
-- [ ] T017 [P] [US2] Add Verification Agent tests in `cdk/lib/verification/agent/verification-agent/tests/test_main.py`: when only execution_response (no generated_file), only post_to_slack is called, post_file_to_slack is not called; when only generated_file (no or empty response_text), post_file_to_slack is called and post_to_slack is not called for content (or called with empty string is acceptable per product)
+- [x] T016 [P] [US2] Add Execution Agent tests in `cdk/lib/execution/agent/execution-agent/tests/test_main.py`: when no file is generated, A2A response has exactly one artifact (execution_response); when only file (no response_text), execution_response has empty or minimal response_text and generated_file artifact is present
+- [x] T017 [P] [US2] Add Verification Agent tests in `cdk/lib/verification/agent/verification-agent/tests/test_main.py`: when only execution_response (no generated_file), only post_to_slack is called, post_file_to_slack is not called; when only generated_file (no or empty response_text), post_file_to_slack is called and post_to_slack is not called for content (or called with empty string is acceptable per product)
 
 ### Implementation for User Story 2
 
-- [ ] T018 [US2] Update `cdk/lib/execution/agent/execution-agent/main.py`: support response_text empty when only file is returned; ensure artifact list is still [execution_response, generated_file] or [execution_response] so Verification logic is consistent
-- [ ] T019 [US2] Update `cdk/lib/verification/agent/verification-agent/main.py`: when response_text is absent or empty and file artifact exists, skip post_to_slack for text and only call post_file_to_slack; when only text (no file artifact), keep current behavior (post_to_slack only)
+- [x] T018 [US2] Update `cdk/lib/execution/agent/execution-agent/main.py`: support response_text empty when only file is returned; ensure artifact list is still [execution_response, generated_file] or [execution_response] so Verification logic is consistent
+- [x] T019 [US2] Update `cdk/lib/verification/agent/verification-agent/main.py`: when response_text is absent or empty and file artifact exists, skip post_to_slack for text and only call post_file_to_slack; when only text (no file artifact), keep current behavior (post_to_slack only)
 
 **Checkpoint**: US2 完了。テキストのみ・ファイルのみの両方が独立してテスト可能。
 
@@ -88,15 +88,15 @@
 
 ### Tests for User Story 3 (TDD)
 
-- [ ] T020 [P] [US3] Add Execution Agent tests in `cdk/lib/execution/agent/execution-agent/tests/test_main.py`: when file exceeds MAX_FILE_SIZE_BYTES, no generated_file artifact is added; response_text contains user-facing message (e.g. ファイルが大きすぎます); when mime_type not in ALLOWED_MIME_TYPES, no generated_file artifact; response_text contains appropriate message
-- [ ] T021 [P] [US3] Add Verification Agent tests in `cdk/lib/verification/agent/verification-agent/tests/test_main.py`: when post_file_to_slack raises SlackApiError, post_to_slack is called with error message text (FR-007); no unhandled exception
-- [ ] T022 [P] [US3] Add unit tests in `cdk/lib/execution/agent/execution-agent/tests/test_response_formatter.py`: validate_file_for_artifact rejects file over MAX_FILE_SIZE_BYTES; rejects mime_type not in ALLOWED_MIME_TYPES; accepts boundary size and allowed MIME
+- [x] T020 [P] [US3] Add Execution Agent tests in `cdk/lib/execution/agent/execution-agent/tests/test_main.py`: when file exceeds MAX_FILE_SIZE_BYTES, no generated_file artifact is added; response_text contains user-facing message (e.g. ファイルが大きすぎます); when mime_type not in ALLOWED_MIME_TYPES, no generated_file artifact; response_text contains appropriate message
+- [x] T021 [P] [US3] Add Verification Agent tests in `cdk/lib/verification/agent/verification-agent/tests/test_main.py`: when post_file_to_slack raises SlackApiError, post_to_slack is called with error message text (FR-007); no unhandled exception
+- [x] T022 [P] [US3] Add unit tests in `cdk/lib/execution/agent/execution-agent/tests/test_response_formatter.py`: validate_file_for_artifact rejects file over MAX_FILE_SIZE_BYTES; rejects mime_type not in ALLOWED_MIME_TYPES; accepts boundary size and allowed MIME
 
 ### Implementation for User Story 3
 
-- [ ] T023 [US3] In `cdk/lib/execution/agent/execution-agent/main.py`: before adding file artifact, call validate_file_for_artifact; on failure return format_success_response with response_text including user-facing size/MIME message and no file artifact (FR-005, FR-006)
-- [ ] T024 [US3] In `cdk/lib/verification/agent/verification-agent/main.py`: wrap post_file_to_slack in try/except; on SlackApiError (or generic exception), call post_to_slack with ファイルの投稿に失敗しました。しばらくしてからお試しください。 (or configurable message) to same thread (FR-007)
-- [ ] T025 [US3] Add structured logging in `cdk/lib/execution/agent/execution-agent/main.py` when file is rejected (size/MIME) and in `cdk/lib/verification/agent/verification-agent/main.py` when file upload fails; include correlation_id and reason
+- [x] T023 [US3] In `cdk/lib/execution/agent/execution-agent/main.py`: before adding file artifact, call validate_file_for_artifact; on failure return format_success_response with response_text including user-facing size/MIME message and no file artifact (FR-005, FR-006)
+- [x] T024 [US3] In `cdk/lib/verification/agent/verification-agent/main.py`: wrap post_file_to_slack in try/except; on SlackApiError (or generic exception), call post_to_slack with ファイルの投稿に失敗しました。しばらくしてからお試しください。 (or configurable message) to same thread (FR-007)
+- [x] T025 [US3] Add structured logging in `cdk/lib/execution/agent/execution-agent/main.py` when file is rejected (size/MIME) and in `cdk/lib/verification/agent/verification-agent/main.py` when file upload fails; include correlation_id and reason
 
 **Checkpoint**: US3 完了。制限とエラー時のユーザー通知が仕様どおり動作する。
 
@@ -106,10 +106,10 @@
 
 **Purpose**: ドキュメント、契約との整合、quickstart 検証。
 
-- [ ] T026 [P] Update `cdk/lib/execution/agent/execution-agent/agent_card.py`: add skill or capability for file generation (e.g. "generated-file") per specs/014-a2a-file-to-slack/contracts/a2a-file-artifact.yaml if Agent Card に出力モードを明示する方針なら
-- [ ] T027 [P] Update `docs/reference/architecture/zone-communication.md` or feature doc: add section for 014 file artifact flow (Execution → generated_file artifact → Verification → post_file_to_slack), max size and allowed MIME, link to contracts
-- [ ] T028 Run quickstart validation per `specs/014-a2a-file-to-slack/quickstart.md`: run Execution/Verification tests, optionally manual E2E (deploy 013 + 014 changes, request file in Slack, confirm thread shows file)
-- [ ] T029 [P] Add CDK or IAM note for Verification Agent: ensure Bot token scope includes files:write (document in README or verification-stack comment) per research R-002
+- [x] T026 [P] Update `cdk/lib/execution/agent/execution-agent/agent_card.py`: add skill or capability for file generation (e.g. "generated-file") per specs/014-a2a-file-to-slack/contracts/a2a-file-artifact.yaml if Agent Card に出力モードを明示する方針なら
+- [x] T027 [P] Update `docs/reference/architecture/zone-communication.md` or feature doc: add section for 014 file artifact flow (Execution → generated_file artifact → Verification → post_file_to_slack), max size and allowed MIME, link to contracts
+- [x] T028 Run quickstart validation per `specs/014-a2a-file-to-slack/quickstart.md`: run Execution/Verification tests, optionally manual E2E (deploy 013 + 014 changes, request file in Slack, confirm thread shows file)
+- [x] T029 [P] Add CDK or IAM note for Verification Agent: ensure Bot token scope includes files:write (document in README or verification-stack comment) per research R-002
 
 ---
 

@@ -12,6 +12,7 @@ import { RateLimit } from "./constructs/rate-limit";
 import { VerificationAgentRuntime } from "./constructs/verification-agent-runtime";
 import { VerificationAgentEcr } from "./constructs/verification-agent-ecr";
 import { AgentInvoker } from "./constructs/agent-invoker";
+import { SlackPoster } from "./constructs/slack-poster";
 import { VerificationStackProps } from "../types/stack-config";
 
 /**
@@ -151,6 +152,11 @@ export class VerificationStack extends cdk.Stack {
       this,
       "VerificationAgentEcr"
     );
+
+    const slackPoster = new SlackPoster(this, "SlackPoster", {
+      stackName: this.stackName,
+    });
+
     this.verificationAgentRuntime = new VerificationAgentRuntime(
       this,
       "VerificationAgentRuntime",
@@ -165,6 +171,8 @@ export class VerificationStack extends cdk.Stack {
         slackSigningSecret: slackSigningSecretResource,
         slackBotTokenSecret: slackBotTokenSecret,
         executionAgentArn: executionAgentArn || undefined,
+        validationZoneEchoMode: validationZoneEchoMode ?? false,
+        slackPostRequestQueue: slackPoster.queue,
       }
     );
     this.verificationAgentRuntimeArn = this.verificationAgentRuntime.runtimeArn;

@@ -145,10 +145,10 @@ class TestProcessBedrockRequest:
         """Successful Bedrock call should complete async task with result."""
         mock_bedrock.return_value = "AI response text"
         mock_attachments.return_value = []
-        mock_format.return_value = {
-            "status": "success",
-            "response_text": "AI response text",
-        }
+        mock_format.return_value = (
+            {"status": "success", "response_text": "AI response text"},
+            None,
+        )
 
         from main import _process_bedrock_request
 
@@ -170,6 +170,107 @@ class TestProcessBedrockRequest:
         assert call_args[0][0] == "task-001"
         completed_result = json.loads(call_args[0][1])
         assert completed_result["status"] == "success"
+
+    @patch("main.app")
+    @patch("main.invoke_bedrock")
+    @patch("main.process_attachments")
+    @patch("main.format_success_response")
+    def test_success_with_file_artifact_completes_task_with_two_artifacts(
+        self, mock_format, mock_attachments, mock_bedrock, mock_app
+    ):
+        """When file is returned, result has response_text and file_artifact (014 US1)."""
+        import base64
+        mock_bedrock.return_value = "Here is your export."
+        mock_attachments.return_value = []
+        file_artifact = {
+            "artifactId": "art-uuid",
+            "name": "generated_file",
+            "parts": [{
+                "kind": "file",
+                "contentBase64": base64.b64encode(b"a,b\n1,2").decode("utf-8"),
+                "fileName": "export.csv",
+                "mimeType": "text/csv",
+            }],
+        }
+        result_dict = {
+            "status": "success",
+            "response_text": "Here is your export.",
+            "channel": "C01234567",
+            "bot_token": "xoxb-test",
+            "thread_ts": None,
+        }
+        mock_format.return_value = (result_dict, file_artifact)
+
+        from main import _process_bedrock_request
+
+        _process_bedrock_request(
+            task_id="task-file-001",
+            text="Export as CSV",
+            channel="C01234567",
+            bot_token="xoxb-test",
+            thread_ts=None,
+            correlation_id="corr-file",
+            attachments=[],
+        )
+
+        mock_app.complete_async_task.assert_called_once()
+        call_args = mock_app.complete_async_task.call_args
+        completed_result = json.loads(call_args[0][1])
+        assert completed_result["status"] == "success"
+        assert completed_result.get("response_text") == "Here is your export."
+        assert "file_artifact" in completed_result
+        fa = completed_result["file_artifact"]
+        assert fa["name"] == "generated_file"
+        assert len(fa.get("parts", [])) == 1
+        part = fa["parts"][0]
+        assert part.get("fileName") == "export.csv"
+        assert part.get("mimeType") == "text/csv"
+        assert "contentBase64" in part
+
+    @patch("main.app")
+    @patch("main.invoke_bedrock")
+    @patch("main.process_attachments")
+    @patch("main.format_success_response")
+    def test_no_file_generated_result_has_no_file_artifact(self, mock_format, mock_attachments, mock_bedrock, mock_app):
+        """When no file is generated, completed result has no file_artifact (014 US2)."""
+        mock_bedrock.return_value = "Text only."
+        mock_attachments.return_value = []
+        mock_format.return_value = (
+            {"status": "success", "response_text": "Text only.", "channel": "C1", "bot_token": "xoxb-1", "thread_ts": None},
+            None,
+        )
+        from main import _process_bedrock_request
+        _process_bedrock_request(
+            task_id="t1", text="Hi", channel="C1", bot_token="xoxb-1", thread_ts=None, correlation_id="c1", attachments=[],
+        )
+        completed_result = json.loads(mock_app.complete_async_task.call_args[0][1])
+        assert completed_result["status"] == "success"
+        assert "file_artifact" not in completed_result
+
+    @patch("main.app")
+    @patch("main.invoke_bedrock")
+    @patch("main.process_attachments")
+    @patch("main.format_success_response")
+    def test_only_file_response_has_empty_response_text_and_file_artifact(self, mock_format, mock_attachments, mock_bedrock, mock_app):
+        """When only file is returned, result has empty/minimal response_text and file_artifact (014 US2)."""
+        import base64
+        mock_bedrock.return_value = ""
+        mock_attachments.return_value = []
+        file_artifact = {
+            "artifactId": "a1", "name": "generated_file",
+            "parts": [{"kind": "file", "contentBase64": base64.b64encode(b"x").decode("utf-8"), "fileName": "f.csv", "mimeType": "text/csv"}],
+        }
+        result_dict = {"status": "success", "response_text": "", "channel": "C1", "bot_token": "xoxb-1", "thread_ts": None}
+        mock_format.return_value = (result_dict, file_artifact)
+        from main import _process_bedrock_request
+        _process_bedrock_request(
+            task_id="t2", text="Export", channel="C1", bot_token="xoxb-1", thread_ts=None, correlation_id="c2", attachments=[],
+        )
+        completed_result = json.loads(mock_app.complete_async_task.call_args[0][1])
+        assert completed_result["status"] == "success"
+        assert completed_result.get("response_text") == ""
+        assert completed_result.get("file_artifact") is not None
+        assert completed_result["file_artifact"]["name"] == "generated_file"
 
     @patch("main.app")
     @patch("main.invoke_bedrock")
@@ -228,7 +329,10 @@ class TestProcessBedrockRequest:
             "has_images": False, "has_documents": True,
         }
         mock_bedrock.return_value = "Based on the document..."
-        mock_format.return_value = {"status": "success", "response_text": "Based on the document..."}
+        mock_format.return_value = (
+            {"status": "success", "response_text": "Based on the document..."},
+            None,
+        )
 
         from main import _process_bedrock_request
 
@@ -331,3 +435,76 @@ class TestAgentCard:
 
         card = get_agent_card()
         assert card["url"] == "https://test.example.com"
+
+
+class Test020A2ARouting:
+    """020: Verify A2A protocol routing — POST / delegates to SDK _handle_invocation."""
+
+    def test_a2a_root_route_registered(self):
+        """POST / route must be registered on app for A2A protocol (T009)."""
+        import main
+
+        route_paths = []
+        for route in main.app.routes:
+            path = getattr(route, "path", None)
+            if path == "/":
+                methods = getattr(route, "methods", set())
+                route_paths.append(("/", methods))
+
+        assert any(
+            path == "/" and "POST" in methods
+            for path, methods in route_paths
+        ), "POST / route not found in app.routes"
+
+    def test_a2a_root_handler_delegates_to_handle_invocation(self):
+        """a2a_root_handler must be registered and callable (T010)."""
+        import main
+
+        handler = main.app._routes_dict.get("/")
+        assert handler is not None, "No handler registered for POST /"
+        assert handler.__name__ == "a2a_root_handler", (
+            f"Expected a2a_root_handler, got {handler.__name__}"
+        )
+
+    def test_existing_invocations_route_still_works(self):
+        """SDK /invocations route must still be registered (regression) (T011)."""
+        import main
+
+        route_paths = [getattr(r, "path", None) for r in main.app.routes]
+        assert "/invocations" in route_paths, "/invocations route missing (regression)"
+
+    def test_agent_card_route_still_works(self):
+        """/.well-known/agent-card.json GET route must still be registered (regression) (T012)."""
+        import main
+
+        found = False
+        for route in main.app.routes:
+            if getattr(route, "path", None) == "/.well-known/agent-card.json":
+                methods = getattr(route, "methods", set())
+                if "GET" in methods:
+                    found = True
+                    break
+        assert found, "/.well-known/agent-card.json GET route missing (regression)"
+
+    def test_ping_route_still_works(self):
+        """/ping GET route must still be registered (regression) (T013)."""
+        import main
+
+        found = False
+        for route in main.app.routes:
+            if getattr(route, "path", None) == "/ping":
+                methods = getattr(route, "methods", set())
+                if "GET" in methods:
+                    found = True
+                    break
+        assert found, "/ping GET route missing (regression)"
+
+    def test_app_run_uses_port_9000(self):
+        """app.run(port=9000) must be present in main.py source (T014)."""
+        main_path = os.path.join(os.path.dirname(__file__), "..", "main.py")
+        with open(main_path) as f:
+            source = f.read()
+        assert "app.run(port=9000)" in source, (
+            "main.py must use app.run(port=9000) for A2A protocol, "
+            "found bare app.run() instead"
+        )

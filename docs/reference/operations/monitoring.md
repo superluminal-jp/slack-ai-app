@@ -143,7 +143,7 @@
 
 ---
 
-## 10.5 AgentCore A2A メトリクス（Feature Flag: USE_AGENTCORE）
+## 10.5 AgentCore A2A メトリクス
 
 AgentCore A2A パスが有効な場合、以下の追加メトリクスが監視対象となります：
 

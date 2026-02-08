@@ -1,10 +1,13 @@
 /**
  * CDK Construct for Verification Agent AgentCore Runtime.
  *
- * Creates an Amazon Bedrock AgentCore Runtime with A2A protocol,
- * ARM64 container configuration, SigV4 authentication, and IAM
- * execution role with ECR, CloudWatch, X-Ray, DynamoDB (5 tables),
- * Secrets Manager, and bedrock-agentcore:InvokeAgentRuntime permissions.
+ * Creates an Amazon Bedrock AgentCore Runtime with A2A protocol per AWS documentation:
+ * - CreateAgentRuntime: https://docs.aws.amazon.com/bedrock-agentcore-control/latest/APIReference/API_CreateAgentRuntime.html
+ * - A2A protocol contract: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-a2a-protocol-contract.html
+ * - Host agent or tools: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agents-tools-runtime.html
+ *
+ * A2A container: port 9000, ARM64 (see runtime-a2a-protocol-contract). EnvironmentVariables
+ * are supported by CreateAgentRuntime and passed to the runtime environment (string-to-string map).
  *
  * @module cdk/lib/verification/constructs/verification-agent-runtime
  */
@@ -13,6 +16,7 @@ import * as cdk from "aws-cdk-lib";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
+import * as sqs from "aws-cdk-lib/aws-sqs";
 import { Construct } from "constructs";
 
 export interface VerificationAgentRuntimeProps {
@@ -31,13 +35,17 @@ export interface VerificationAgentRuntimeProps {
   readonly slackBotTokenSecret: secretsmanager.ISecret;
   /** ARN of the Execution Agent Runtime (for A2A invocation) */
   readonly executionAgentArn?: string;
+  /** 018: When true, Verification Agent echoes task text to Slack and does not call Execution Agent */
+  readonly validationZoneEchoMode?: boolean;
+  /** 019: SQS queue for Slack post requests; Agent sends here instead of calling Slack API */
+  readonly slackPostRequestQueue?: sqs.IQueue;
 }
 
 export class VerificationAgentRuntime extends Construct {
   /** The AgentCore Runtime CFN resource */
   public readonly runtime: cdk.CfnResource;
-  /** The AgentCore Runtime Endpoint CFN resource */
-  public readonly endpoint: cdk.CfnResource;
+  /** AgentCore auto-creates DEFAULT endpoint; we do not create it in CFn */
+  public readonly endpoint: cdk.CfnResource | undefined = undefined;
   /** The IAM execution role for the AgentCore Runtime */
   public readonly executionRole: iam.Role;
   /** The ARN of the AgentCore Runtime */
@@ -176,41 +184,59 @@ export class VerificationAgentRuntime extends Construct {
       })
     );
 
+    // CreateAgentRuntime environmentVariables: "Environment variables to set in the AgentCore Runtime environment"
+    // https://docs.aws.amazon.com/bedrock-agentcore-control/latest/APIReference/API_CreateAgentRuntime.html
+    const environmentVariables: Record<string, string> = {
+      AWS_REGION_NAME: stack.region,
+      DEDUPE_TABLE_NAME: props.dedupeTable.tableName,
+      WHITELIST_TABLE_NAME: props.whitelistConfigTable.tableName,
+      WHITELIST_SECRET_NAME: `${stack.stackName}/slack/whitelist-config`,
+      RATE_LIMIT_TABLE_NAME: props.rateLimitTable.tableName,
+      EXISTENCE_CHECK_CACHE_TABLE: props.existenceCheckCacheTable.tableName,
+      RATE_LIMIT_PER_MINUTE: "10",
+    };
+    if (props.executionAgentArn) {
+      environmentVariables.EXECUTION_AGENT_ARN = props.executionAgentArn;
+    }
+    if (props.validationZoneEchoMode === true) {
+      environmentVariables.VALIDATION_ZONE_ECHO_MODE = "true";
+    }
+    if (props.slackPostRequestQueue) {
+      environmentVariables.SLACK_POST_REQUEST_QUEUE_URL =
+        props.slackPostRequestQueue.queueUrl;
+      props.slackPostRequestQueue.grantSendMessages(this.executionRole);
+    }
+
     // Create AgentCore Runtime using L1 CfnResource
     this.runtime = new cdk.CfnResource(this, "Runtime", {
       type: "AWS::BedrockAgentCore::Runtime",
       properties: {
         AgentRuntimeName: props.agentRuntimeName,
         RoleArn: this.executionRole.roleArn,
-        ProtocolConfiguration: {
-          ServerProtocol: "A2A",
-        },
-        ContainerConfiguration: {
-          ContainerUri: props.containerImageUri,
+        ProtocolConfiguration: "A2A",
+        AgentRuntimeArtifact: {
+          ContainerConfiguration: {
+            ContainerUri: props.containerImageUri,
+          },
         },
         NetworkConfiguration: {
           NetworkMode: "PUBLIC",
         },
-        AuthorizerConfiguration: {
-          AuthorizerType: "SIGV4",
-        },
       },
     });
+    // EnvironmentVariables (string-to-string map) are in CreateAgentRuntime API but not in CDK L1 schema; applied at deploy time
+    this.runtime.addPropertyOverride("EnvironmentVariables", environmentVariables);
+
+    const defaultPolicy = this.executionRole.node.tryFindChild("DefaultPolicy");
+    const policyCfn = defaultPolicy?.node.defaultChild;
+    if (policyCfn && cdk.CfnResource.isCfnResource(policyCfn)) {
+      this.runtime.addDependency(policyCfn);
+    }
 
     // Derive ARN from the runtime
     this.runtimeArn = this.runtime.getAtt("AgentRuntimeArn").toString();
 
-    // Create AgentCore Runtime Endpoint (DEFAULT)
-    this.endpoint = new cdk.CfnResource(this, "Endpoint", {
-      type: "AWS::BedrockAgentCore::RuntimeEndpoint",
-      properties: {
-        AgentRuntimeId: this.runtime.getAtt("AgentRuntimeId").toString(),
-        Name: "DEFAULT",
-        Description: `Default endpoint for ${props.agentRuntimeName}`,
-      },
-    });
-
-    // Ensure endpoint is created after runtime
-    this.endpoint.addDependency(this.runtime);
+    // Do NOT create RuntimeEndpoint in CFn: AgentCore auto-creates DEFAULT (would conflict).
+    this.endpoint = undefined;
   }
 }

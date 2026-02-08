@@ -60,6 +60,7 @@ Slack から Amazon Bedrock AI を利用するためのアーキテクチャと�
 
 **AgentCore A2A**:
 - [AgentCore A2A 仕様](../specs/013-agentcore-a2a-zones/spec.md) | [実装計画](../specs/013-agentcore-a2a-zones/plan.md) | [リサーチ](../specs/013-agentcore-a2a-zones/research.md) | [クイックスタート](../specs/013-agentcore-a2a-zones/quickstart.md)
+- [014: A2A ファイルを Slack に返す](../specs/014-a2a-file-to-slack/spec.md) | [計画](../specs/014-a2a-file-to-slack/plan.md) | [クイックスタート](../specs/014-a2a-file-to-slack/quickstart.md) | [ゾーン間通信 §6.5](./reference/architecture/zone-communication.md)
 
 **セキュリティ**:
 - [要件](./reference/security/requirements.md) | [脅威モデル](./reference/security/threat-model.md) | [実装](./reference/security/implementation.md) | [認証・認可](./reference/security/authentication-authorization.md)
@@ -88,14 +89,17 @@ Slack から Amazon Bedrock AI を利用するためのアーキテクチャと�
 
 ---
 
-**最終更新日**: 2026-02-07
+**最終更新日**: 2026-02-08
 
 ## 最近の更新
 
+- **2026-02-08**: 014 A2A ファイルを Slack スレッドに返す機能のドキュメントを追加
+  - 仕様・計画・クイックスタートを `specs/014-a2a-file-to-slack/` に集約
+  - ゾーン間通信に §6.5（ファイル artifact フロー）を追加。Slack 設定に `files:write` を記載
 - **2026-02-07**: AgentCore A2A ゾーン間通信を実装
   - AgentCore Runtime + A2A プロトコルによるゾーン間通信
   - Verification Agent / Execution Agent のコンテナ化
   - Agent Card による Agent Discovery
-  - Feature Flag (`USE_AGENTCORE`) で段階的移行対応
+  - ゾーン間通信は AgentCore A2A のみ（レガシー経路削除済み）
   - アーキテクチャ概要、ゾーン間通信、システム構成図を更新
 - **2025-12-28**: Execution API Gateway にデュアル認証サポートを追加

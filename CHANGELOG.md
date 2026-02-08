@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Async AgentCore Invocation** (016-async-agentcore-invocation)
+  - SlackEventHandler returns HTTP 200 immediately after enqueueing an agent invocation request to SQS (`agent-invocation-request`), avoiding Slack 3s timeout and Lambda blocking
+  - Agent Invoker Lambda consumes SQS messages and calls `InvokeAgentRuntime` (Verification Agent); long-running agent runs no longer hit SlackEventHandler Lambda timeout (up to 15 min in Agent Invoker)
+  - SQS Dead Letter Queue (`agent-invocation-dlq`) with `maxReceiveCount: 3` for failed invocations; batchItemFailures returned on InvokeAgentRuntime exception for SQS retry
+  - Verification Zone retains Slack posting responsibility; cross-account communication remains A2A only (SQS is within verification account only)
+  - Docs: zone-communication §6.6 (016 flow), troubleshooting section for SQS backlog, Agent Invoker errors, DLQ, InvokeAgentRuntime permission
+- **AgentCore A2A Migration — Legacy Removal** (015-agentcore-a2a-migration)
+  - Slack-to-AI traffic now uses a single AgentCore A2A path; legacy API Gateway, SQS, BedrockProcessor Lambda, and SlackResponseHandler Lambda removed from CDK
+  - SlackEventHandler Lambda invokes Verification Agent only via `bedrock-agentcore` `InvokeAgentRuntime` (no `USE_AGENTCORE` flag or legacy path)
+  - Execution Stack: Execution Agent ECR + AgentCore Runtime only; output `ExecutionAgentRuntimeArn`
+  - Verification Stack: SlackEventHandler, Verification Agent Runtime, DynamoDB, Secrets; no ExecutionResponseQueue or SlackResponseHandler
+  - Config and docs: `useAgentCore`, `executionApiUrl`, `executionResponseQueueUrl`, `verificationLambdaRoleArn` removed; deployment is executionAgentArn-only
+  - CDK tests and SlackEventHandler pytest updated for A2A-only; all references to USE_AGENTCORE and legacy components removed from application code and CDK
+- **A2A File to Slack** (014-a2a-file-to-slack)
+  - Execution Agent can return a generated file artifact (`generated_file`) alongside text (A2A result with `file_artifact`)
+  - Verification Agent parses file artifact, uploads to Slack via `post_file_to_slack` (Slack SDK `files_upload_v2` / getUploadURLExternal → completeUploadExternal)
+  - Post order: text first, then file in the same thread; on upload failure, post user-facing error message to thread (FR-007)
+  - File limits: max 5 MB, allowed MIME types `text/csv`, `application/json`, `text/plain` (configurable via env); size/MIME violations return text-only with user-facing message (FR-005, FR-006)
+  - Support for text-only, file-only, and text+file responses (US1, US2, US3)
+  - Execution: `file_config.py`, `response_formatter.build_file_artifact` / `validate_file_for_artifact`, Agent Card skill `generated-file`
+  - Verification: `parse_file_artifact`, `post_file_to_slack` in `slack_poster.py`, structured logging for file post success/failure
+  - Documentation: zone-communication §6.5 (014 file artifact flow), README troubleshooting for `files:write`, quickstart and contracts in `specs/014-a2a-file-to-slack/`
+  - Tests: Execution 68 tests, Verification 46 tests (including file artifact and file-posting paths)
 - **AgentCore A2A Inter-Zone Communication** (013-agentcore-a2a-zones)
   - Amazon Bedrock AgentCore Runtime with A2A (Agent-to-Agent) protocol
   - Verification Agent container (ARM64 Docker) — security pipeline, Slack posting
@@ -47,6 +70,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- README.ja.md, README.md, docs/README.md: 014 A2A file-to-Slack feature and recent updates (2026-02-08)
+- docs/reference/operations/slack-setup.md: Added `files:write` scope for 014 file uploads; manifest example updated
+- docs/slack-app-manifest.yaml: Added `files:write` to bot scopes for 014
+- docs/how-to/troubleshooting.md: New section "ファイルがスレッドに表示されない（014）"; log pattern `slack_post_file_failed`
 - Architecture overview (`docs/reference/architecture/overview.md`) now includes AgentCore A2A section
 - Zone communication docs (`zone-communication.md`) updated with A2A protocol path
 - System architecture diagram (`system-architecture-diagram.md`) includes AgentCore resources

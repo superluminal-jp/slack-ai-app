@@ -100,7 +100,7 @@ export DEPLOYMENT_ENV=prod
 
 ## 動作の仕組み
 
-システムは 2 つの独立したゾーンでリクエストを処理します。**AgentCore A2A パス**（推奨）と**レガシーパス**の 2 つの通信経路があり、Feature Flag (`USE_AGENTCORE`) で切り替え可能です。
+システムは 2 つの独立したゾーンでリクエストを処理し、**AgentCore A2A** の単一通信経路を使用します。
 
 ### AgentCore A2A パス（推奨）
 
@@ -117,7 +117,7 @@ export DEPLOYMENT_ENV=prod
 │ ┌─────────────────────────────────────────────────────────┐ │
 │ │ SlackEventHandler Lambda (Function URL)                 │ │
 │ │ - 署名検証、リアクション(👀)応答                         │ │
-│ │ - USE_AGENTCORE=true → AgentCore A2A パス               │ │
+│ │ - AgentCore A2A パス（唯一の経路）                      │ │
 │ │ [2] InvokeAgentRuntime (SigV4)                          │ │
 │ └──────────────────────┬──────────────────────────────────┘ │
 │                        │                                     │
@@ -155,25 +155,6 @@ export DEPLOYMENT_ENV=prod
 [4] Execution Agent → Bedrock → 非同期結果返却
 [5] Verification Agent → Slack API → スレッド返信
 ```
-
-### レガシーパス（Feature Flag: USE_AGENTCORE=false）
-
-従来の API Gateway + Lambda + SQS 構成です。`USE_AGENTCORE=false` でフォールバック可能。
-
-```
-Slack → SlackEventHandler → API Gateway → BedrockProcessor → SQS → SlackResponseHandler → Slack
-```
-
-### AgentCore A2A vs レガシーパス比較
-
-| 項目 | レガシー (API Gateway + SQS) | AgentCore A2A |
-|------|------------------------------|---------------|
-| ゾーン間通信 | API Gateway + Lambda | AgentCore Runtime (A2A) |
-| 認証 | IAM SigV4 / API キー | SigV4（自動） |
-| レスポンス配信 | SQS → SlackResponseHandler | Verification Agent 直接投稿 |
-| 非同期処理 | SQS メッセージキュー | AgentCore async task |
-| コンテナ | Lambda（マネージド） | ARM64 Docker (microVM) |
-| Agent Discovery | なし | Agent Card (A2A 準拠) |
 
 ### ゾーンの役割
 
@@ -232,24 +213,19 @@ Slack → SlackEventHandler → API Gateway → BedrockProcessor → SQS → Sla
 - **ECR**: AgentCore エージェントの Docker イメージ管理
 - **DynamoDB**: トークンを保存し、検証結果をキャッシュし、重複を防止
 - **AWS Secrets Manager**: Slack 認証情報と API キーを安全に保存
-- **API Gateway**: レガシーパス用デュアル認証（IAM 認証と API キー認証）
 - **独立したデプロイ**: 検証と実行ゾーンを別々のスタックとしてデプロイ可能
-- **Feature Flag**: `USE_AGENTCORE` でゼロダウンタイムのパス切り替え
 
 ## アーキテクチャ
 
 アプリケーションは **2 つの独立したスタック**を使用し、個別にデプロイ可能です：
 
 - **VerificationStack**: SlackEventHandler Lambda + Verification Agent (AgentCore) + DynamoDB + Secrets Manager
-- **ExecutionStack**: Execution Agent (AgentCore) + BedrockProcessor (レガシー) + API Gateway (レガシー)
-
-各スタックには AgentCore Runtime + ECR リソースが含まれ、Feature Flag で有効化します。
+- **ExecutionStack**: Execution Agent (AgentCore Runtime + ECR)
 
 この構成は以下をサポートします：
 
 - ✅ AgentCore A2A プロトコルによるゾーン間通信
 - ✅ クロスアカウントデプロイ（SigV4 + リソースベースポリシー）
-- ✅ Feature Flag による段階的移行とゼロダウンタイムロールバック
 - ✅ Agent Card (A2A 準拠) による Agent Discovery
 - ✅ 独立したライフサイクル管理
 
@@ -278,9 +254,7 @@ slack-ai-app/
 │   │   │   ├── execution-stack.ts
 │   │   │   ├── constructs/
 │   │   │   │   ├── execution-agent-runtime.ts   # AgentCore Runtime (A2A)
-│   │   │   │   ├── execution-agent-ecr.ts       # ECR イメージビルド
-│   │   │   │   ├── bedrock-processor.ts         # レガシー Lambda
-│   │   │   │   └── execution-api.ts             # レガシー API Gateway
+│   │   │   │   └── execution-agent-ecr.ts       # ECR イメージビルド
 │   │   │   ├── agent/
 │   │   │   │   └── execution-agent/             # Execution Agent コンテナ
 │   │   │   │       ├── main.py                  # A2A サーバー
@@ -293,7 +267,7 @@ slack-ai-app/
 │   │   │   ├── constructs/
 │   │   │   │   ├── verification-agent-runtime.ts # AgentCore Runtime (A2A)
 │   │   │   │   ├── verification-agent-ecr.ts     # ECR イメージビルド
-│   │   │   │   └── slack-event-handler.ts        # Feature Flag 対応
+│   │   │   │   └── slack-event-handler.ts        # Verification Agent を A2A で呼び出し
 │   │   │   ├── agent/
 │   │   │   │   └── verification-agent/           # Verification Agent コンテナ
 │   │   │   │       ├── main.py                   # A2A サーバー
@@ -301,7 +275,7 @@ slack-ai-app/
 │   │   │   │       ├── agent_card.py             # Agent Card 定義
 │   │   │   │       ├── cloudwatch_metrics.py     # メトリクス
 │   │   │   │       └── tests/                    # Python テスト (32 tests)
-│   │   │   └── lambda/                           # レガシー Lambda コード
+│   │   │   └── lambda/                           # SlackEventHandler Lambda
 │   │   └── types/              # 共通型定義
 │   └── test/                   # CDK/Jest テスト (24 tests)
 ├── docs/                       # ドキュメント
@@ -327,9 +301,8 @@ cd cdk/lib/execution/agent/execution-agent && python -m pytest tests/ -v
 # Verification Agent テスト (pytest, 32 tests)
 cd cdk/lib/verification/agent/verification-agent && python -m pytest tests/ -v
 
-# レガシー Lambda テスト
+# SlackEventHandler Lambda テスト
 cd cdk/lib/verification/lambda/slack-event-handler && pytest tests/
-cd cdk/lib/execution/lambda/bedrock-processor && pytest tests/
 ```
 
 ### ログ確認
@@ -339,7 +312,7 @@ cd cdk/lib/execution/lambda/bedrock-processor && pytest tests/
 aws logs tail /aws/lambda/SlackAI-Verification-Dev-SlackEventHandler --follow
 
 # AgentCore Runtime ログ（AgentCore 有効時）
-aws logs tail /aws/lambda/SlackAI-Execution-Dev-BedrockProcessor --follow
+aws logs tail /aws/lambda/SlackAI-Verification-Dev-SlackEventHandler --follow
 ```
 
 ## 環境変数
@@ -349,16 +322,8 @@ aws logs tail /aws/lambda/SlackAI-Execution-Dev-BedrockProcessor --follow
 | `SLACK_SIGNING_SECRET`          | Slack アプリ署名シークレット（初回デプロイのみ）    | -                                              |
 | `SLACK_BOT_TOKEN`               | Slack ボット OAuth トークン（初回デプロイのみ）     | -                                              |
 | `BEDROCK_MODEL_ID`              | Bedrock モデル（cdk.json で設定）                   | -                                              |
-| `USE_AGENTCORE`                 | AgentCore A2A パスの有効化                          | `false`                                        |
-| `VERIFICATION_AGENT_ARN`        | Verification Agent の AgentCore Runtime ARN         | -                                              |
-| `EXECUTION_AGENT_ARN`           | Execution Agent の AgentCore Runtime ARN            | -                                              |
-| `EXECUTION_API_AUTH_METHOD`     | レガシー Execution API の認証方法                   | `api_key`                                      |
-| `EXECUTION_API_KEY_SECRET_NAME` | API キー認証使用時の Secrets Manager シークレット名 | `execution-api-key-{env}` (環境ごとに自動設定) |
-
-**通信パス切り替え**:
-
-- **`USE_AGENTCORE=true`**: AgentCore A2A パス（推奨）— SigV4 自動認証、非同期タスク管理、Agent Card
-- **`USE_AGENTCORE=false`**: レガシーパス — API Gateway + Lambda + SQS
+| `VERIFICATION_AGENT_ARN`        | Verification Agent の AgentCore Runtime ARN（CDK で設定） | - |
+| `EXECUTION_AGENT_ARN`           | Execution Agent の AgentCore Runtime ARN（クロススタックまたは設定） | - |
 
 シークレットは初回デプロイ後、AWS Secrets Manager に保存されます。
 
@@ -581,6 +546,7 @@ Signing Secret + Bot Token の両方が漏洩した場合、攻撃者は：
 | 署名検証失敗         | Lambda Function URL と Secrets Manager を確認    |
 | Existence Check 失敗 | Bot Token の OAuth スコープを確認                |
 | ボットが応答しない   | Event Subscriptions とボットのインストールを確認 |
+| ファイルがスレッドに表示されない（014） | Verification 用 Bot に **`files:write`** スコープを付与。Slack アプリの OAuth & Permissions で Bot Token Scopes に追加。 |
 
 ## コントリビューション
 
@@ -603,16 +569,22 @@ Signing Secret + Bot Token の両方が漏洩した場合、攻撃者は：
 
 ---
 
-**最終更新日**: 2026-02-07
+**最終更新日**: 2026-02-08
 
 ## 最近の更新
 
+- **2026-02-08**: A2A ファイルを Slack スレッドに返す機能を実装（014）
+  - Execution Zone が AI 生成ファイル（CSV/JSON/テキスト）を `generated_file` artifact で返却
+  - Verification Zone が artifact をパースし、Slack スレッドにテキスト→ファイルの順で投稿（`post_file_to_slack`、Slack SDK files_upload_v2）
+  - ファイル制限: 最大 5 MB、許可 MIME は text/csv / application/json / text/plain。超過時はテキストで理由を返す
+  - テキストのみ・ファイルのみ・テキスト＋ファイルの各パターンをサポート。Bot に `files:write` スコープが必要
+  - 仕様・契約: `specs/014-a2a-file-to-slack/`、`docs/reference/architecture/zone-communication.md` §6.5
 - **2026-02-07**: AgentCore A2A ゾーン間通信を実装
   - Amazon Bedrock AgentCore Runtime と A2A プロトコルによるゾーン間通信
   - Verification Agent / Execution Agent のコンテナ化 (ARM64 Docker)
   - SigV4 認証 + リソースベースポリシーによるクロスアカウント対応
   - Agent Card (`/.well-known/agent-card.json`) による Agent Discovery
   - 非同期タスク管理 (`add_async_task` / `complete_async_task`)
-  - Feature Flag (`USE_AGENTCORE`) でゼロダウンタイムロールバック対応
+  - AgentCore A2A を唯一の通信経路として採用
   - TDD テスト 97 件全パス（Python 73 + CDK/Jest 24）
 - **2025-12-28**: Execution API Gateway にデュアル認証サポート（IAM 認証と API キー認証）を追加

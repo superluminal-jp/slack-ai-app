@@ -47,7 +47,7 @@ Slack → Function URL → SlackEventHandler → API Gateway → BedrockProcesso
                                                           SQS → SlackResponseHandler → Slack API
 ```
 
-**AgentCore A2A パス（Feature Flag: USE_AGENTCORE=true）**:
+**AgentCore A2A パス（現行の唯一のゾーン間経路）**:
 
 ```
 Slack → Function URL → SlackEventHandler → Verification Agent → Execution Agent → Bedrock

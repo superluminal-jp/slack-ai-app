@@ -253,6 +253,27 @@ describe("VerificationStack", () => {
     });
   });
 
+  describe("018 Echo at Runtime (VALIDATION_ZONE_ECHO_MODE on Verification Agent Runtime)", () => {
+    it("should create stack with validationZoneEchoMode true and Runtime resource (env VAR set via addPropertyOverride at deploy)", () => {
+      process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+      process.env.SLACK_SIGNING_SECRET = "test-signing-secret";
+      const appWithEcho = new cdk.App();
+      const stackWithEcho = new VerificationStack(appWithEcho, "VerificationStackWithEcho018", {
+        env: { account: "123456789012", region: "ap-northeast-1" },
+        executionAgentArn:
+          "arn:aws:bedrock-agentcore:ap-northeast-1:123456789012:runtime/TestExecutionAgent",
+        validationZoneEchoMode: true,
+      });
+      const templateEcho = Template.fromStack(stackWithEcho);
+      const runtimes = templateEcho.findResources("AWS::BedrockAgentCore::Runtime");
+      expect(Object.keys(runtimes).length).toBe(1);
+      // VALIDATION_ZONE_ECHO_MODE is passed to VerificationAgentRuntime in code and set via addPropertyOverride;
+      // CDK L1 schema may not expose EnvironmentVariables in synthesized template
+      delete process.env.SLACK_BOT_TOKEN;
+      delete process.env.SLACK_SIGNING_SECRET;
+    });
+  });
+
   describe("Stack Outputs", () => {
     it("should output SlackEventHandlerUrl", () => {
       template.hasOutput("SlackEventHandlerUrl", {

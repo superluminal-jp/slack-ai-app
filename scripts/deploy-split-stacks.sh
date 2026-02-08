@@ -303,6 +303,13 @@ deploy_verification_stack() {
     echo "${function_url}"
 }
 
+# Extract AgentCore Runtime ID from ARN (arn:...:runtime/Name-xxxxx -> Name-xxxxx)
+# Control Plane API uses agent-runtime-id, not ARN; status is READY (not ACTIVE).
+get_agent_runtime_id_from_arn() {
+    local arn="$1"
+    [[ -n "${arn}" ]] && echo "${arn##*/}" || echo ""
+}
+
 validate_agentcore() {
     log_info "=========================================="
     log_info "AgentCore Validation"
@@ -313,63 +320,77 @@ validate_agentcore() {
         profile_args="--profile ${AWS_PROFILE}"
     fi
 
+    # Control Plane: bedrock-agentcore-control get-agent-runtime --agent-runtime-id <id>
+    # Status values: CREATING, CREATE_FAILED, UPDATING, UPDATE_FAILED, READY, DELETING (console "Ready" = READY)
+    local target_status="READY"
+
     # Check Execution Agent Runtime status
     local exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn" 2>/dev/null || echo "")
     if [[ -n "${exec_agent_arn}" ]]; then
-        log_info "Checking Execution Agent Runtime status..."
-        local max_wait=120
-        local elapsed=0
-        local interval=10
+        local exec_id=$(get_agent_runtime_id_from_arn "${exec_agent_arn}")
+        if [[ -n "${exec_id}" ]]; then
+            log_info "Checking Execution Agent Runtime status (id: ${exec_id})..."
+            local max_wait=120
+            local elapsed=0
+            local interval=10
 
-        while [[ ${elapsed} -lt ${max_wait} ]]; do
-            local status=$(aws bedrock-agentcore get-agent-runtime \
-                --agent-runtime-arn "${exec_agent_arn}" \
-                --region "${AWS_REGION}" \
-                ${profile_args} \
-                --query 'status' --output text 2>/dev/null || echo "UNKNOWN")
+            while [[ ${elapsed} -lt ${max_wait} ]]; do
+                local status=$(aws bedrock-agentcore-control get-agent-runtime \
+                    --agent-runtime-id "${exec_id}" \
+                    --region "${AWS_REGION}" \
+                    ${profile_args} \
+                    --query 'status' --output text 2>/dev/null || echo "UNKNOWN")
 
-            if [[ "${status}" == "ACTIVE" ]]; then
-                log_success "Execution Agent Runtime is ACTIVE"
-                break
+                if [[ "${status}" == "${target_status}" ]]; then
+                    log_success "Execution Agent Runtime is ${target_status}"
+                    break
+                fi
+
+                log_info "Execution Agent status: ${status}. Waiting ${interval}s... (${elapsed}/${max_wait}s)"
+                sleep ${interval}
+                elapsed=$((elapsed + interval))
+            done
+
+            if [[ ${elapsed} -ge ${max_wait} ]]; then
+                log_warning "Execution Agent did not reach ${target_status} within ${max_wait}s. Current: ${status}"
             fi
-
-            log_info "Execution Agent status: ${status}. Waiting ${interval}s... (${elapsed}/${max_wait}s)"
-            sleep ${interval}
-            elapsed=$((elapsed + interval))
-        done
-
-        if [[ ${elapsed} -ge ${max_wait} ]]; then
-            log_warning "Execution Agent did not reach ACTIVE within ${max_wait}s. Current: ${status}"
+        else
+            log_warning "Could not extract Execution Agent runtime ID from ARN"
         fi
     fi
 
     # Check Verification Agent Runtime status
     local verify_agent_arn=$(get_stack_output "${VERIFICATION_STACK_NAME}" "VerificationAgentRuntimeArn" 2>/dev/null || echo "")
     if [[ -n "${verify_agent_arn}" ]]; then
-        log_info "Checking Verification Agent Runtime status..."
-        local max_wait=120
-        local elapsed=0
-        local interval=10
+        local verify_id=$(get_agent_runtime_id_from_arn "${verify_agent_arn}")
+        if [[ -n "${verify_id}" ]]; then
+            log_info "Checking Verification Agent Runtime status (id: ${verify_id})..."
+            local max_wait=120
+            local elapsed=0
+            local interval=10
 
-        while [[ ${elapsed} -lt ${max_wait} ]]; do
-            local status=$(aws bedrock-agentcore get-agent-runtime \
-                --agent-runtime-arn "${verify_agent_arn}" \
-                --region "${AWS_REGION}" \
-                ${profile_args} \
-                --query 'status' --output text 2>/dev/null || echo "UNKNOWN")
+            while [[ ${elapsed} -lt ${max_wait} ]]; do
+                local status=$(aws bedrock-agentcore-control get-agent-runtime \
+                    --agent-runtime-id "${verify_id}" \
+                    --region "${AWS_REGION}" \
+                    ${profile_args} \
+                    --query 'status' --output text 2>/dev/null || echo "UNKNOWN")
 
-            if [[ "${status}" == "ACTIVE" ]]; then
-                log_success "Verification Agent Runtime is ACTIVE"
-                break
+                if [[ "${status}" == "${target_status}" ]]; then
+                    log_success "Verification Agent Runtime is ${target_status}"
+                    break
+                fi
+
+                log_info "Verification Agent status: ${status}. Waiting ${interval}s... (${elapsed}/${max_wait}s)"
+                sleep ${interval}
+                elapsed=$((elapsed + interval))
+            done
+
+            if [[ ${elapsed} -ge ${max_wait} ]]; then
+                log_warning "Verification Agent did not reach ${target_status} within ${max_wait}s. Current: ${status}"
             fi
-
-            log_info "Verification Agent status: ${status}. Waiting ${interval}s... (${elapsed}/${max_wait}s)"
-            sleep ${interval}
-            elapsed=$((elapsed + interval))
-        done
-
-        if [[ ${elapsed} -ge ${max_wait} ]]; then
-            log_warning "Verification Agent did not reach ACTIVE within ${max_wait}s. Current: ${status}"
+        else
+            log_warning "Could not extract Verification Agent runtime ID from ARN"
         fi
     fi
 

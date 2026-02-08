@@ -179,8 +179,7 @@ flowchart TB
 
 - 実行ゾーンと検証ゾーンを**疎結合**にし、Bedrock の処理時間（数秒～数十秒）に左右されない。
 - 検証ゾーンは「Slack に投稿する」責務に集中。実行ゾーンは「Bedrock 実行とレスポンス整形」に集中。
-- **クロスアカウント**でも、Execution に SQS 送信権限（`executionResponseQueueUrl` 向け）を付与するだけでよい。
-- キュー所有者は検証ゾーン（Verification Stack）であり、`executionResponseQueueUrl` を Execution Stack に渡して BedrockProcessor に `sqs:SendMessage` を付与する。
+- **現在の構成**: ゾーン間通信は AgentCore A2A のみ。SQS は使用しません（レガシー経路は削除済み）。
 
 ### 4.3 メッセージ形式（ExecutionResponse）
 
@@ -236,8 +235,7 @@ flowchart TB
 | 項目 | 内容 |
 |------|------|
 | **ExecutionResponseQueue** | Verification Stack で作成。可視性 30 秒、保持 14 日。DLQ あり。 |
-| **executionResponseQueueUrl** | Verification デプロイ後に得られる SQS URL を `cdk.config.{env}.json` の `executionResponseQueueUrl` に設定。 |
-| **Execution Stack** | `executionResponseQueueUrl` が指定されている場合、BedrockProcessor に当該 SQS への `sqs:SendMessage` を付与。 |
+| **現在** | ゾーン間は AgentCore A2A のみ。Verification Stack は `executionAgentArn` で Execution Agent を呼び出し。 |
 
 ### 4.6 関連ドキュメント
 
@@ -260,10 +258,9 @@ SQS で受け取った結果を Slack に反映する経路。
 
 ---
 
-## 6. AgentCore A2A 通信パス（Feature Flag: USE_AGENTCORE）
+## 6. AgentCore A2A 通信パス（唯一のゾーン間経路）
 
-> Feature Flag `USE_AGENTCORE=true` で有効化される新しい通信パスです。
-> 従来の API Gateway + SQS パスはレガシーフォールバックとして維持されます。
+> ゾーン間通信は AgentCore A2A のみです。API Gateway および SQS のレガシー経路は削除済みです。
 
 ### 6.1 通信フロー概要
 
@@ -341,6 +338,44 @@ flowchart TB
 | `/.well-known/agent-card.json` | Agent Card (A2A 仕様準拠) |
 | `/ping` | ヘルスチェック (`Healthy` / `HealthyBusy`) |
 
+### 6.5 014: ファイル artifact フロー（Execution → Verification → Slack）
+
+Execution Agent が AI 生成ファイル（CSV/JSON/テキスト等）を返す場合:
+
+1. **Execution Agent**: 成功レスポンスの `result` に `file_artifact` を付与。形式は `specs/014-a2a-file-to-slack/contracts/a2a-file-artifact.yaml` に準拠（`name: "generated_file"`、`parts` に Base64 エンコード内容・fileName・mimeType）。
+2. **制限**: 最大ファイルサイズ 5 MB（環境変数で変更可）、許可 MIME は `text/csv`, `application/json`, `text/plain`。超過・許可外の場合はファイルを付けず、テキストで理由を返す（FR-005, FR-006）。
+3. **Verification Agent**: `parse_file_artifact(result_data)` で `file_artifact` を取得し、Base64 デコード後に `post_file_to_slack` を呼び出し。Slack API は `files.getUploadURLExternal` → POST → `files.completeUploadExternal`（または SDK `files_upload_v2`）を使用。投稿順序はテキスト → ファイル（FR-004）。失敗時は同一スレッドにエラーメッセージを投稿（FR-007）。
+4. **Slack Bot スコープ**: Verification 用 Bot に `files:write` が必要。詳細は `specs/014-a2a-file-to-slack/quickstart.md` および契約 `contracts/slack-file-poster.yaml` を参照。
+
+### 6.6 016: 非同期起動フロー（SlackEventHandler → SQS → Agent Invoker）
+
+016 では、Slack の 3 秒制約と Lambda タイムアウトを避けるため、メンション受信後に **InvokeAgentRuntime を同期的に呼ばず**、実行リクエストを SQS に送って即 200 を返す。
+
+**016 のデータフロー**:
+
+1. **Slack** → メンションイベントを **SlackEventHandler**（Function URL）に POST
+2. **SlackEventHandler** 内で署名検証・Existence Check・Whitelist・レート制限・重複排除・👀 リアクション付与
+3. **SlackEventHandler** は InvokeAgentRuntime を呼ばず、**AgentInvocationRequest** を **SQS（agent-invocation-request）** に送信して即 200 を返す
+4. **SQS** が **Agent Invoker Lambda** を起動
+5. **Agent Invoker Lambda** がメッセージから task_data を復元し、**InvokeAgentRuntime(Verification Agent)** を呼ぶ
+6. 以降は 6.1 と同様: **Verification Agent** → A2A → **Execution Agent** → Bedrock → 結果を **Verification Agent** が Slack API で投稿
+
+```mermaid
+flowchart LR
+    Slack["Slack"] --> SEH["SlackEventHandler"]
+    SEH -->|"SendMessage"| SQS["SQS<br/>agent-invocation-request"]
+    SQS --> AInv["Agent Invoker Lambda"]
+    AInv -->|"InvokeAgentRuntime"| VA["Verification Agent"]
+    VA -->|"A2A"| EA["Execution Agent"]
+    EA --> Bedrock["Bedrock"]
+    VA -->|"chat.postMessage"| Slack
+```
+
+**責務の整理（016 でも変更なし）**:
+
+- **Slack への投稿は検証ゾーンのみ**: Verification Agent が `post_to_slack` / `post_file_to_slack` を実行する。Agent Invoker Lambda は Verification Agent を起動するだけで、Slack には直接投稿しない。
+- **アカウント間通信は A2A のみ**: 検証アカウントと実行アカウントの間は、従来どおり AgentCore A2A（InvokeAgentRuntime + SigV4）のみ。SQS は検証アカウント内（SlackEventHandler → Agent Invoker）の非同期化用であり、ゾーン間には使わない。
+
 ---
 
 ## 7. 一覧まとめ
@@ -354,7 +389,7 @@ flowchart TB
 | **実行 → 検証** | SQS `SendMessage` | 検証ゾーン所有キューへ、Execution に `sqs:SendMessage` 権限 | JSON（ExecutionResponse） | 疎結合・クロスアカウント対応 |
 | **検証 → Slack** | HTTPS POST（Slack API） | `bot_token` | `chat.postMessage`（channel, text, thread_ts） | SQS トリガー後の非同期 |
 
-### AgentCore A2A パス (Feature Flag: USE_AGENTCORE)
+### AgentCore A2A パス（現行）
 
 | 経路 | 方式 | 認証 | データ形式 | 備考 |
 |------|------|------|------------|------|

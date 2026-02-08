@@ -715,34 +715,7 @@ def lambda_handler(event, context):
                             "timestamp": slack_event.get("ts"),
                         }, e)
 
-                # ─── 017: Echo mode — post received text to Slack and return 200 (no SQS, no AgentCore) ───
-                if (os.environ.get("VALIDATION_ZONE_ECHO_MODE") or "").strip().lower() == "true":
-                    if bot_token and channel:
-                        try:
-                            client = WebClient(token=bot_token, timeout=2)
-                            echo_text = f"[Echo] {user_text}" if user_text else "[Echo]"
-                            post_kwargs = {"channel": channel, "text": echo_text}
-                            if message_timestamp:
-                                post_kwargs["thread_ts"] = message_timestamp
-                            client.chat_postMessage(**post_kwargs)
-                        except SlackApiError as e:
-                            log_warn("echo_mode_post_failed", {
-                                "channel": channel,
-                                "error": e.response.get("error", str(e)),
-                            })
-                        except Exception as e:
-                            log_exception("echo_mode_post_error", {"channel": channel}, e)
-                    log_info("echo_mode_response", {
-                        "channel": channel,
-                        "event_id": event_id,
-                        "request_id": getattr(context, "aws_request_id", ""),
-                    })
-                    return {
-                        "statusCode": 200,
-                        "headers": {"Content-Type": "application/json"},
-                        "body": json.dumps({"ok": True}),
-                    }
-
+                # ─── 018: Echo is handled at Verification Agent (Runtime); Lambda always sends to SQS when queue URL is set ───
                 # ─── 016: Async path — send to SQS and return 200 immediately ───
                 queue_url = (os.environ.get("AGENT_INVOCATION_QUEUE_URL") or "").strip()
                 if queue_url:

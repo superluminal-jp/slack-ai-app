@@ -264,9 +264,9 @@ npx cdk deploy SlackAI-Execution
 2. **ネットワーク設定を確認**
    - VPC 設定がある場合、NAT Gateway が設定されているか
 
-## AgentCore A2A クロスアカウント通信（Feature Flag: USE_AGENTCORE）
+## AgentCore A2A クロスアカウント通信
 
-> **注意**: この機能は Feature Flag (`USE_AGENTCORE=true`) で有効化されます。
+> ゾーン間は AgentCore A2A のみです。クロスアカウント時もこの経路を使用します。
 
 ### アーキテクチャ
 
@@ -288,14 +288,14 @@ npx cdk deploy SlackAI-Execution
 │                                                              │
 │  Execution Agent (AgentCore Runtime, ARM64)                  │
 │    └─→ Bedrock Converse API                                 │
-│  RuntimeResourcePolicy:                                      │
-│    └─→ Allow: Account A / InvokeAgentRuntime                │
+│  Resource-based policy (Runtime + Endpoint の両方に必須):     │
+│    └─→ Allow: Account A Principal / InvokeAgentRuntime      │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ### 認証
 
-AgentCore A2A 通信は SigV4 認証を使用します。クロスアカウント時は、Execution Agent の **RuntimeResourcePolicy** で Verification Account の Principal に `bedrock-agentcore:InvokeAgentRuntime` を許可します。
+AgentCore A2A 通信は SigV4 認証を使用します。クロスアカウント時は、Execution 側で **Runtime と Endpoint の両方**にリソースベースポリシーを設定し、Verification Account の Principal に `bedrock-agentcore:InvokeAgentRuntime` を許可する必要があります（どちらか一方だけでは拒否されます）。ポリシー例と `put-resource-policy` の手順は [VALIDATION.md §5.1](../../../specs/015-agentcore-a2a-migration/VALIDATION.md#51-agentcore-とアカウント間通信のベストプラクティスaws-mcp-準拠) を参照してください。
 
 ### レガシーパスとの違い
 

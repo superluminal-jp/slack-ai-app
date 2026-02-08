@@ -86,9 +86,9 @@ flowchart TB
 | **ECR** | Execution Agent Image | **新規 (Feature Flag)**。Execution Agent の Docker イメージ (Python 3.11, ARM64)。 |
 | **AWS Bedrock** | Converse API | 統一 IF、マルチモーダル（テキスト+画像）。Guardrails 適用。Model Invocation Logging。 |
 
-### 2.3 AgentCore リソース（Feature Flag: USE_AGENTCORE）
+### 2.3 AgentCore リソース（A2A 唯一のゾーン間経路）
 
-> 以下のリソースは `USE_AGENTCORE=true` 設定時にのみデプロイされます。
+> ゾーン間通信は AgentCore A2A のみです。以下のリソースがデプロイされます。
 
 | リソース種別 | 論理名 / 識別子 | ゾーン | 説明 |
 |-------------|-----------------|--------|------|

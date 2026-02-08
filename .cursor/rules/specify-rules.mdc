@@ -6,6 +6,14 @@ Auto-generated from all feature plans. Last updated: 2026-02-07
 - Python 3.11（Execution / Verification エージェント）、TypeScript 5.x（CDK） (014-a2a-file-to-slack)
 - 既存の DynamoDB / Secrets Manager は変更なし。ファイルは A2A レスポンス内で base64 等で運び、永続化しない。 (014-a2a-file-to-slack)
 - なし（ファイルは A2A レスポンスでメモリ上のみ受け渡し。永続化は本機能スコープ外） (014-a2a-file-to-slack)
+- TypeScript (CDK, Node 18+), Python 3.11+ (Lambda/Agent runtimes) + aws-cdk-lib, AWS AgentCore Runtime (Bedrock AgentCore), existing ECR/Agent constructs (015-agentcore-a2a-migration)
+- DynamoDB (token, dedupe, existence check, whitelist, rate limit), Secrets Manager (Slack credentials) — preserved; no schema changes (015-agentcore-a2a-migration)
+- TypeScript (CDK, Node 18+), Python 3.11+ (Lambda) + aws-cdk-lib, boto3 (SQS, bedrock-agentcore), 既存 Verification Agent Runtime (016-async-agentcore-invocation)
+- DynamoDB（既存: dedupe, whitelist, rate limit, token）— 変更なし。SQS キュー（新規: agent-invocation-request）で実行リクエストを渡す。 (016-async-agentcore-invocation)
+- TypeScript (CDK, Node 18+), Python 3.11 (Lambda) + 既存 aws-cdk-lib, slack_sdk (WebClient), boto3 — 追加依存なし (017-validation-zone-echo)
+- なし（エコー内容はリクエストからその場で生成） (017-validation-zone-echo)
+- Python 3.11 (Verification Agent, SlackEventHandler Lambda), TypeScript (CDK, Node 18+) + 既存 aws-cdk-lib, bedrock_agentcore.runtime, slack_sdk, boto3 — 追加依存なし (018-echo-at-agentcore-runtime)
+- なし（エコーはリクエストコンテキストからその場で生成） (018-echo-at-agentcore-runtime)
 
 - Python 3.11（エージェントコード）、TypeScript 5.x（CDK インフラ） (013-agentcore-a2a-zones)
 
@@ -25,10 +33,10 @@ cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLO
 Python 3.11（エージェントコード）、TypeScript 5.x（CDK インフラ）: Follow standard conventions
 
 ## Recent Changes
-- 014-a2a-file-to-slack: Added Python 3.11（Execution / Verification エージェント）、TypeScript 5.x（CDK）
-- 014-a2a-file-to-slack: Added Python 3.11（Execution / Verification エージェント）、TypeScript 5.x（CDK）
+- 018-echo-at-agentcore-runtime: Added Python 3.11 (Verification Agent, SlackEventHandler Lambda), TypeScript (CDK, Node 18+) + 既存 aws-cdk-lib, bedrock_agentcore.runtime, slack_sdk, boto3 — 追加依存なし
+- 017-validation-zone-echo: Added TypeScript (CDK, Node 18+), Python 3.11 (Lambda) + 既存 aws-cdk-lib, slack_sdk (WebClient), boto3 — 追加依存なし
+- 016-async-agentcore-invocation: Added TypeScript (CDK, Node 18+), Python 3.11+ (Lambda) + aws-cdk-lib, boto3 (SQS, bedrock-agentcore), 既存 Verification Agent Runtime
 
-- 013-agentcore-a2a-zones: Added Python 3.11（エージェントコード）、TypeScript 5.x（CDK インフラ）
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->

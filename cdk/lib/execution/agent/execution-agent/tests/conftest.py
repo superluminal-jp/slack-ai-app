@@ -11,12 +11,25 @@ from unittest.mock import MagicMock
 mock_sdk = MagicMock()
 
 # Create a mock BedrockAgentCoreApp class
+class _MockRoute:
+    """Minimal mock of a Starlette Route for route inspection in tests."""
+
+    def __init__(self, path, methods):
+        self.path = path
+        self.methods = set(methods or [])
+
+
 class MockBedrockAgentCoreApp:
     """Mock implementation of BedrockAgentCoreApp for testing."""
 
     def __init__(self):
         self._entrypoint_fn = None
-        self._routes = {}
+        self._routes_dict = {}
+        self.routes = [
+            # SDK registers /invocations by default
+            _MockRoute("/invocations", ["POST"]),
+            _MockRoute("/ping", ["GET"]),
+        ]
 
     def entrypoint(self, func):
         """Decorator: register the A2A entrypoint function."""
@@ -26,7 +39,8 @@ class MockBedrockAgentCoreApp:
     def route(self, path, methods=None):
         """Decorator: register a route handler."""
         def decorator(func):
-            self._routes[path] = func
+            self._routes_dict[path] = func
+            self.routes.append(_MockRoute(path, methods))
             return func
         return decorator
 
@@ -38,7 +52,7 @@ class MockBedrockAgentCoreApp:
         """Mock: complete an async task."""
         pass
 
-    def run(self):
+    def run(self, port: int = 8080):
         """Mock: start the A2A server."""
         pass
 

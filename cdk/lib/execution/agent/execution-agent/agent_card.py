@@ -101,6 +101,17 @@ def get_agent_card() -> Dict[str, Any]:
                 "inputModes": ["text"],
                 "outputModes": ["text"],
             },
+            {
+                "id": "generated-file",
+                "name": "Generated File",
+                "description": (
+                    "AI生成ファイルのA2A artifact返却(014)。"
+                    "CSV/JSON/テキスト等をgenerated_file artifactで返し、VerificationがSlackスレッドに投稿。"
+                    "最大5MB、許可MIME: text/csv, application/json, text/plain。"
+                ),
+                "inputModes": ["text"],
+                "outputModes": ["text", "file"],
+            },
         ],
         "defaultInputModes": ["text"],
         "defaultOutputModes": ["text"],

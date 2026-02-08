@@ -24,8 +24,8 @@ export interface ExecutionAgentRuntimeProps {
 export class ExecutionAgentRuntime extends Construct {
   /** The AgentCore Runtime CFN resource */
   public readonly runtime: cdk.CfnResource;
-  /** The AgentCore Runtime Endpoint CFN resource */
-  public readonly endpoint: cdk.CfnResource;
+  /** AgentCore auto-creates DEFAULT endpoint; we do not create it in CFn (would conflict) */
+  public readonly endpoint: cdk.CfnResource | undefined = undefined;
   /** The IAM execution role for the AgentCore Runtime */
   public readonly executionRole: iam.Role;
   /** The ARN of the AgentCore Runtime */
@@ -137,62 +137,52 @@ export class ExecutionAgentRuntime extends Construct {
       properties: {
         AgentRuntimeName: props.agentRuntimeName,
         RoleArn: this.executionRole.roleArn,
-        ProtocolConfiguration: {
-          ServerProtocol: "A2A",
-        },
-        ContainerConfiguration: {
-          ContainerUri: props.containerImageUri,
+        ProtocolConfiguration: "A2A",
+        AgentRuntimeArtifact: {
+          ContainerConfiguration: {
+            ContainerUri: props.containerImageUri,
+          },
         },
         NetworkConfiguration: {
           NetworkMode: "PUBLIC",
         },
-        AuthorizerConfiguration: {
-          AuthorizerType: "SIGV4",
-        },
+        // Omit AuthorizerConfiguration: default is SigV4 for A2A
       },
     });
+
+    // Ensure Runtime is created after the role's IAM policy (ECR permissions)
+    // so that Bedrock AgentCore validation of ECR URI succeeds
+    const defaultPolicy = this.executionRole.node.tryFindChild("DefaultPolicy");
+    const policyCfn = defaultPolicy?.node.defaultChild;
+    if (policyCfn && cdk.CfnResource.isCfnResource(policyCfn)) {
+      this.runtime.addDependency(policyCfn);
+    }
 
     // Derive ARN from the runtime
     this.runtimeArn = this.runtime.getAtt("AgentRuntimeArn").toString();
 
-    // Create AgentCore Runtime Endpoint (DEFAULT)
-    this.endpoint = new cdk.CfnResource(this, "Endpoint", {
-      type: "AWS::BedrockAgentCore::RuntimeEndpoint",
-      properties: {
-        AgentRuntimeId: this.runtime.getAtt("AgentRuntimeId").toString(),
-        Name: "DEFAULT",
-        Description: `Default endpoint for ${props.agentRuntimeName}`,
-      },
-    });
+    // Do NOT create RuntimeEndpoint in CFn: Bedrock AgentCore auto-creates DEFAULT when Runtime is created.
+    // Creating it here causes "An endpoint with the specified name already exists" (409).
 
-    // Ensure endpoint is created after runtime
-    this.endpoint.addDependency(this.runtime);
-
-    // ─── Cross-Account Resource-Based Policy (T037) ───
-    // If verificationAccountId is provided, add a resource-based policy
-    // allowing the Verification Account to invoke this Runtime via SigV4
+    // ─── Cross-Account Resource-Based Policy (AWS best practice) ───
+    // Per AWS docs: cross-account access requires resource-based policies on BOTH
+    // the Agent Runtime and the Agent Endpoint; if either lacks an allow, the request is denied.
+    // CloudFormation does not support AWS::BedrockAgentCore::RuntimeResourcePolicy;
+    // set policies after deploy via: aws bedrock-agentcore-control put-resource-policy
+    // for both ExecutionAgentRuntimeArn and ExecutionEndpointArn (DEFAULT).
+    // See specs/015-agentcore-a2a-migration/VALIDATION.md §5.1 for policy examples and commands.
     if (props.verificationAccountId) {
-      // Resource-based policy on the Runtime itself
-      new cdk.CfnResource(this, "RuntimeResourcePolicy", {
-        type: "AWS::BedrockAgentCore::RuntimeResourcePolicy",
-        properties: {
-          AgentRuntimeId: this.runtime.getAtt("AgentRuntimeId").toString(),
-          Policy: JSON.stringify({
-            Version: "2012-10-17",
-            Statement: [
-              {
-                Sid: "AllowVerificationAccountInvoke",
-                Effect: "Allow",
-                Principal: {
-                  AWS: `arn:aws:iam::${props.verificationAccountId}:root`,
-                },
-                Action: "bedrock-agentcore:InvokeAgentRuntime",
-                Resource: "*",
-              },
-            ],
-          }),
-        },
-      }).addDependency(this.runtime);
+      const endpointArn = `arn:aws:bedrock-agentcore:${stack.region}:${stack.account}:runtime-endpoint/${props.agentRuntimeName}/DEFAULT`;
+      new cdk.CfnOutput(this, "ExecutionRuntimeArn", {
+        description: "AgentCore Runtime ARN; set resource policy via put-resource-policy for cross-account",
+        value: this.runtimeArn,
+        exportName: `${stack.stackName}-ExecutionRuntimeArn`,
+      });
+      new cdk.CfnOutput(this, "ExecutionEndpointArn", {
+        description: "AgentCore Runtime Endpoint ARN; set resource policy via put-resource-policy for cross-account",
+        value: endpointArn,
+        exportName: `${stack.stackName}-ExecutionEndpointArn`,
+      });
     }
   }
 }

@@ -35,12 +35,6 @@ export interface CdkConfig {
   verificationAccountId: string;
   /** AWS Account ID for Execution Stack */
   executionAccountId: string;
-  /** Lambda Role ARN from Verification Stack (optional) */
-  verificationLambdaRoleArn?: string;
-  /** Execution API URL from Execution Stack (optional) */
-  executionApiUrl?: string;
-  /** SQS Queue URL from Verification Stack for responses (optional) */
-  executionResponseQueueUrl?: string;
   /** Slack Bot Token (optional, can be set via environment variable) */
   slackBotToken?: string;
   /** Slack Signing Secret (optional, can be set via environment variable) */
@@ -49,9 +43,7 @@ export interface CdkConfig {
   executionAgentName?: string;
   /** Name for the Verification Agent AgentCore Runtime (optional) */
   verificationAgentName?: string;
-  /** Enable AgentCore A2A communication instead of API Gateway + SQS (optional) */
-  useAgentCore?: boolean;
-  /** ARN of the Execution Agent Runtime for cross-account A2A invocation (optional) */
+  /** ARN of the Execution Agent Runtime for A2A (optional; from Execution Stack output or config) */
   executionAgentArn?: string;
 }
 
@@ -77,22 +69,6 @@ const CdkConfigSchema = z.object({
   executionAccountId: z
     .string()
     .regex(/^\d{12}$/, "executionAccountId must be a 12-digit AWS account ID"),
-  verificationLambdaRoleArn: z
-    .string()
-    .regex(/^arn:aws:iam::\d{12}:role\/.+/, "Invalid IAM role ARN format")
-    .optional(),
-  executionApiUrl: z
-    .string()
-    .refine((val) => val === "" || z.string().url().safeParse(val).success, {
-      message: "Invalid URL format",
-    })
-    .optional(),
-  executionResponseQueueUrl: z
-    .string()
-    .refine((val) => val === "" || z.string().url().safeParse(val).success, {
-      message: "Invalid URL format",
-    })
-    .optional(),
   slackBotToken: z.string().min(1, "slackBotToken cannot be empty").optional(),
   slackSigningSecret: z
     .string()
@@ -112,7 +88,6 @@ const CdkConfigSchema = z.object({
       "verificationAgentName must match pattern [a-zA-Z][a-zA-Z0-9_]{0,47}"
     )
     .optional(),
-  useAgentCore: z.boolean().optional(),
   executionAgentArn: z
     .string()
     .regex(
@@ -143,11 +118,8 @@ function loadJsonFile(filePath: string): PartialCdkConfig | null {
     const cleaned: PartialCdkConfig = {};
     for (const [key, value] of Object.entries(parsed)) {
       // Skip empty strings for optional fields
-      if (
-        value === "" &&
-        (key === "verificationLambdaRoleArn" || key === "executionApiUrl")
-      ) {
-        continue; // Skip empty optional fields
+      if (value === "" && key === "executionAgentArn") {
+        continue; // Skip empty optional field
       }
       // Type-safe assignment
       if (key in cleaned || key in CdkConfigSchema.shape) {
@@ -277,18 +249,6 @@ export function applyEnvOverrides(config: CdkConfig): CdkConfig {
       process.env.VERIFICATION_ACCOUNT_ID || config.verificationAccountId,
     executionAccountId:
       process.env.EXECUTION_ACCOUNT_ID || config.executionAccountId,
-    verificationLambdaRoleArn: envOrConfig(
-      process.env.VERIFICATION_LAMBDA_ROLE_ARN,
-      config.verificationLambdaRoleArn
-    ),
-    executionApiUrl: envOrConfig(
-      process.env.EXECUTION_API_URL,
-      config.executionApiUrl
-    ),
-    executionResponseQueueUrl: envOrConfig(
-      process.env.EXECUTION_RESPONSE_QUEUE_URL,
-      config.executionResponseQueueUrl
-    ),
     slackBotToken: envOrConfig(
       process.env.SLACK_BOT_TOKEN,
       config.slackBotToken
@@ -296,6 +256,10 @@ export function applyEnvOverrides(config: CdkConfig): CdkConfig {
     slackSigningSecret: envOrConfig(
       process.env.SLACK_SIGNING_SECRET,
       config.slackSigningSecret
+    ),
+    executionAgentArn: envOrConfig(
+      process.env.EXECUTION_AGENT_ARN,
+      config.executionAgentArn
     ),
   };
 }

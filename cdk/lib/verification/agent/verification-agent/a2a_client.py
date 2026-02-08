@@ -43,17 +43,46 @@ POLL_INTERVAL_SECONDS = 2.0
 POLL_MAX_WAIT_SECONDS = 120.0  # Maximum total wait time for async tasks
 POLL_BACKOFF_FACTOR = 1.5  # Increase interval after each poll
 
+# InvokeAgentRuntime retry on ThrottlingException (AWS best practice)
+INVOKE_RETRY_MAX_ATTEMPTS = 3
+INVOKE_RETRY_BASE_DELAY_SECONDS = 1.0
+INVOKE_RETRY_BACKOFF_FACTOR = 2.0
+
 
 def _get_agentcore_client():
-    """Get or create bedrock-agentcore-runtime boto3 client (singleton)."""
+    """
+    Get or create bedrock-agentcore boto3 client (singleton).
+
+    Uses Data Plane client per InvokeAgentRuntime API:
+    https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-invoke-agent.html
+    """
     global _agentcore_client
     if _agentcore_client is None:
         region = os.environ.get("AWS_REGION_NAME", "ap-northeast-1")
         _agentcore_client = boto3.client(
-            "bedrock-agentcore-runtime",
+            "bedrock-agentcore",
             region_name=region,
         )
     return _agentcore_client
+
+
+def _read_invoke_response(response: dict) -> str:
+    """
+    Read response body from InvokeAgentRuntime API response.
+
+    API returns "response" (StreamingBody or chunks) and "contentType".
+    See: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-invoke-agent.html
+    """
+    body = response.get("response")
+    if body is None:
+        return ""
+    if hasattr(body, "read"):
+        return body.read().decode("utf-8")
+    if isinstance(body, (list, tuple)):
+        return "".join(chunk.decode("utf-8") if isinstance(chunk, bytes) else str(chunk) for chunk in body)
+    if isinstance(body, str):
+        return body
+    return str(body)
 
 
 def _poll_async_task_result(
@@ -245,64 +274,75 @@ def invoke_execution_agent(
     try:
         client = _get_agentcore_client()
 
-        # Generate a unique session ID for this invocation
-        session_id = f"session-{correlation_id}-{int(time.time())}"
+        # Unique session ID per invocation (UUID recommended by AWS for InvokeAgentRuntime)
+        session_id = str(uuid.uuid4())
 
-        # Invoke the Execution Agent via AgentCore Runtime
-        response = client.invoke_agent_runtime(
-            agentRuntimeArn=agent_arn,
-            sessionId=session_id,
-            prompt=json.dumps(task_payload),
-        )
+        # Payload per InvokeAgentRuntime API: binary, JSON with "prompt" key (same as Agent Invoker)
+        payload_bytes = json.dumps({"prompt": json.dumps(task_payload)}).encode("utf-8")
 
-        # Parse response body
-        response_body = ""
-        if "body" in response:
-            body = response["body"]
-            if hasattr(body, "read"):
-                response_body = body.read().decode("utf-8")
-            elif isinstance(body, str):
-                response_body = body
-            else:
-                response_body = str(body)
+        for attempt in range(1, INVOKE_RETRY_MAX_ATTEMPTS + 1):
+            try:
+                # Invoke the Execution Agent via AgentCore Runtime (A2A API: runtimeSessionId + payload)
+                response = client.invoke_agent_runtime(
+                    agentRuntimeArn=agent_arn,
+                    runtimeSessionId=session_id,
+                    payload=payload_bytes,
+                )
+            except ClientError as e:
+                if e.response["Error"]["Code"] == "ThrottlingException" and attempt < INVOKE_RETRY_MAX_ATTEMPTS:
+                    delay = INVOKE_RETRY_BASE_DELAY_SECONDS * (
+                        INVOKE_RETRY_BACKOFF_FACTOR ** (attempt - 1)
+                    )
+                    _log("WARN", "invoke_throttled_retry", {
+                        "correlation_id": correlation_id,
+                        "attempt": attempt,
+                        "max_attempts": INVOKE_RETRY_MAX_ATTEMPTS,
+                        "delay_seconds": round(delay, 2),
+                    })
+                    time.sleep(delay)
+                    continue
+                raise
 
-        # Check if response is async ("accepted" with task_id)
-        try:
-            response_data = json.loads(response_body) if response_body else {}
-        except (json.JSONDecodeError, ValueError):
-            response_data = {}
+            # Parse response body (API returns "response" as StreamingBody, "contentType")
+            response_body = _read_invoke_response(response)
 
-        if response_data.get("status") == "accepted" and response_data.get("task_id"):
-            task_id = response_data["task_id"]
-            elapsed = time.time() - start_time
-            remaining_timeout = max(timeout_seconds - elapsed, 30)
+            # Check if response is async ("accepted" with task_id)
+            try:
+                response_data = json.loads(response_body) if response_body else {}
+            except (json.JSONDecodeError, ValueError):
+                response_data = {}
 
-            _log("INFO", "async_response_received", {
+            if response_data.get("status") == "accepted" and response_data.get("task_id"):
+                task_id = response_data["task_id"]
+                elapsed = time.time() - start_time
+                remaining_timeout = max(timeout_seconds - elapsed, 30)
+
+                _log("INFO", "async_response_received", {
+                    "correlation_id": correlation_id,
+                    "task_id": task_id,
+                    "remaining_timeout": round(remaining_timeout, 2),
+                })
+
+                # Poll for the async task result
+                return _poll_async_task_result(
+                    agent_arn=agent_arn,
+                    task_id=task_id,
+                    correlation_id=correlation_id,
+                    max_wait_seconds=remaining_timeout,
+                )
+
+            # Synchronous response — return directly
+            duration_ms = (time.time() - start_time) * 1000
+
+            _log("INFO", "invoke_execution_agent_completed", {
                 "correlation_id": correlation_id,
-                "task_id": task_id,
-                "remaining_timeout": round(remaining_timeout, 2),
+                "execution_agent_arn": agent_arn,
+                "duration_ms": round(duration_ms, 2),
+                "response_length": len(response_body),
+                "response_mode": "sync",
             })
 
-            # Poll for the async task result
-            return _poll_async_task_result(
-                agent_arn=agent_arn,
-                task_id=task_id,
-                correlation_id=correlation_id,
-                max_wait_seconds=remaining_timeout,
-            )
-
-        # Synchronous response — return directly
-        duration_ms = (time.time() - start_time) * 1000
-
-        _log("INFO", "invoke_execution_agent_completed", {
-            "correlation_id": correlation_id,
-            "execution_agent_arn": agent_arn,
-            "duration_ms": round(duration_ms, 2),
-            "response_length": len(response_body),
-            "response_mode": "sync",
-        })
-
-        return response_body
+            return response_body
 
     except ClientError as e:
         error_code = e.response["Error"]["Code"]

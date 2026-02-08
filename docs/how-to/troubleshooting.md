@@ -27,6 +27,7 @@ updated: 2026-02-08
 - [ファイルがスレッドに表示されない（014）](#ファイルがスレッドに表示されない014)
 - [016 非同期起動（SQS / Agent Invoker / DLQ）](#016-非同期起動sqs--agent-invoker--dlq)
 - [017 Validation Zone Echo（エコーモード）](#017-validation-zone-echoエコーモード)
+- [018 Echo at Verification Agent (Runtime)](#018-echo-at-verification-agent-runtime)
 - [ログの確認方法](#ログの確認方法)
 
 ---
@@ -384,16 +385,23 @@ aws logs filter-log-events --region ap-northeast-1 \
 **確認と対処**:
 
 1. **Verification Agent ランタイムの状態**  
-   AWS コンソールの **Amazon Bedrock → AgentCore → Runtimes** で、該当 Verification Agent のステータスが **ACTIVE** になっているか確認。デプロイ直後は UNKNOWN のままになることがあり、数分待つかスタックを再デプロイする。
+   AWS コンソールの **Amazon Bedrock → AgentCore → Runtimes** で、該当 Verification Agent のステータスが **Ready**（Control Plane API では `READY`）になっているか確認。デプロイ直後は数分かかることがある。ステータス確認は `aws bedrock-agentcore-control get-agent-runtime --agent-runtime-id <ID>`（ARN の `runtime/` 以降が ID）。
 
 2. **Verification Agent の CloudWatch ログ**  
-   ロググループ `/aws/bedrock-agentcore/runtimes/SlackAI_VerificationAgent-*-DEFAULT` に、起動エラーやペイロード検証エラー（422 に相当）が出ていないか確認。ログが全く無い場合は、ランタイムがリクエストを受け付ける前に失敗している可能性（コンテナ起動失敗・A2A ではポート 9000 必須、など）。[Runtime サービス契約](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-service-contract.html)・[A2A プロトコル契約](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-a2a-protocol-contract.html)参照。
+   ロググループ `/aws/bedrock-agentcore/runtimes/SlackAI_VerificationAgent-*-DEFAULT` に、起動エラーやペイロード検証エラー（422 に相当）が出ていないか確認。**ログが 1 件も無い**場合は、**リクエストがコンテナに届いていない**（プラットフォーム側で 424 を返している）か、**コンテナが起動直後にクラッシュしている**可能性が高い。A2A ではポート 9000 必須。[Runtime サービス契約](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-service-contract.html)・[A2A プロトコル契約](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-a2a-protocol-contract.html)参照。
 
 3. **ペイロード形式**  
    Agent Invoker は `{"prompt": json.dumps(task_data)}` を送信。Verification Agent のエントリポイントが期待する形式（`prompt` をパースして `channel`, `text`, `bot_token` 等を取り出す）と一致しているか、[payload format](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-troubleshooting.html#payload-format-issues) を参照して確認。
 
 4. **長時間待機後の 424**  
    呼び出しが 60 秒以上かかってから 424 になる場合、ランタイムのコールドスタートやコンテナの初期化タイムアウトの可能性。Lambda のタイムアウト（例: 2 分）を十分に取り、AgentCore ランタイムのヘルス・再デプロイを検討する。
+
+5. **再デプロイしても 424 が続き、ランタイムにログが 1 件も出ない場合**  
+   コンソールでは Runtime が Ready なのに InvokeAgentRuntime だけ 424 で、Verification Agent のロググループにアプリログが無い場合は、**コンテナにトラフィックが届いていない**か**コンテナ起動失敗**が疑われる。  
+   - **コンテナのローカル確認**: 同じ Docker イメージを `docker run -p 9000:9000 <image>` で起動し、`GET /ping` や `POST /` で応答するか確認。  
+   - **Execution Role**: Runtime の実行ロールが ECR の GetAuthorizationToken / BatchGetImage と CloudWatch Logs の PutLogEvents を持っているか確認。  
+   - **イメージ・プラットフォーム**: Dockerfile が `EXPOSE 9000` かつ ARM64（`--platform=linux/arm64`）でビルドされているか確認。  
+   - 上記で問題なさそうな場合は [Troubleshoot AgentCore Runtime](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-troubleshooting.html) の「missing or empty CloudWatch Logs」「debugging container issues」を参照するか、AWS サポート／サービスヘルスを確認する。
 
 **関連（公式）**: [Troubleshoot AgentCore Runtime](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-troubleshooting.html)（504 / 422 / 403 / 500 / 424 の説明）、[Invoke an AgentCore Runtime agent](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-invoke-agent.html)、[InvokeAgentRuntime API](https://docs.aws.amazon.com/bedrock-agentcore/latest/APIReference/API_InvokeAgentRuntime.html)。Agent Invoker は boto3 1.39.8+ を利用（bedrock-agentcore クライアントに必要）。
 
@@ -498,6 +506,47 @@ aws logs filter-log-events --region ap-northeast-1 \
 
 ---
 
+## 018 Echo at Verification Agent (Runtime)
+
+018 ではエコーを **Verification Agent (AgentCore Runtime)** 側で行います。Lambda は 017 の「Lambda 内エコー」を行わず、常に SQS に送信します。エコーモード有効時は Runtime の環境変数 `VALIDATION_ZONE_ECHO_MODE=true` により、Verification Agent が Execution を呼ばず [Echo] を Slack に投稿します。
+
+### エコーモードの有効化・無効化（018）
+
+| 方法 | 有効化 | 無効化 |
+|------|--------|--------|
+| **CDK デプロイ** | `cdk deploy -c validationZoneEchoMode=true` またはスタック props で `validationZoneEchoMode: true` | 上記を付けずにデプロイ、または `-c validationZoneEchoMode=false` |
+| **Runtime 環境変数** | Verification Agent Runtime に `VALIDATION_ZONE_ECHO_MODE: "true"` が渡る（CDK の `VerificationAgentRuntime` が設定） | 渡さない、または `"false"` |
+
+有効とみなされるのは値が文字列 `"true"` のときのみ（大文字小文字は正規化して判定）です。
+
+### 症状: エコーが返ってこない（018 で有効にしたつもりなのに）
+
+**確認手順**:
+
+1. **Runtime の環境変数**  
+   CloudFormation で Verification Agent の Runtime（`AWS::BedrockAgentCore::Runtime`）の `EnvironmentVariables` に `VALIDATION_ZONE_ECHO_MODE: "true"` が含まれているか確認。CDK で `validationZoneEchoMode: true` を渡してデプロイしたか確認。
+
+2. **Lambda は SQS に送っているか**  
+   SlackEventHandler のログで `sqs_enqueue_success` が出ているか確認。018 では Lambda はエコーせず常に SQS に送る。
+
+3. **Verification Agent (Runtime) のログ**  
+   CloudWatch で Verification Agent Runtime のログを開き、`echo_mode_response` が出ているか確認。出ていなければエコー分岐に入っていない（環境変数が `"true"` でない、またはセキュリティパイプラインで早期 return している可能性）。
+
+4. **Agent Invoker**  
+   Agent Invoker のログで `agent_invocation_success` が出ているか確認。SQS → Agent Invoker → Verification Agent まで届いているか。
+
+### 症状: エコーを無効にしたのに [Echo] だけ返る
+
+Runtime の `VALIDATION_ZONE_ECHO_MODE` がまだ `"true"` のままか、デプロイが反映されていない可能性があります。`validationZoneEchoMode: false` で再デプロイし、数分待ってから再試行してください。コンテナの再起動が必要な場合があります。
+
+### 症状: Execution が呼ばれてしまう（エコーにしたいのに AI 応答が返る）
+
+Runtime に `VALIDATION_ZONE_ECHO_MODE` が正しく `"true"` で渡っているか、CloudFormation の Runtime リソースの `EnvironmentVariables` を確認してください。
+
+**関連ドキュメント**: [018 quickstart](../../specs/018-echo-at-agentcore-runtime/quickstart.md)、[018 spec](../../specs/018-echo-at-agentcore-runtime/spec.md)。
+
+---
+
 ## ログの確認方法
 
 ### CloudWatch ログの確認
@@ -528,8 +577,8 @@ aws logs filter-log-events \
 | `slack_post_file_failed`             | 014: ファイルの Slack 投稿失敗   |
 | `agent_invocation_failed`            | 016: Agent Invoker の InvokeAgentRuntime 失敗 |
 | `agent_invocation_success`           | 016: Agent Invoker の InvokeAgentRuntime 成功 |
-| `echo_mode_response`                 | 017: エコーモードで応答した（SQS/AgentCore は未使用） |
-| `echo_mode_post_failed` / `echo_mode_post_error` | 017: エコー投稿（chat_postMessage）失敗 |
+| `echo_mode_response`                 | 017: Lambda でエコー応答。018: Verification Agent (Runtime) でエコー応答した（Execution は未使用） |
+| `echo_mode_post_failed` / `echo_mode_post_error` | 017: Lambda でのエコー投稿失敗。018 では Runtime 側でエコー投稿 |
 
 ---
 

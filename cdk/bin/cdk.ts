@@ -142,11 +142,8 @@ const executionStackName = `${baseExecutionStackName}-${environmentSuffix}`;
 // Cross-account configuration (optional)
 const verificationAccountId = getConfigString("verificationAccountId");
 const executionAccountId = getConfigString("executionAccountId");
-const verificationLambdaRoleArn = getConfigString("verificationLambdaRoleArn");
-const executionApiUrl = getConfigString("executionApiUrl");
-const executionResponseQueueUrl = getConfigString("executionResponseQueueUrl");
 
-// AgentCore configuration (optional)
+// AgentCore configuration
 const executionAgentName = getConfigString(
   "executionAgentName",
   "SlackAI_ExecutionAgent"
@@ -155,7 +152,6 @@ const verificationAgentName = getConfigString(
   "verificationAgentName",
   "SlackAI_VerificationAgent"
 );
-const useAgentCore = getConfigValue<boolean>("useAgentCore", false);
 const executionAgentArn = getConfigString("executionAgentArn");
 
 /**
@@ -178,24 +174,14 @@ function setContextFromConfig(config: CdkConfig | null): void {
   app.node.setContext("verificationAccountId", verificationAccountId);
   app.node.setContext("executionAccountId", executionAccountId);
 
-  // Optional configuration (only set if provided)
-  if (verificationLambdaRoleArn) {
-    app.node.setContext("verificationLambdaRoleArn", verificationLambdaRoleArn);
-  }
-  if (executionApiUrl) {
-    app.node.setContext("executionApiUrl", executionApiUrl);
-  }
   if (config.slackBotToken) {
     app.node.setContext("slackBotToken", config.slackBotToken);
   }
   if (config.slackSigningSecret) {
     app.node.setContext("slackSigningSecret", config.slackSigningSecret);
   }
-
-  // AgentCore configuration
   app.node.setContext("executionAgentName", executionAgentName);
   app.node.setContext("verificationAgentName", verificationAgentName);
-  app.node.setContext("useAgentCore", String(useAgentCore));
   if (executionAgentArn) {
     app.node.setContext("executionAgentArn", executionAgentArn);
   }
@@ -219,56 +205,13 @@ function getDefaultEnv(region: string): cdk.Environment {
 const defaultEnv = getDefaultEnv(region);
 
 /**
- * Extract API Gateway ARN from URL (for IAM policy)
+ * Deployment Architecture (A2A only):
  *
- * @param apiUrl - API Gateway URL (e.g., https://{api-id}.execute-api.{region}.amazonaws.com/prod/)
- * @param region - AWS region
- * @param account - AWS account ID (optional)
- * @returns API Gateway ARN or empty string if URL is invalid
- */
-function getApiArnFromUrl(
-  apiUrl: string,
-  region: string,
-  account?: string
-): string {
-  if (!apiUrl) {
-    return "";
-  }
-
-  // Extract API ID from URL: https://{api-id}.execute-api.{region}.amazonaws.com/prod/
-  const match = apiUrl.match(/https:\/\/([^.]+)\.execute-api\./);
-  if (!match || !match[1]) {
-    return "";
-  }
-
-  const apiId = match[1];
-  const accountId = account || process.env.CDK_DEFAULT_ACCOUNT || "*";
-  return `arn:aws:execute-api:${region}:${accountId}:${apiId}/*`;
-}
-
-/**
- * Deployment Architecture:
+ * - ExecutionStack: Execution Agent AgentCore Runtime (A2A)
+ * - VerificationStack: SlackEventHandler + Verification Agent + DynamoDB + Secrets
  *
- * The application uses two independent stacks that can be deployed separately:
- * - ExecutionStack: BedrockProcessor + API Gateway
- * - VerificationStack: SlackEventHandler + DynamoDB + Secrets
- *
- * Stacks can be deployed independently using CDK CLI:
- *   - Deploy ExecutionStack: npx cdk deploy SlackAI-Execution-{Env}
- *   - Deploy VerificationStack: npx cdk deploy SlackAI-Verification-{Env}
- *
- * Deploy order (for initial setup):
- *   1. ExecutionStack → Get ExecutionApiUrl
- *   2. VerificationStack (with ExecutionApiUrl) → Get VerificationLambdaRoleArn
- *   3. ExecutionStack (update with VerificationLambdaRoleArn)
- *
- * Cross-account deployment is supported by setting verificationAccountId and executionAccountId.
- * If both account IDs are the same (or not set), same-account deployment is used.
- *
- * Stack independence:
- * - ExecutionStack can be deployed without VerificationStack
- * - VerificationStack requires ExecutionApiUrl (from ExecutionStack) to be configured
- * - If ExecutionApiUrl is not configured, only ExecutionStack will be synthesized
+ * Deploy order: 1) ExecutionStack → get ExecutionAgentRuntimeArn
+ *               2) VerificationStack with executionAgentArn (and executionAccountId if cross-account)
  */
 
 /**
@@ -299,189 +242,20 @@ const verificationEnv = getStackEnvironment(
   defaultEnv
 );
 
-/**
- * Create Execution Stack
- *
- * @param app - CDK app instance
- * @param stackName - Stack name
- * @param env - CDK environment
- * @param verificationLambdaRoleArn - Verification Lambda role ARN (optional)
- * @param verificationAccountId - Verification account ID (optional)
- * @param executionResponseQueueUrl - SQS queue URL for responses (optional)
- */
-function createExecutionStack(
-  app: cdk.App,
-  stackName: string,
-  env: cdk.Environment,
-  verificationLambdaRoleArn?: string,
-  verificationAccountId?: string,
-  executionResponseQueueUrl?: string,
-  options?: {
-    executionAgentName?: string;
-    useAgentCore?: boolean;
-  }
-): ExecutionStack {
-  return new ExecutionStack(app, stackName, {
-    env: env,
-    verificationLambdaRoleArn: verificationLambdaRoleArn,
-    verificationAccountId: verificationAccountId,
-    executionResponseQueueUrl: executionResponseQueueUrl,
-    executionAgentName: options?.executionAgentName,
-    useAgentCore: options?.useAgentCore,
-  });
-}
+// Create Execution Stack (A2A only)
+const executionStack = new ExecutionStack(app, executionStackName, {
+  env: executionEnv,
+  verificationAccountId: verificationAccountId || undefined,
+  executionAgentName: executionAgentName || undefined,
+});
 
-/**
- * Create Verification Stack
- *
- * @param app - CDK app instance
- * @param stackName - Stack name
- * @param env - CDK environment
- * @param executionApiUrl - Execution API URL
- * @param executionApiArn - Execution API ARN
- * @param executionAccountId - Execution account ID (optional)
- */
-function createVerificationStack(
-  app: cdk.App,
-  stackName: string,
-  env: cdk.Environment,
-  executionApiUrl: string,
-  executionApiArn: string,
-  executionAccountId?: string,
-  options?: {
-    verificationAgentName?: string;
-    useAgentCore?: boolean;
-    executionAgentArn?: string;
-  }
-): void {
-  new VerificationStack(app, stackName, {
-    env: env,
-    executionApiUrl: executionApiUrl,
-    executionApiArn: executionApiArn,
-    executionAccountId: executionAccountId,
-    verificationAgentName: options?.verificationAgentName,
-    useAgentCore: options?.useAgentCore,
-    executionAgentArn: options?.executionAgentArn,
-  });
-}
+// Create Verification Stack (A2A only; needs executionAgentArn from Execution Stack or config)
+const resolvedExecutionAgentArn =
+  executionAgentArn || executionStack.executionAgentArn;
 
-/**
- * Print deployment instructions when ExecutionApiUrl is not configured
- *
- * @param deploymentEnv - Deployment environment
- * @param executionStackName - Execution stack name
- * @param verificationStackName - Verification stack name
- * @param region - AWS region
- */
-function printDeploymentInstructions(
-  deploymentEnv: DeploymentEnvironment,
-  executionStackName: string,
-  verificationStackName: string,
-  region: string
-): void {
-  const awsProfile = process.env.AWS_PROFILE || "amplify-admin";
-  console.warn(`
-╔════════════════════════════════════════════════════════════════════════════╗
-║                    DEPLOYMENT - STEP 1: Execution Stack                   ║
-╚════════════════════════════════════════════════════════════════════════════╝
-
-[INFO] ExecutionApiUrl is not configured. Only ExecutionStack will be deployed.
-
-[STATUS] Stack to deploy: ${executionStackName}
-[STATUS] VerificationStack will be skipped (requires ExecutionApiUrl)
-
-[NEXT STEPS] After deploying ExecutionStack:
-
-  1. Deploy ExecutionStack:
-     AWS_PROFILE=${awsProfile} DEPLOYMENT_ENV=${deploymentEnv} \\
-     npx cdk deploy ${executionStackName} --profile ${awsProfile}
-
-  2. Get ExecutionApiUrl from stack outputs:
-     AWS_PROFILE=${awsProfile} aws cloudformation describe-stacks \\
-       --stack-name ${executionStackName} \\
-       --region ${region} \\
-       --query 'Stacks[0].Outputs[?OutputKey==\`ExecutionApiUrl\`].OutputValue' \\
-       --output text
-
-  3. Update configuration file (cdk.config.${deploymentEnv}.json):
-     Set "executionApiUrl": "<URL from step 2>"
-
-  4. Deploy VerificationStack:
-     AWS_PROFILE=${awsProfile} DEPLOYMENT_ENV=${deploymentEnv} \\
-     npx cdk deploy ${verificationStackName} --profile ${awsProfile}
-
-  5. Get VerificationLambdaRoleArn from stack outputs:
-     AWS_PROFILE=${awsProfile} aws cloudformation describe-stacks \\
-       --stack-name ${verificationStackName} \\
-       --region ${region} \\
-       --query 'Stacks[0].Outputs[?OutputKey==\`VerificationLambdaRoleArn\`].OutputValue' \\
-       --output text
-
-  6. Update configuration file (cdk.config.${deploymentEnv}.json):
-     Set "verificationLambdaRoleArn": "<ARN from step 5>"
-
-  7. Update ExecutionStack with resource policy:
-     AWS_PROFILE=${awsProfile} DEPLOYMENT_ENV=${deploymentEnv} \\
-     npx cdk deploy ${executionStackName} --profile ${awsProfile}
-
-╔════════════════════════════════════════════════════════════════════════════╗
-║  TIP: Use scripts/deploy-split-stacks.sh for automated deployment         ║
-╚════════════════════════════════════════════════════════════════════════════╝
-  `);
-}
-
-// Create Execution Stack
-const executionStack = createExecutionStack(
-  app,
-  executionStackName,
-  executionEnv,
-  verificationLambdaRoleArn || undefined,
-  verificationAccountId || undefined,
-  executionResponseQueueUrl || undefined,
-  {
-    executionAgentName: executionAgentName || undefined,
-    useAgentCore: useAgentCore || undefined,
-  }
-);
-
-// Create Verification Stack (requires Execution API URL from first deployment)
-if (executionApiUrl) {
-  const executionApiArn = getApiArnFromUrl(
-    executionApiUrl,
-    region,
-    executionAccountId || process.env.CDK_DEFAULT_ACCOUNT
-  );
-
-  if (!executionApiArn) {
-    console.warn(
-      `[WARNING] Failed to extract API ARN from URL: ${executionApiUrl}`
-    );
-  }
-
-  // Use the executionAgentArn from config or from the execution stack output
-  const resolvedExecutionAgentArn =
-    executionAgentArn || executionStack.executionAgentArn;
-
-  createVerificationStack(
-    app,
-    verificationStackName,
-    verificationEnv,
-    executionApiUrl,
-    executionApiArn,
-    executionAccountId || undefined,
-    {
-      verificationAgentName: verificationAgentName || undefined,
-      useAgentCore: useAgentCore || undefined,
-      executionAgentArn: resolvedExecutionAgentArn || undefined,
-    }
-  );
-} else {
-  // If no API URL, only synthesize Execution Stack
-  // User will need to deploy Execution Stack first, get URL, then re-run
-  printDeploymentInstructions(
-    deploymentEnv,
-    executionStackName,
-    verificationStackName,
-    region
-  );
-}
+new VerificationStack(app, verificationStackName, {
+  env: verificationEnv,
+  executionAccountId: executionAccountId || undefined,
+  verificationAgentName: verificationAgentName || undefined,
+  executionAgentArn: resolvedExecutionAgentArn || undefined,
+});

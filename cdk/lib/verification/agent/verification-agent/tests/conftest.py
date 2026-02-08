@@ -12,12 +12,25 @@ from unittest.mock import MagicMock
 mock_sdk = MagicMock()
 
 
+class _MockRoute:
+    """Minimal mock of a Starlette Route for route inspection in tests."""
+
+    def __init__(self, path, methods):
+        self.path = path
+        self.methods = set(methods or [])
+
+
 class MockBedrockAgentCoreApp:
     """Mock implementation of BedrockAgentCoreApp for testing."""
 
     def __init__(self):
         self._entrypoint_fn = None
-        self._routes = {}
+        self._routes_dict = {}
+        self.routes = [
+            # SDK registers /invocations by default
+            _MockRoute("/invocations", ["POST"]),
+            _MockRoute("/ping", ["GET"]),
+        ]
 
     def entrypoint(self, func):
         """Decorator: register the A2A entrypoint function."""
@@ -27,7 +40,8 @@ class MockBedrockAgentCoreApp:
     def route(self, path, methods=None):
         """Decorator: register a route handler."""
         def decorator(func):
-            self._routes[path] = func
+            self._routes_dict[path] = func
+            self.routes.append(_MockRoute(path, methods))
             return func
         return decorator
 
@@ -39,7 +53,7 @@ class MockBedrockAgentCoreApp:
         """Mock: complete an async task."""
         pass
 
-    def run(self):
+    def run(self, port: int = 8080):
         """Mock: start the A2A server."""
         pass
 
@@ -48,7 +62,18 @@ mock_sdk.runtime.BedrockAgentCoreApp = MockBedrockAgentCoreApp
 sys.modules["bedrock_agentcore"] = mock_sdk
 sys.modules["bedrock_agentcore.runtime"] = mock_sdk.runtime
 
-# Mock slack_sdk which is not available in the test environment
+# Mock slack_sdk; provide a real exception class for contract tests (014 post_file_to_slack)
+class SlackApiError(Exception):
+    """Minimal stand-in for slack_sdk.errors.SlackApiError in tests."""
+
+    def __init__(self, message="", response=None):
+        super().__init__(message)
+        self.response = response or {}
+
+
 mock_slack_sdk = MagicMock()
+errors_module = MagicMock()
+errors_module.SlackApiError = SlackApiError
+mock_slack_sdk.errors = errors_module
 sys.modules["slack_sdk"] = mock_slack_sdk
-sys.modules["slack_sdk.errors"] = MagicMock()
+sys.modules["slack_sdk.errors"] = errors_module

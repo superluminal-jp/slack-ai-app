@@ -775,10 +775,10 @@ class Test016AsyncSqsPath:
 
 
 class Test017EchoMode:
-    """017: When VALIDATION_ZONE_ECHO_MODE is 'true', handler echoes to Slack and does NOT call SQS or InvokeAgentRuntime."""
+    """017 (018 behavior): When VALIDATION_ZONE_ECHO_MODE is 'true', Lambda sends to SQS; echo is done at Verification Agent Runtime."""
 
     def test_echo_mode_posts_to_slack_and_returns_200_no_sqs_no_agentcore(self):
-        """When VALIDATION_ZONE_ECHO_MODE is 'true', handler does NOT call SQS send_message nor invoke_agent_runtime; posts echo via chat_postMessage and returns 200."""
+        """018: When VALIDATION_ZONE_ECHO_MODE is 'true' and queue URL set, handler sends to SQS and does NOT post echo (echo at Runtime)."""
         event = {
             "body": json.dumps({
                 "type": "event_callback",
@@ -835,16 +835,12 @@ class Test017EchoMode:
                                                     result = lambda_handler(event, context)
 
         assert result["statusCode"] == 200
-        mock_sqs.send_message.assert_not_called()
+        mock_sqs.send_message.assert_called_once()
         mock_agentcore.invoke_agent_runtime.assert_not_called()
-        # When bot_token is available, handler posts echo to Slack with [Echo] prefix (US2)
-        if mock_web_client.chat_postMessage.called:
-            call_kw = mock_web_client.chat_postMessage.call_args[1]
-            assert call_kw.get("channel") == "C01234567"
-            assert call_kw.get("text") == "[Echo] hello"
+        mock_web_client.chat_postMessage.assert_not_called()
 
     def test_echo_mode_posts_user_text_and_correct_channel_thread_ts(self):
-        """When echo mode is on, handler posts message with text equal to user_text and correct channel and thread_ts."""
+        """018: When echo mode is on and queue URL set, handler sends to SQS and does NOT post echo (echo at Runtime)."""
         event = {
             "body": json.dumps({
                 "type": "event_callback",
@@ -877,6 +873,7 @@ class Test017EchoMode:
 
         env = {
             "VALIDATION_ZONE_ECHO_MODE": "true",
+            "AGENT_INVOCATION_QUEUE_URL": "https://sqs.ap-northeast-1.amazonaws.com/123456789012/agent-invocation-request",
             "VERIFICATION_AGENT_ARN": "arn:aws:bedrock-agentcore:ap-northeast-1:123:runtime/test",
             "AWS_REGION_NAME": "ap-northeast-1",
             "SLACK_BOT_TOKEN": "xoxb-test",
@@ -901,15 +898,11 @@ class Test017EchoMode:
                                                     result = lambda_handler(event, context)
 
         assert result["statusCode"] == 200
-        # WebClient is patched with return_value=mock_web_client, so client = mock_web_client
-        mock_web_client.chat_postMessage.assert_called_once()
-        call_kw = mock_web_client.chat_postMessage.call_args[1]
-        assert call_kw["channel"] == "C09999999"
-        assert call_kw["text"] == "[Echo] echo this"
-        assert call_kw.get("thread_ts") == "1234567890.000000"
+        mock_sqs.send_message.assert_called_once()
+        mock_web_client.chat_postMessage.assert_not_called()
 
     def test_echo_mode_uses_event_channel_and_ts_when_no_thread_ts_reply_in_same_thread(self):
-        """[US2] Echo uses event channel and event.ts when thread_ts absent so reply is in same thread; text matches user_text for that event."""
+        """018: When echo mode on and queue URL set, handler sends to SQS; echo at Runtime uses event channel/ts."""
         event = {
             "body": json.dumps({
                 "type": "event_callback",
@@ -941,6 +934,7 @@ class Test017EchoMode:
 
         env = {
             "VALIDATION_ZONE_ECHO_MODE": "true",
+            "AGENT_INVOCATION_QUEUE_URL": "https://sqs.ap-northeast-1.amazonaws.com/123456789012/agent-queue",
             "VERIFICATION_AGENT_ARN": "arn:aws:bedrock-agentcore:ap-northeast-1:123:runtime/test",
             "AWS_REGION_NAME": "ap-northeast-1",
             "SLACK_BOT_TOKEN": "xoxb-test",
@@ -965,11 +959,8 @@ class Test017EchoMode:
                                                     result = lambda_handler(event, context)
 
         assert result["statusCode"] == 200
-        mock_web_client.chat_postMessage.assert_called_once()
-        call_kw = mock_web_client.chat_postMessage.call_args[1]
-        assert call_kw["channel"] == "C_US2_CH"
-        assert call_kw.get("thread_ts") == "999.111000"
-        assert call_kw["text"] == "[Echo] user message"
+        mock_sqs.send_message.assert_called_once()
+        mock_web_client.chat_postMessage.assert_not_called()
 
 
 class Test017EchoModeOff:
@@ -1091,6 +1082,71 @@ class Test017EchoModeOff:
                                         with patch("handler.check_rate_limit", return_value=(True, 10)):
                                             with patch("handler.WebClient", return_value=mock_web_client):
                                                 with patch("handler.boto3.client", side_effect=boto_client):
+                                                    result = lambda_handler(event, context)
+
+        assert result["statusCode"] == 200
+        mock_sqs.send_message.assert_called_once()
+        mock_web_client.chat_postMessage.assert_not_called()
+
+
+class Test018EchoAtRuntimeLambdaSendsToSqs:
+    """018: When VALIDATION_ZONE_ECHO_MODE is set (e.g. 'true'), Lambda does NOT post echo; it sends to SQS and returns 200."""
+
+    def test_echo_mode_true_lambda_sends_to_sqs_does_not_post_echo(self):
+        """When VALIDATION_ZONE_ECHO_MODE is 'true' and AGENT_INVOCATION_QUEUE_URL is set, handler sends to SQS and does NOT call chat_postMessage for echo (T005)."""
+        event = {
+            "body": json.dumps({
+                "type": "event_callback",
+                "event_id": "Ev018Echo001",
+                "event": {
+                    "type": "app_mention",
+                    "ts": "1234567890.123456",
+                    "channel": "C01234567",
+                    "text": "<@U12345> hello",
+                    "user": "U12345",
+                },
+                "team_id": "T12345",
+            }),
+            "headers": {
+                "x-slack-signature": "v0=test",
+                "x-slack-request-timestamp": "1234567890",
+            },
+        }
+        mock_sqs = Mock()
+        mock_agentcore = Mock()
+        mock_web_client = Mock()
+
+        def boto_client(service_name, **kwargs):
+            if service_name == "sqs":
+                return mock_sqs
+            if service_name == "bedrock-agentcore":
+                return mock_agentcore
+            return Mock()
+
+        env = {
+            "VALIDATION_ZONE_ECHO_MODE": "true",
+            "AGENT_INVOCATION_QUEUE_URL": "https://sqs.ap-northeast-1.amazonaws.com/123456789012/agent-invocation-request",
+            "VERIFICATION_AGENT_ARN": "arn:aws:bedrock-agentcore:ap-northeast-1:123:runtime/test",
+            "AWS_REGION_NAME": "ap-northeast-1",
+            "SLACK_BOT_TOKEN": "xoxb-test",
+            "SLACK_BOT_TOKEN_SECRET_NAME": "",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            with patch("handler.verify_signature", return_value=True):
+                with patch("handler.is_duplicate_event", return_value=False):
+                    with patch("handler.mark_event_processed", return_value=True):
+                        with patch("handler.validate_prompt", return_value=(True, None)):
+                            with patch("handler.get_token", return_value="xoxb-test"):
+                                with patch(
+                                    "handler.authorize_request",
+                                    return_value=Mock(authorized=True, unauthorized_entities=[]),
+                                ):
+                                    with patch("handler.check_entity_existence", return_value=True):
+                                        with patch("handler.check_rate_limit", return_value=(True, 10)):
+                                            with patch("handler.WebClient", return_value=mock_web_client):
+                                                with patch("handler.boto3.client", side_effect=boto_client):
+                                                    context = Mock()
+                                                    context.aws_request_id = "req-018-001"
                                                     result = lambda_handler(event, context)
 
         assert result["statusCode"] == 200

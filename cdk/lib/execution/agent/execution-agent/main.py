@@ -120,6 +120,16 @@ def ping_endpoint():
     return json.dumps(get_health_status(is_busy=is_busy))
 
 
+@app.route("/", methods=["POST"])
+async def a2a_root_handler(request):
+    """A2A protocol: POST / (root) routes to SDK invocation handler.
+
+    AWS A2A Service Contract requires POST / on port 9000.
+    See: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-service-contract.html
+    """
+    return await app._handle_invocation(request)
+
+
 # ─── Background Processing ───
 
 def _process_bedrock_request(
@@ -219,13 +229,15 @@ def _process_bedrock_request(
             "had_attachments": bool(attachments),
         })
 
-        result = format_success_response(
+        result, file_artifact = format_success_response(
             channel=channel,
             response_text=ai_response,
             bot_token=bot_token,
             thread_ts=thread_ts,
             correlation_id=correlation_id,
         )
+        if file_artifact is not None:
+            result["file_artifact"] = file_artifact
 
         # Complete the async task with success result
         try:
@@ -404,4 +416,5 @@ def handle_message(payload):
 
 
 if __name__ == "__main__":
-    app.run()
+    # A2A protocol contract requires port 9000 (not SDK default 8080)
+    app.run(port=9000)

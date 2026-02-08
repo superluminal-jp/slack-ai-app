@@ -35,11 +35,14 @@ export class VerificationAgentEcr extends Construct {
 
     // Build and push Docker image to ECR
     // Platform: linux/arm64 (required by AgentCore Runtime)
+    // CACHEBUST: set CDK_DOCKER_CACHEBUST=1 (or any value) to force no-cache rebuild on deploy
     this.imageAsset = new DockerImageAsset(this, "Image", {
       directory: dockerDir,
       platform: Platform.LINUX_ARM64,
-      // Exclude unnecessary files from Docker build context
       exclude: ["__pycache__", "*.pyc", ".pytest_cache", "tests"],
+      buildArgs: {
+        CACHEBUST: process.env.CDK_DOCKER_CACHEBUST ?? "",
+      },
     });
 
     this.imageUri = this.imageAsset.imageUri;

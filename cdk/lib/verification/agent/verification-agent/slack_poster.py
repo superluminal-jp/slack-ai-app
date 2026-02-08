@@ -261,3 +261,76 @@ def post_to_slack(
                 e,
             )
             raise
+
+
+def post_file_to_slack(
+    channel: str,
+    file_bytes: bytes,
+    file_name: str,
+    mime_type: str,
+    bot_token: str,
+    thread_ts: Optional[str] = None,
+) -> None:
+    """
+    Upload a file to a Slack channel or thread using files.getUploadURLExternal
+    and files.completeUploadExternal (via WebClient.files_upload_v2).
+
+    Args:
+        channel: Slack channel ID (e.g., "C01234567" or "D01234567")
+        file_bytes: Raw file content (binary)
+        file_name: Filename for the upload (e.g., "export.csv")
+        mime_type: MIME type (e.g., "text/csv", "application/json")
+        bot_token: Slack bot OAuth token (xoxb-*)
+        thread_ts: Optional thread timestamp for posting in a thread
+
+    Raises:
+        ValueError: If channel, file_name, or bot_token is invalid
+        SlackApiError: If Slack API call fails (getUploadURLExternal / completeUploadExternal)
+    """
+    if not channel or not isinstance(channel, str) or not channel.strip():
+        raise ValueError("channel must be a non-empty string")
+    if not file_name or not isinstance(file_name, str) or not file_name.strip():
+        raise ValueError("file_name must be a non-empty string")
+    if not bot_token or not isinstance(bot_token, str) or not bot_token.strip():
+        raise ValueError("bot_token must be a non-empty string")
+    if not bot_token.startswith("xoxb-"):
+        raise ValueError("bot_token must be a valid Slack bot token (starts with xoxb-)")
+    if not isinstance(file_bytes, bytes):
+        raise ValueError("file_bytes must be bytes")
+    if not mime_type or not isinstance(mime_type, str) or not mime_type.strip():
+        raise ValueError("mime_type must be a non-empty string")
+
+    if thread_ts and not _is_valid_timestamp(thread_ts):
+        raise ValueError("thread_ts must be a valid Slack timestamp format")
+
+    client = WebClient(token=bot_token)
+
+    try:
+        response = client.files_upload_v2(
+            channel=channel,
+            filename=file_name,
+            content=file_bytes,
+            title=file_name,
+            thread_ts=thread_ts if thread_ts else None,
+        )
+        log_info(
+            "slack_file_posted",
+            {
+                "channel": channel,
+                "thread_ts": thread_ts,
+                "file_name": file_name,
+                "file_id": response.get("file", {}).get("id") if isinstance(response, dict) else None,
+            },
+        )
+    except SlackApiError as e:
+        log_exception(
+            "slack_post_file_failed",
+            {
+                "channel": channel,
+                "thread_ts": thread_ts,
+                "file_name": file_name,
+                "error": e.response.get("error", "") if e.response else str(e),
+            },
+            e,
+        )
+        raise

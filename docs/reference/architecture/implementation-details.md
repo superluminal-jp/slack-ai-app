@@ -1055,7 +1055,7 @@ def invoke_bedrock(
     return ai_response
 ```
 
-## 7.4.1 AgentCore Agent の実装（Feature Flag: USE_AGENTCORE）
+## 7.4.1 AgentCore Agent の実装（A2A 唯一経路）
 
 AgentCore A2A パスでは、Verification Agent と Execution Agent が Docker コンテナ（ARM64）で動作します。
 
