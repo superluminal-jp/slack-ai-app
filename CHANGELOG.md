@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Strands Migration & Cleanup** (021-strands-migration-cleanup)
+  - Migrated Verification Agent and Execution Agent from `bedrock-agentcore` SDK (`BedrockAgentCoreApp`) to **FastAPI + uvicorn** with manual route definitions (POST `/`, GET `/.well-known/agent-card.json`, GET `/ping`)
+  - CloudWatch IAM policy fix: `StringLike` condition with correct `SlackAI-*` namespace pattern
+  - Echo mode configuration: `validationZoneEchoMode` field in CdkConfig with type-safe boolean handling
+  - E2E test suite (`tests/e2e/`) for Slack flow integration testing
+  - Dependency version pinning with `~=` (compatible release): `strands-agents[a2a]~=1.25.0`, `fastapi~=0.115.0`, `uvicorn~=0.34.0`, `boto3~=1.34.0`, `slack-sdk~=3.33.0`
+  - Test coverage: Verification Agent 63 tests, Execution Agent 79 tests, CDK 25 tests (AgentCore constructs)
 - **Async AgentCore Invocation** (016-async-agentcore-invocation)
   - SlackEventHandler returns HTTP 200 immediately after enqueueing an agent invocation request to SQS (`agent-invocation-request`), avoiding Slack 3s timeout and Lambda blocking
   - Agent Invoker Lambda consumes SQS messages and calls `InvokeAgentRuntime` (Verification Agent); long-running agent runs no longer hit SlackEventHandler Lambda timeout (up to 15 min in Agent Invoker)
@@ -70,6 +77,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Verification Agent and Execution Agent: replaced `bedrock-agentcore` SDK (`BedrockAgentCoreApp`, `_handle_invocation`, `add_async_task`/`complete_async_task`) with FastAPI + uvicorn direct routing
+- Agent containers now use raw JSON POST on port 9000 (not JSON-RPC 2.0) for AgentCore `invoke_agent_runtime` compatibility
 - README.ja.md, README.md, docs/README.md: 014 A2A file-to-Slack feature and recent updates (2026-02-08)
 - docs/reference/operations/slack-setup.md: Added `files:write` scope for 014 file uploads; manifest example updated
 - docs/slack-app-manifest.yaml: Added `files:write` to bot scopes for 014
@@ -105,6 +114,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- `bedrock-agentcore` SDK dependency — replaced by `fastapi`, `uvicorn`, and `strands-agents[a2a]`
+- `BedrockAgentCoreApp` / `_handle_invocation` / `add_async_task` / `complete_async_task` patterns from agent containers
 - `SlackBedrockStack` single-stack deployment — removed from codebase. Two independent stacks (VerificationStack + ExecutionStack) are the standard.
 - Single-stack deployment mode — removed from `cdk/bin/cdk.ts`. Default is two independent stacks deployment.
 

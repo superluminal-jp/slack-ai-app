@@ -1,6 +1,7 @@
 import * as cdk from "aws-cdk-lib";
 import { Template, Match } from "aws-cdk-lib/assertions";
 import { VerificationStack } from "../lib/verification/verification-stack";
+import { validateConfig } from "../lib/types/cdk-config";
 
 describe("VerificationStack", () => {
   let app: cdk.App;
@@ -243,7 +244,7 @@ describe("VerificationStack", () => {
       const templateEcho = Template.fromStack(stackWithEcho);
       templateEcho.hasResourceProperties("AWS::Lambda::Function", {
         Environment: {
-          Variables: expect.objectContaining({
+          Variables: Match.objectLike({
             VALIDATION_ZONE_ECHO_MODE: "true",
           }),
         },
@@ -292,5 +293,36 @@ describe("VerificationStack", () => {
         Description: Match.stringLikeRegexp("SlackEventHandler Lambda ARN"),
       });
     });
+  });
+});
+
+describe("US4: CdkConfig validationZoneEchoMode type safety", () => {
+  const baseConfig = {
+    awsRegion: "ap-northeast-1",
+    bedrockModelId: "amazon.nova-pro-v1:0",
+    deploymentEnv: "dev",
+    verificationStackName: "SlackAI-Verification",
+    executionStackName: "SlackAI-Execution",
+    verificationAccountId: "123456789012",
+    executionAccountId: "123456789012",
+  };
+
+  it("T036: should accept validationZoneEchoMode as boolean (true, false, undefined)", () => {
+    // true
+    const configTrue = validateConfig({ ...baseConfig, validationZoneEchoMode: true });
+    expect(configTrue.validationZoneEchoMode).toBe(true);
+
+    // false
+    const configFalse = validateConfig({ ...baseConfig, validationZoneEchoMode: false });
+    expect(configFalse.validationZoneEchoMode).toBe(false);
+
+    // undefined (omitted)
+    const configUndefined = validateConfig({ ...baseConfig });
+    expect(configUndefined.validationZoneEchoMode).toBeDefined();
+  });
+
+  it("T037: should default validationZoneEchoMode to false when not specified", () => {
+    const config = validateConfig({ ...baseConfig });
+    expect(config.validationZoneEchoMode).toBe(false);
   });
 });

@@ -11,12 +11,12 @@ A: 用語集
 | **Bedrock Guardrails**                      | AWS Bedrock の安全機能。有害コンテンツを検出                                    |
 | **トークン**                                | LLM が処理するテキストの最小単位。日本語では約 4 文字 = 1 トークン             |
 | **fail-closed**                             | セキュリティ失敗時にリクエストを拒否する原則（セキュリティを可用性より優先）   |
-| **AgentCore Runtime**                       | Amazon Bedrock AgentCore が提供するマネージドコンテナランタイム。ARM64 Docker イメージを microVM 上で実行 |
-| **A2A (Agent-to-Agent)**                    | AgentCore のエージェント間通信プロトコル。JSON-RPC 2.0 over HTTP で標準化されたインターフェース |
+| **AgentCore Runtime**                       | Amazon Bedrock AgentCore が提供するマネージドコンテナランタイム。ARM64 Docker イメージを実行。エージェントは FastAPI + uvicorn でルートを定義 |
+| **A2A (Agent-to-Agent)**                    | AgentCore のエージェント間通信プロトコル。`invoke_agent_runtime` API が raw JSON POST を送信 |
 | **Agent Card**                              | A2A 仕様に準拠したエージェントのメタデータ（`/.well-known/agent-card.json`）。Agent Discovery に使用 |
 | **A2A 通信**                                | ゾーン間は AgentCore A2A のみ。Feature Flag は廃止済み。 |
 | **SigV4 (Signature Version 4)**             | AWS の標準的なリクエスト署名プロトコル。AgentCore A2A 通信の認証にも使用 |
-| **JSON-RPC 2.0**                            | JSON ベースの Remote Procedure Call プロトコル。A2A 通信の基盤プロトコル |
+| **JSON-RPC 2.0**                            | JSON ベースの Remote Procedure Call プロトコル。Google A2A 仕様の基盤プロトコル（注: AWS AgentCore は raw JSON POST を使用し、JSON-RPC 2.0 ではない） |
 
 ---
 

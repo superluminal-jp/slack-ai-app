@@ -154,6 +154,15 @@ const verificationAgentName = getConfigString(
 );
 const executionAgentArn = getConfigString("executionAgentArn");
 
+// Echo mode: config file > context variable > default (false)
+const validationZoneEchoMode = (() => {
+  const contextValue = app.node.tryGetContext("validationZoneEchoMode");
+  if (contextValue !== undefined) {
+    return contextValue === true || contextValue === "true";
+  }
+  return config?.validationZoneEchoMode ?? false;
+})();
+
 /**
  * Set loaded config values to CDK context for backward compatibility
  * This ensures that app.node.tryGetContext() calls work as expected
@@ -184,6 +193,9 @@ function setContextFromConfig(config: CdkConfig | null): void {
   app.node.setContext("verificationAgentName", verificationAgentName);
   if (executionAgentArn) {
     app.node.setContext("executionAgentArn", executionAgentArn);
+  }
+  if (validationZoneEchoMode) {
+    app.node.setContext("validationZoneEchoMode", validationZoneEchoMode);
   }
 }
 

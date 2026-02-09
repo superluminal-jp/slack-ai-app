@@ -174,14 +174,14 @@ tests/e2e/                             # NEW: E2E tests
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T036 [P] [US4] Add test that verifies `CdkConfig` interface accepts `validationZoneEchoMode?: boolean` property and Zod schema validates it correctly (true, false, undefined) in `cdk/test/verification-stack.test.ts` or appropriate CDK test file
-- [ ] T037 [P] [US4] Add test that verifies `validationZoneEchoMode` defaults to `false` when not specified in config in `cdk/test/verification-stack.test.ts`
+- [x] T036 [P] [US4] Add test that verifies `CdkConfig` interface accepts `validationZoneEchoMode?: boolean` property and Zod schema validates it correctly (true, false, undefined) in `cdk/test/verification-stack.test.ts` or appropriate CDK test file
+- [x] T037 [P] [US4] Add test that verifies `validationZoneEchoMode` defaults to `false` when not specified in config in `cdk/test/verification-stack.test.ts`
 
 ### Implementation for User Story 4
 
-- [ ] T038 [US4] Add `validationZoneEchoMode?: boolean` to `CdkConfig` interface and `z.boolean().optional().default(false)` to Zod schema in `cdk/lib/types/cdk-config.ts`
-- [ ] T039 [US4] Update `cdk/bin/cdk.ts` to read `validationZoneEchoMode` from config file with fallback to context variable: `config.validationZoneEchoMode ?? (context === true || context === "true")`
-- [ ] T040 [US4] Run CDK tests to verify T036-T037 now pass
+- [x] T038 [US4] Add `validationZoneEchoMode?: boolean` to `CdkConfig` interface and `z.boolean().optional().default(false)` to Zod schema in `cdk/lib/types/cdk-config.ts`
+- [x] T039 [US4] Update `cdk/bin/cdk.ts` to read `validationZoneEchoMode` from config file with fallback to context variable: `config.validationZoneEchoMode ?? (context === true || context === "true")`
+- [x] T040 [US4] Run CDK tests to verify T036-T037 now pass
 
 **Checkpoint**: エコーモードが設定ファイルから型安全に制御可能。後方互換も維持。
 
@@ -195,11 +195,11 @@ tests/e2e/                             # NEW: E2E tests
 
 ### Implementation for User Story 5
 
-- [ ] T041 [US5] Create `tests/e2e/` directory and `tests/e2e/conftest.py` with test configuration (Slack Bot Token, test channel ID, timeout settings) loaded from environment variables
-- [ ] T042 [US5] Create `tests/e2e/test_slack_flow.py` with test `test_echo_mode_full_flow` — send Slack message mentioning bot via `chat.postMessage`, poll for reply with `conversations.history`, assert response contains `[Echo]` prefix, record latency for each step
-- [ ] T043 [US5] Add retry logic and timeout handling to E2E test — max 60 seconds wait, 3 retries on transient Slack API errors, clear error messages on failure with step identification
-- [ ] T044 [US5] Add `tests/e2e/README.md` with prerequisites (env vars: `SLACK_BOT_TOKEN`, `SLACK_TEST_CHANNEL`, `SLACK_BOT_USER_ID`), usage instructions (`pytest tests/e2e/ -v`), and expected output format
-- [ ] T045 [US5] Run E2E test against deployed dev environment (エコーモード有効): `SLACK_BOT_TOKEN=... SLACK_TEST_CHANNEL=... pytest tests/e2e/ -v`
+- [x] T041 [US5] Create `tests/e2e/` directory and `tests/e2e/conftest.py` with test configuration (Slack Bot Token, test channel ID, timeout settings) loaded from environment variables
+- [x] T042 [US5] Create `tests/e2e/test_slack_flow.py` with test `test_echo_mode_full_flow` — send Slack message mentioning bot via `chat.postMessage`, poll for reply with `conversations.history`, assert response contains `[Echo]` prefix, record latency for each step
+- [x] T043 [US5] Add retry logic and timeout handling to E2E test — max 60 seconds wait, 3 retries on transient Slack API errors, clear error messages on failure with step identification
+- [x] T044 [US5] Add `tests/e2e/README.md` with prerequisites (env vars: `SLACK_BOT_TOKEN`, `SLACK_TEST_CHANNEL`, `SLACK_BOT_USER_ID`), usage instructions (`pytest tests/e2e/ -v`), and expected output format
+- [x] T045 [US5] Run E2E test against deployed dev environment (エコーモード有効): `SLACK_BOT_TOKEN=... SLACK_TEST_CHANNEL=... pytest tests/e2e/ -v`
 
 **Checkpoint**: E2E テストスクリプトが全フローを自動検証し、レイテンシを記録。
 
@@ -207,11 +207,11 @@ tests/e2e/                             # NEW: E2E tests
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T046 Run full test suite for both agents: `cd cdk/lib/verification/agent/verification-agent && pytest tests/ -v` and `cd cdk/lib/execution/agent/execution-agent && pytest tests/ -v`
-- [ ] T047 Run full CDK test suite: `cd cdk && npx jest`
-- [ ] T048 Verify zero occurrences of `_handle_invocation` in entire codebase: `grep -r "_handle_invocation" cdk/lib/`
-- [ ] T049 Verify zero occurrences of `bedrock_agentcore` import in agent code: `grep -r "bedrock_agentcore" cdk/lib/verification/agent/ cdk/lib/execution/agent/`
-- [ ] T050 Deploy to dev environment with echo mode and verify end-to-end: `VALIDATION_ZONE_ECHO_MODE=true ./scripts/deploy-split-stacks.sh dev`
+- [x] T046 Run full test suite for both agents: `cd cdk/lib/verification/agent/verification-agent && pytest tests/ -v` and `cd cdk/lib/execution/agent/execution-agent && pytest tests/ -v`
+- [x] T047 Run full CDK test suite: `cd cdk && npx jest`
+- [x] T048 Verify zero occurrences of `_handle_invocation` in entire codebase: `grep -r "_handle_invocation" cdk/lib/`
+- [x] T049 Verify zero occurrences of `bedrock_agentcore` import in agent code: `grep -r "bedrock_agentcore" cdk/lib/verification/agent/ cdk/lib/execution/agent/`
+- [x] T050 Deploy to dev environment with echo mode and verify end-to-end: `VALIDATION_ZONE_ECHO_MODE=true ./scripts/deploy-split-stacks.sh dev`
 
 ---
 

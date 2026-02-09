@@ -1,6 +1,6 @@
 # Slack AI App - CDK Infrastructure
 
-This CDK project deploys the Slack AI application infrastructure to AWS using two independent stacks, with Amazon Bedrock AgentCore Runtime and A2A protocol support.
+This CDK project deploys the Slack AI application infrastructure to AWS using two independent stacks, with Amazon Bedrock AgentCore A2A protocol support. Agent containers use FastAPI + uvicorn for direct route handling.
 
 ## Deployment Architecture
 
@@ -371,12 +371,12 @@ cdk/
 │   │   │   └── execution-agent/            # Execution Agent container
 │   │   │       ├── Dockerfile              # ARM64 container
 │   │   │       ├── requirements.txt
-│   │   │       ├── main.py                 # A2A server (port 9000)
+│   │   │       ├── main.py                 # FastAPI server (port 9000)
 │   │   │       ├── agent_card.py           # Agent Card
 │   │   │       ├── cloudwatch_metrics.py
 │   │   │       ├── bedrock_client_converse.py
 │   │   │       ├── attachment_processor.py
-│   │   │       └── tests/                  # Python tests (41 tests)
+│   │   │       └── tests/                  # Python tests (79 tests)
 │   ├── verification/                  # Verification Stack
 │   │   ├── verification-stack.ts      # Stack definition
 │   │   ├── constructs/
@@ -388,15 +388,15 @@ cdk/
 │   │   │   └── verification-agent/            # Verification Agent container
 │   │   │       ├── Dockerfile                 # ARM64 container
 │   │   │       ├── requirements.txt
-│   │   │       ├── main.py                    # A2A server (port 9000)
+│   │   │       ├── main.py                    # FastAPI server (port 9000)
 │   │   │       ├── a2a_client.py              # Execution Agent A2A client
 │   │   │       ├── agent_card.py              # Agent Card
 │   │   │       ├── cloudwatch_metrics.py
-│   │   │       └── tests/                     # Python tests (32 tests)
+│   │   │       └── tests/                     # Python tests (63 tests)
 │   │   └── lambda/
 │   │       └── slack-event-handler/
 │   └── types/                         # Shared type definitions
-├── test/                              # CDK/Jest tests (24 tests)
+├── test/                              # CDK/Jest tests (25 tests)
 │   └── agentcore-constructs.test.ts   # AgentCore construct tests
 ├── package.json
 ├── tsconfig.json
@@ -406,7 +406,7 @@ cdk/
 **Key Benefits of This Structure**:
 - **Complete Stack Isolation**: Each stack contains CDK code and AgentCore agent code; Verification also has SlackEventHandler Lambda
 - **A2A-Only Communication**: Inter-zone communication is exclusively via AgentCore A2A
-- **Comprehensive Testing**: 97+ tests (Execution + Verification agents, CDK/Jest, SlackEventHandler)
+- **Comprehensive Testing**: 167+ tests (Execution 79 + Verification 63 + CDK/Jest 25+)
 - **Maintainability**: Changes to one stack don't affect the other
 - **Best Practices**: Follows monorepo patterns for feature-based separation
 
@@ -416,7 +416,7 @@ cdk/
 # Run all CDK/Jest tests
 npm run test
 
-# Run AgentCore construct tests (24 tests)
+# Run AgentCore construct tests (25 tests)
 npx jest test/agentcore-constructs.test.ts --verbose
 
 # Run specific stack tests
@@ -424,15 +424,15 @@ npx jest test/execution-stack.test.ts
 npx jest test/verification-stack.test.ts
 
 # Run Python agent tests
-cd lib/execution/agent/execution-agent && python -m pytest tests/ -v     # 41 tests
-cd lib/verification/agent/verification-agent && python -m pytest tests/ -v  # 32 tests
+cd lib/execution/agent/execution-agent && python -m pytest tests/ -v     # 79 tests
+cd lib/verification/agent/verification-agent && python -m pytest tests/ -v  # 63 tests
 ```
 
 ### Test Coverage
 
 | Test Suite | Framework | Tests | Description |
 |------------|-----------|-------|-------------|
-| AgentCore Constructs | Jest | 24 | Runtime, IAM, cross-account policies, Feature Flag |
-| Execution Agent | pytest | 41 | A2A server, async tasks, Bedrock, Agent Card, metrics |
-| Verification Agent | pytest | 32 | Security pipeline, A2A client, Slack posting, Agent Card |
-| **Total** | | **97** | **All passing** |
+| AgentCore Constructs | Jest | 25 | Runtime, IAM, cross-account policies, echo mode config |
+| Execution Agent | pytest | 79 | FastAPI server, Bedrock, Agent Card, metrics, file artifacts |
+| Verification Agent | pytest | 63 | Security pipeline, A2A client, Slack posting, Agent Card, file posting |
+| **Total** | | **167** | **All passing** |

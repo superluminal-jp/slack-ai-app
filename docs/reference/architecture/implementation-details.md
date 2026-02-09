@@ -1057,11 +1057,11 @@ def invoke_bedrock(
 
 ## 7.4.1 AgentCore Agent の実装（A2A 唯一経路）
 
-AgentCore A2A パスでは、Verification Agent と Execution Agent が Docker コンテナ（ARM64）で動作します。
+AgentCore A2A パスでは、Verification Agent と Execution Agent が Docker コンテナ（ARM64）で動作します。FastAPI + uvicorn でルートを直接定義し、`bedrock-agentcore` SDK は使用しません。
 
 **Verification Agent**: `cdk/lib/verification/agent/`
 
-- `main.py` - A2A エントリーポイント (JSON-RPC 2.0, port 9000)
+- `main.py` - FastAPI エントリーポイント (POST `/`, port 9000)
 - `a2a_client.py` - Execution Agent への A2A クライアント
 - `agent_card.py` - Agent Card (`/.well-known/agent-card.json`)
 - `authorization.py` - ホワイトリスト認可
@@ -1072,17 +1072,18 @@ AgentCore A2A パスでは、Verification Agent と Execution Agent が Docker �
 
 **Execution Agent**: `cdk/lib/execution/agent/`
 
-- `main.py` - A2A エントリーポイント (JSON-RPC 2.0, port 9000)
+- `main.py` - FastAPI エントリーポイント (POST `/`, port 9000)
 - `agent_card.py` - Agent Card
 - `cloudwatch_metrics.py` - CloudWatch メトリクス発行
 - `thread_history.py` - スレッド履歴取得
 
 **共通パターン**:
 
-- A2A プロトコル: JSON-RPC 2.0 over HTTP (port 9000)
-- 非同期タスク: `add_async_task` → バックグラウンド処理 → `complete_async_task`
+- A2A プロトコル: raw JSON POST over HTTP (port 9000) — AgentCore `invoke_agent_runtime` が送信する形式
+- FastAPI で POST `/`、GET `/.well-known/agent-card.json`、GET `/ping` を定義
 - Agent Discovery: `/.well-known/agent-card.json`
 - ヘルスチェック: `/ping` (Healthy / HealthyBusy)
+- 依存関係: `strands-agents[a2a]~=1.25.0`, `fastapi~=0.115.0`, `uvicorn~=0.34.0`, `boto3~=1.34.0`, `slack-sdk~=3.33.0`
 
 ---
 

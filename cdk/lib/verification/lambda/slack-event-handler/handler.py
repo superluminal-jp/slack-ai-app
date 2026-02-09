@@ -229,14 +229,22 @@ def lambda_handler(event, context):
                 user_id = slack_event.get("user")
                 channel_id = slack_event.get("channel")
                 
-                # Get Bot Token for Existence Check
+                # Get Bot Token (DynamoDB → Secrets Manager → env var fallback)
                 bot_token = None
                 if team_id:
                     bot_token = get_token(team_id)
-                    if not bot_token:
-                        bot_token = os.environ.get("SLACK_BOT_TOKEN")
-                else:
+                if not bot_token:
+                    bot_token_secret_name = os.environ.get("SLACK_BOT_TOKEN_SECRET_NAME")
+                    if bot_token_secret_name:
+                        bot_token = get_secret_from_secrets_manager(bot_token_secret_name)
+                if not bot_token:
                     bot_token = os.environ.get("SLACK_BOT_TOKEN")
+                # Store token in DynamoDB for future lookups
+                if bot_token and team_id:
+                    try:
+                        store_token(team_id, bot_token)
+                    except Exception as e:
+                        log_exception("token_storage_failed", {"team_id": team_id}, e)
                 
                 # Perform Existence Check if Bot Token is available
                 # Per FR-011: Skip Existence Check if Bot Token is unavailable (graceful degradation)
@@ -599,15 +607,7 @@ def lambda_handler(event, context):
                         context,
                     )
 
-                    # Post validation error to user
-                    bot_token = None
-                    if team_id:
-                        bot_token = get_token(team_id)
-                        if not bot_token:
-                            bot_token = os.environ.get("SLACK_BOT_TOKEN")
-                    else:
-                        bot_token = os.environ.get("SLACK_BOT_TOKEN")
-
+                    # Post validation error to user (bot_token already retrieved above)
                     if bot_token and channel:
                         client = WebClient(token=bot_token)
                         client.chat_postMessage(channel=channel, text=error_message)
@@ -624,51 +624,6 @@ def lambda_handler(event, context):
                         "headers": {"Content-Type": "application/json"},
                         "body": json.dumps({"ok": True}),
                     }
-
-                    # Get bot token from DynamoDB (with fallback to environment variable)
-                    bot_token = None
-                    if team_id:
-                        bot_token = get_token(team_id)
-                        if not bot_token:
-                            # Fallback to Secrets Manager or environment variable
-                            bot_token_secret_name = os.environ.get(
-                                "SLACK_BOT_TOKEN_SECRET_NAME"
-                            )
-                            if bot_token_secret_name:
-                                bot_token = get_secret_from_secrets_manager(
-                                    bot_token_secret_name
-                                )
-                            else:
-                                # Fallback to environment variable for backward compatibility
-                                bot_token = os.environ.get("SLACK_BOT_TOKEN")
-                        # Store token in DynamoDB for future use
-                        if bot_token:
-                            try:
-                                store_token(team_id, bot_token)
-                                log_event(
-                                    "INFO",
-                                    "token_stored",
-                                    {"team_id": team_id},
-                                    context,
-                                )
-                            except Exception as e:
-                                log_exception(
-                                    "token_storage_failed",
-                                    {"team_id": team_id},
-                                    e,
-                                )
-                else:
-                    # Fallback to Secrets Manager or environment variable if no team_id
-                    bot_token_secret_name = os.environ.get(
-                        "SLACK_BOT_TOKEN_SECRET_NAME"
-                    )
-                    if bot_token_secret_name:
-                        bot_token = get_secret_from_secrets_manager(
-                            bot_token_secret_name
-                        )
-                    else:
-                        # Fallback to environment variable for backward compatibility
-                        bot_token = os.environ.get("SLACK_BOT_TOKEN")
 
                 # Add 👀 reaction to indicate request received (non-blocking)
                 # Best practice: Use "eyes" emoji to show message is being reviewed/processed

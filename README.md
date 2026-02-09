@@ -2,7 +2,7 @@
 
 > **日本語版**: [README.ja.md](README.ja.md)
 
-A Slack bot that securely connects Slack with Amazon Bedrock to provide AI-generated responses. Powered by Amazon Bedrock AgentCore Runtime and A2A (Agent-to-Agent) protocol for inter-zone communication, with enterprise-grade multi-layered defense security.
+A Slack bot that securely connects Slack with Amazon Bedrock to provide AI-generated responses. Uses Amazon Bedrock AgentCore with A2A (Agent-to-Agent) protocol for inter-zone communication, with FastAPI-based agent containers and enterprise-grade multi-layered defense security.
 
 ## What This System Does
 
@@ -123,7 +123,7 @@ The system processes requests through two independent zones via a single **Agent
 │                        │                                     │
 │ ┌─────────────────────▼──────────────────────────────────┐ │
 │ │ Verification Agent (AgentCore Runtime, ARM64)           │ │
-│ │ - A2A protocol (JSON-RPC 2.0, port 9000)               │ │
+│ │ - A2A protocol (raw JSON POST, port 9000)              │ │
 │ │ - Security pipeline: existence → auth → rate limit      │ │
 │ │ - Agent Card: /.well-known/agent-card.json              │ │
 │ │ [3] InvokeAgentRuntime (SigV4, cross-account)           │ │
@@ -135,9 +135,9 @@ The system processes requests through two independent zones via a single **Agent
 │ Execution Zone                                               │
 │ ┌─────────────────────────────────────────────────────────┐ │
 │ │ Execution Agent (AgentCore Runtime, ARM64)               │ │
-│ │ - Async tasks: add_async_task → background processing   │ │
+│ │ - FastAPI POST handler (raw JSON, port 9000)           │ │
 │ │ - Bedrock Converse API, attachment processing           │ │
-│ │ [4] complete_async_task → return result                  │ │
+│ │ [4] Return JSON result via FastAPI response             │ │
 │ └──────────────────────┬──────────────────────────────────┘ │
 └──────────────────────┬──────────────────────────────────────┘
                        │ [4] A2A response (async polling)
@@ -152,7 +152,7 @@ Flow (AgentCore A2A):
 [1] User sends @bot question
 [2] SlackEventHandler → Verification Agent (InvokeAgentRuntime)
 [3] Verification Agent → Execution Agent (A2A, SigV4)
-[4] Execution Agent → Bedrock → async result return
+[4] Execution Agent → Bedrock → return result via FastAPI
 [5] Verification Agent → Slack API → thread reply
 ```
 
@@ -177,7 +177,7 @@ This separation enables:
 - **Cross-account deployment**: Deploy verification and execution in different AWS accounts
 - **Independent updates**: Update one zone without affecting the other
 - **Enhanced security**: SigV4 + resource-based policies for strong security boundaries
-- **Zero-downtime rollback**: Instantly switch to legacy path via Feature Flag
+- **Simplified architecture**: Direct FastAPI routing in agent containers, no SDK dependency
 
 ## Key Features
 
@@ -209,7 +209,7 @@ This separation enables:
 ### Infrastructure
 
 - **AWS CDK**: Infrastructure as code in TypeScript
-- **AgentCore Runtime**: A2A protocol-enabled ARM64 containers (microVM)
+- **AgentCore Runtime**: A2A protocol ARM64 Docker containers with FastAPI
 - **ECR**: Docker image management for AgentCore agents
 - **DynamoDB**: Stores tokens, caches verification results, prevents duplicates
 - **AWS Secrets Manager**: Securely stores Slack credentials and API keys
@@ -260,7 +260,7 @@ slack-ai-app/
 │   │   │   │       ├── main.py                  # A2A server
 │   │   │   │       ├── agent_card.py            # Agent Card definition
 │   │   │   │       ├── cloudwatch_metrics.py    # Metrics
-│   │   │   │       └── tests/                   # Python tests (41 tests)
+│   │   │   │       └── tests/                   # Python tests (79 tests)
 │   │   │   └── lambda/                          # Legacy Lambda code
 │   │   ├── verification/       # Verification Stack
 │   │   │   ├── verification-stack.ts
@@ -274,10 +274,10 @@ slack-ai-app/
 │   │   │   │       ├── a2a_client.py             # Execution Agent A2A client
 │   │   │   │       ├── agent_card.py             # Agent Card definition
 │   │   │   │       ├── cloudwatch_metrics.py     # Metrics
-│   │   │   │       └── tests/                    # Python tests (32 tests)
+│   │   │   │       └── tests/                    # Python tests (63 tests)
 │   │   │   └── lambda/                           # SlackEventHandler Lambda
 │   │   └── types/              # Shared type definitions
-│   └── test/                   # CDK/Jest tests (24 tests)
+│   └── test/                   # CDK/Jest tests (25 tests)
 ├── docs/                       # Documentation
 │   ├── reference/              # Architecture, Security, Operations
 │   ├── explanation/            # Design Principles, ADRs
@@ -292,13 +292,13 @@ slack-ai-app/
 ### Run Tests
 
 ```bash
-# CDK construct tests (Jest, 24 tests)
+# CDK construct tests (Jest, 25 tests)
 cd cdk && npx jest test/agentcore-constructs.test.ts --verbose
 
-# Execution Agent tests (pytest, 41 tests)
+# Execution Agent tests (pytest, 79 tests)
 cd cdk/lib/execution/agent/execution-agent && python -m pytest tests/ -v
 
-# Verification Agent tests (pytest, 32 tests)
+# Verification Agent tests (pytest, 63 tests)
 cd cdk/lib/verification/agent/verification-agent && python -m pytest tests/ -v
 
 # SlackEventHandler Lambda tests
@@ -466,26 +466,6 @@ For attacks using real `team_id`/`user_id`/`channel_id` (when both Signing Secre
 - Monitor anomalous access patterns
 - Establish immediate response procedures when key leakage is suspected
 
-### Execution API Authentication Keys
-
-Communication from Verification Zone to Execution Zone uses one of the following authentication methods.
-
-#### API Key Authentication (Default)
-
-- **Purpose**: Authenticate to Execution API Gateway
-- **Storage**: AWS Secrets Manager (`execution-api-key-{env}`)
-  - Development: `execution-api-key-dev`
-  - Production: `execution-api-key-prod`
-- **Usage**: Set API key in `x-api-key` header
-- **Retrieval**: Lambda function retrieves from Secrets Manager at runtime
-
-#### IAM Authentication (Alternative)
-
-- **Purpose**: Authenticate to Execution API Gateway (alternative to API key)
-- **Storage**: IAM role (Lambda execution role)
-- **Usage**: AWS Signature Version 4 (SigV4) signing
-- **Configuration**: Set environment variable `EXECUTION_API_AUTH_METHOD=iam`
-
 ### Key Retrieval and Caching
 
 - **Retrieval Timing**: Retrieved from Secrets Manager when Lambda function executes
@@ -500,7 +480,6 @@ Communication from Verification Zone to Execution Zone uses one of the following
 
 - **Signing Secret**: Regenerate in Slack app settings, then manually update Secrets Manager
 - **Bot Token**: Regenerate in Slack app settings, then manually update Secrets Manager
-- **Execution API Key**: Generate new API key in API Gateway, then update Secrets Manager (zero downtime)
 
 ### Security Considerations
 
@@ -559,10 +538,16 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 
-**Last Updated**: 2026-02-08
+**Last Updated**: 2026-02-09
 
 ## Recent Updates
 
+- **2026-02-09**: Strands migration cleanup (021)
+  - Migrated both agents from `bedrock-agentcore` SDK to FastAPI + uvicorn with direct route definitions
+  - CloudWatch IAM namespace fix (`StringLike` with `SlackAI-*` pattern)
+  - Echo mode config (`validationZoneEchoMode` in CdkConfig)
+  - Dependency version pinning (`~=`), E2E test suite
+  - Test counts: Verification 63, Execution 79, CDK 25
 - **2026-02-08**: A2A file to Slack (014)
   - Execution Agent returns AI-generated files (CSV/JSON/text) as `generated_file` artifact
   - Verification Agent parses artifact and posts to thread (text then file) via `post_file_to_slack` (Slack SDK files_upload_v2)
@@ -573,7 +558,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
   - Containerized Verification Agent / Execution Agent (ARM64 Docker)
   - SigV4 authentication + resource-based policies for cross-account support
   - Agent Card (`/.well-known/agent-card.json`) for Agent Discovery
-  - Async task management (`add_async_task` / `complete_async_task`)
   - AgentCore A2A as the only communication path
-  - 97 TDD tests all passing (Python 73 + CDK/Jest 24)
+  - 97 TDD tests all passing (Python 73 + CDK/Jest 24, since expanded to 167+)
 - **2025-12-28**: Added dual authentication support (IAM and API key) for Execution API Gateway

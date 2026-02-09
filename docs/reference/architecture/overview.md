@@ -200,7 +200,6 @@
 ## 2.4 AgentCore A2A アーキテクチャ（唯一のゾーン間経路）
 
 > ゾーン間通信は AgentCore A2A のみです。レガシー経路は削除済みです。
-> 無効時は従来の API Gateway + Lambda + SQS パスが使用されます。
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -220,7 +219,7 @@
 │                        │                                     │
 │ ┌─────────────────────▼──────────────────────────────────┐ │
 │ │ Verification Agent (AgentCore Runtime, ARM64)           │ │
-│ │ - A2Aプロトコル (JSON-RPC 2.0, port 9000)              │ │
+│ │ - A2Aプロトコル (raw JSON POST, port 9000)             │ │
 │ │ - セキュリティパイプライン: 存在確認 → 認可 → レート制限│ │
 │ │ - Agent Card: /.well-known/agent-card.json              │ │
 │ │ - Health: /ping (Healthy / HealthyBusy)                 │ │
@@ -233,12 +232,12 @@
 │ Execution Zone (Account B)                                  │
 │ ┌─────────────────────────────────────────────────────────┐ │
 │ │ Execution Agent (AgentCore Runtime, ARM64)               │ │
-│ │ - A2Aプロトコル (JSON-RPC 2.0, port 9000)              │ │
-│ │ - 非同期タスク: add_async_task → バックグラウンド処理   │ │
+│ │ - A2Aプロトコル (raw JSON POST, port 9000)             │ │
+│ │ - FastAPI POST ハンドラで処理                            │ │
 │ │ - Bedrock Converse API呼び出し                          │ │
 │ │ - 添付ファイル処理 (画像 / ドキュメント)                 │ │
 │ │ - Agent Card: /.well-known/agent-card.json              │ │
-│ │ [4] complete_async_task → 結果返却                       │ │
+│ │ [4] FastAPI レスポンスで結果返却                         │ │
 │ └──────────────────────┬──────────────────────────────────┘ │
 │                        ↓                                     │
 │ ┌─────────────────────────────────────────────────────────┐ │
@@ -268,8 +267,8 @@
 | ゾーン間通信 | API Gateway + Lambda | AgentCore Runtime (A2A) |
 | 認証 | IAM SigV4 / APIキー | SigV4 (自動) |
 | レスポンス配信 | SQS → SlackResponseHandler | Verification Agent 直接投稿 |
-| 非同期処理 | SQS メッセージキュー | AgentCore async task |
-| コンテナ | Lambda (マネージド) | ARM64 Docker (microVM) |
+| 非同期処理 | SQS メッセージキュー | FastAPI 直接レスポンス |
+| コンテナ | Lambda (マネージド) | ARM64 Docker (FastAPI + uvicorn) |
 | Agent Discovery | なし | Agent Card (A2A準拠) |
 | ゾーン間通信 | A2A のみ | AgentCore InvokeAgentRuntime |
 

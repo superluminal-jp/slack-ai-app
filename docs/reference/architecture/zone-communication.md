@@ -300,7 +300,7 @@ flowchart TB
 
 | 項目 | 内容 |
 |------|------|
-| **プロトコル** | A2A (JSON-RPC 2.0 over HTTP, port 9000) |
+| **プロトコル** | A2A (raw JSON POST, port 9000) |
 | **エンドポイント** | Execution Agent AgentCore Runtime |
 | **呼び出し元** | Verification Agent (`a2a_client.py`) |
 | **認証** | SigV4 (boto3 自動署名) |
@@ -323,11 +323,10 @@ flowchart TB
 
 ### 6.3 非同期レスポンスパターン
 
-1. Execution Agent は即座に `{"status": "accepted", "task_id": "..."}` を返却
-2. バックグラウンドスレッドで Bedrock 処理を実行
-3. 完了後 `complete_async_task(task_id, result)` を呼び出し
-4. Verification Agent は `GetAsyncTaskResult` でポーリング (指数バックオフ)
-5. 結果取得後、Slack API に直接投稿
+1. Verification Agent が `InvokeAgentRuntime` で Execution Agent を呼び出し
+2. Execution Agent の FastAPI POST ハンドラが Bedrock 処理を実行
+3. 処理完了後、FastAPI レスポンスで結果を返却
+4. Verification Agent が結果を受け取り、Slack API に直接投稿
 
 ### 6.4 Agent Discovery
 
@@ -395,8 +394,8 @@ flowchart LR
 |------|------|------|------------|------|
 | **Slack → 検証** | HTTPS POST（Function URL） | 署名検証（Lambda 内） | JSON | 3 秒以内に 200 返却 |
 | **Lambda → Verification Agent** | InvokeAgentRuntime | SigV4 | JSON (A2A payload) | Lambda から AgentCore Runtime を呼び出し |
-| **Verification → Execution Agent** | A2A InvokeAgentRuntime | SigV4 (クロスアカウント対応) | JSON-RPC 2.0 | 非同期 (accepted → poll) |
-| **Execution → Verification Agent** | GetAsyncTaskResult | SigV4 | JSON (ExecutionResponse) | ポーリング (指数バックオフ) |
+| **Verification → Execution Agent** | A2A InvokeAgentRuntime | SigV4 (クロスアカウント対応) | raw JSON POST | FastAPI ハンドラで処理 |
+| **Execution → Verification Agent** | InvokeAgentRuntime レスポンス | SigV4 | JSON (ExecutionResponse) | FastAPI レスポンスで返却 |
 | **Verification Agent → Slack** | HTTPS POST（Slack API） | `bot_token` | `chat.postMessage` | 直接投稿 (SQS 不要) |
 
 ---

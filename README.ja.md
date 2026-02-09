@@ -2,7 +2,7 @@
 
 > **English version**: [README.md](README.md)
 
-Slack と Amazon Bedrock をセキュアに接続し、AI 生成レスポンスを提供する Slack ボット。Amazon Bedrock AgentCore Runtime と A2A（Agent-to-Agent）プロトコルによるゾーン間通信、エンタープライズレベルのセキュリティ多層防御を実現します。
+Slack と Amazon Bedrock をセキュアに接続し、AI 生成レスポンスを提供する Slack ボット。Amazon Bedrock AgentCore と A2A（Agent-to-Agent）プロトコルによるゾーン間通信、FastAPI ベースのエージェントコンテナ、エンタープライズレベルのセキュリティ多層防御を実現します。
 
 ## このシステムの目的
 
@@ -123,7 +123,7 @@ export DEPLOYMENT_ENV=prod
 │                        │                                     │
 │ ┌─────────────────────▼──────────────────────────────────┐ │
 │ │ Verification Agent (AgentCore Runtime, ARM64)           │ │
-│ │ - A2A プロトコル (JSON-RPC 2.0, port 9000)              │ │
+│ │ - A2A プロトコル (raw JSON POST, port 9000)             │ │
 │ │ - セキュリティパイプライン: 存在確認 → 認可 → レート制限│ │
 │ │ - Agent Card: /.well-known/agent-card.json              │ │
 │ │ [3] InvokeAgentRuntime (SigV4, クロスアカウント対応)    │ │
@@ -135,9 +135,9 @@ export DEPLOYMENT_ENV=prod
 │ 実行ゾーン (Execution Zone)                                  │
 │ ┌─────────────────────────────────────────────────────────┐ │
 │ │ Execution Agent (AgentCore Runtime, ARM64)               │ │
-│ │ - 非同期タスク: add_async_task → バックグラウンド処理   │ │
+│ │ - FastAPI POST ハンドラ (raw JSON, port 9000)           │ │
 │ │ - Bedrock Converse API、添付ファイル処理                │ │
-│ │ [4] complete_async_task → 結果返却                       │ │
+│ │ [4] FastAPI レスポンスで結果返却                         │ │
 │ └──────────────────────┬──────────────────────────────────┘ │
 └──────────────────────┬──────────────────────────────────────┘
                        │ [4] A2A レスポンス（非同期ポーリング）
@@ -152,7 +152,7 @@ export DEPLOYMENT_ENV=prod
 [1] ユーザーが @bot で質問を送信
 [2] SlackEventHandler → Verification Agent (InvokeAgentRuntime)
 [3] Verification Agent → Execution Agent (A2A, SigV4)
-[4] Execution Agent → Bedrock → 非同期結果返却
+[4] Execution Agent → Bedrock → FastAPI で結果返却
 [5] Verification Agent → Slack API → スレッド返信
 ```
 
@@ -177,7 +177,7 @@ export DEPLOYMENT_ENV=prod
 - **クロスアカウントデプロイ**: 検証と実行を異なる AWS アカウントにデプロイ
 - **独立した更新**: 一方のゾーンを更新しても他方に影響しない
 - **セキュリティ強化**: SigV4 + リソースベースポリシーによる強固なセキュリティ境界
-- **ゼロダウンタイムロールバック**: Feature Flag で即座にレガシーパスに切り替え可能
+- **シンプルなアーキテクチャ**: エージェントコンテナで FastAPI による直接ルーティング、SDK 依存なし
 
 ## 主な機能
 
@@ -209,7 +209,7 @@ export DEPLOYMENT_ENV=prod
 ### インフラストラクチャ
 
 - **AWS CDK**: TypeScript によるインフラストラクチャ as コード
-- **AgentCore Runtime**: A2A プロトコル対応の ARM64 コンテナ (microVM)
+- **AgentCore Runtime**: A2A プロトコル対応の ARM64 Docker コンテナ (FastAPI)
 - **ECR**: AgentCore エージェントの Docker イメージ管理
 - **DynamoDB**: トークンを保存し、検証結果をキャッシュし、重複を防止
 - **AWS Secrets Manager**: Slack 認証情報と API キーを安全に保存
@@ -260,7 +260,7 @@ slack-ai-app/
 │   │   │   │       ├── main.py                  # A2A サーバー
 │   │   │   │       ├── agent_card.py            # Agent Card 定義
 │   │   │   │       ├── cloudwatch_metrics.py    # メトリクス
-│   │   │   │       └── tests/                   # Python テスト (41 tests)
+│   │   │   │       └── tests/                   # Python テスト (79 tests)
 │   │   │   └── lambda/                          # レガシー Lambda コード
 │   │   ├── verification/       # Verification Stack
 │   │   │   ├── verification-stack.ts
@@ -274,10 +274,10 @@ slack-ai-app/
 │   │   │   │       ├── a2a_client.py             # Execution Agent A2A クライアント
 │   │   │   │       ├── agent_card.py             # Agent Card 定義
 │   │   │   │       ├── cloudwatch_metrics.py     # メトリクス
-│   │   │   │       └── tests/                    # Python テスト (32 tests)
+│   │   │   │       └── tests/                    # Python テスト (63 tests)
 │   │   │   └── lambda/                           # SlackEventHandler Lambda
 │   │   └── types/              # 共通型定義
-│   └── test/                   # CDK/Jest テスト (24 tests)
+│   └── test/                   # CDK/Jest テスト (25 tests)
 ├── docs/                       # ドキュメント
 │   ├── reference/              # アーキテクチャ、セキュリティ、運用
 │   ├── explanation/            # 設計原則、ADR
@@ -292,13 +292,13 @@ slack-ai-app/
 ### テスト実行
 
 ```bash
-# CDK コンストラクトテスト (Jest, 24 tests)
+# CDK コンストラクトテスト (Jest, 25 tests)
 cd cdk && npx jest test/agentcore-constructs.test.ts --verbose
 
-# Execution Agent テスト (pytest, 41 tests)
+# Execution Agent テスト (pytest, 79 tests)
 cd cdk/lib/execution/agent/execution-agent && python -m pytest tests/ -v
 
-# Verification Agent テスト (pytest, 32 tests)
+# Verification Agent テスト (pytest, 63 tests)
 cd cdk/lib/verification/agent/verification-agent && python -m pytest tests/ -v
 
 # SlackEventHandler Lambda テスト
@@ -473,26 +473,6 @@ Signing Secret + Bot Token の両方が漏洩した場合、攻撃者は：
 - 異常なアクセスパターンの監視
 - 鍵の漏洩が疑われる場合の即座の対応手順の確立
 
-### Execution API 認証鍵
-
-検証ゾーンから実行ゾーンへの通信には、以下のいずれかの認証方法を使用します。
-
-#### API キー認証（デフォルト）
-
-- **用途**: Execution API Gateway への認証
-- **保存場所**: AWS Secrets Manager（`execution-api-key-{env}`）
-  - 開発環境: `execution-api-key-dev`
-  - 本番環境: `execution-api-key-prod`
-- **使用方法**: `x-api-key` ヘッダーに API キーを設定
-- **取得方法**: Lambda 関数が実行時に Secrets Manager から取得
-
-#### IAM 認証（代替）
-
-- **用途**: Execution API Gateway への認証（API キー認証の代替）
-- **保存場所**: IAM ロール（Lambda 実行ロール）
-- **使用方法**: AWS Signature Version 4 (SigV4) 署名
-- **設定方法**: 環境変数 `EXECUTION_API_AUTH_METHOD=iam` を設定
-
 ### 鍵の取得とキャッシュ
 
 - **取得タイミング**: Lambda 関数の実行時に Secrets Manager から取得
@@ -507,7 +487,6 @@ Signing Secret + Bot Token の両方が漏洩した場合、攻撃者は：
 
 - **Signing Secret**: Slack アプリ設定で再生成後、Secrets Manager を手動更新
 - **Bot Token**: Slack アプリ設定で再生成後、Secrets Manager を手動更新
-- **Execution API キー**: API Gateway で新しい API キーを生成後、Secrets Manager を更新（ダウンタイムなし）
 
 ### セキュリティ上の考慮事項
 
@@ -569,10 +548,16 @@ Signing Secret + Bot Token の両方が漏洩した場合、攻撃者は：
 
 ---
 
-**最終更新日**: 2026-02-08
+**最終更新日**: 2026-02-09
 
 ## 最近の更新
 
+- **2026-02-09**: Strands マイグレーション & クリーンアップ（021）
+  - Verification Agent / Execution Agent を `bedrock-agentcore` SDK から FastAPI + uvicorn に移行（直接ルート定義）
+  - CloudWatch IAM ネームスペース修正（`StringLike` + `SlackAI-*` パターン）
+  - Echo モード設定（CdkConfig に `validationZoneEchoMode` 追加）
+  - 依存関係バージョンピニング（`~=`）、E2E テストスイート追加
+  - テスト数: Verification 63、Execution 79、CDK 25
 - **2026-02-08**: A2A ファイルを Slack スレッドに返す機能を実装（014）
   - Execution Zone が AI 生成ファイル（CSV/JSON/テキスト）を `generated_file` artifact で返却
   - Verification Zone が artifact をパースし、Slack スレッドにテキスト→ファイルの順で投稿（`post_file_to_slack`、Slack SDK files_upload_v2）
@@ -584,7 +569,6 @@ Signing Secret + Bot Token の両方が漏洩した場合、攻撃者は：
   - Verification Agent / Execution Agent のコンテナ化 (ARM64 Docker)
   - SigV4 認証 + リソースベースポリシーによるクロスアカウント対応
   - Agent Card (`/.well-known/agent-card.json`) による Agent Discovery
-  - 非同期タスク管理 (`add_async_task` / `complete_async_task`)
   - AgentCore A2A を唯一の通信経路として採用
-  - TDD テスト 97 件全パス（Python 73 + CDK/Jest 24）
+  - TDD テスト 97 件全パス（Python 73 + CDK/Jest 24、以降 167+ に拡大）
 - **2025-12-28**: Execution API Gateway にデュアル認証サポート（IAM 認証と API キー認証）を追加

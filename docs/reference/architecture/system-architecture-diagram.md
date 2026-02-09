@@ -82,7 +82,7 @@ flowchart TB
 |-------------|-----------------|------|
 | **API Gateway** | ExecutionApi (REST API) | レガシー。リージョナル。POST /execute、Lambda プロキシ統合。認証: IAM (SigV4) または API キー（x-api-key）。 |
 | **Lambda** | BedrockProcessor | レガシー。Bedrock Converse API 呼び出し、スレッド履歴取得、添付ファイル処理。結果を ExecutionResponseQueue に送信。 |
-| **AgentCore Runtime** | Execution Agent | **新規 (Feature Flag)**。ARM64 Docker コンテナ。A2A プロトコル (JSON-RPC 2.0, port 9000)。Bedrock Converse API 呼び出し、添付ファイル処理、非同期タスク管理。SigV4 認証。 |
+| **AgentCore Runtime** | Execution Agent | ARM64 Docker コンテナ。A2A プロトコル (raw JSON POST, port 9000)。FastAPI + uvicorn。Bedrock Converse API 呼び出し、添付ファイル処理。SigV4 認証。 |
 | **ECR** | Execution Agent Image | **新規 (Feature Flag)**。Execution Agent の Docker イメージ (Python 3.11, ARM64)。 |
 | **AWS Bedrock** | Converse API | 統一 IF、マルチモーダル（テキスト+画像）。Guardrails 適用。Model Invocation Logging。 |
 
@@ -93,7 +93,7 @@ flowchart TB
 | リソース種別 | 論理名 / 識別子 | ゾーン | 説明 |
 |-------------|-----------------|--------|------|
 | **AgentCore Runtime** | Verification Agent | 検証層 | セキュリティ検証パイプライン (存在確認、認可、レート制限)。Execution Agent への A2A 委任。Slack 直接投稿。 |
-| **AgentCore Runtime** | Execution Agent | 実行層 | Bedrock Converse API 呼び出し。添付ファイル処理。非同期タスク管理 (add_async_task / complete_async_task)。 |
+| **AgentCore Runtime** | Execution Agent | 実行層 | Bedrock Converse API 呼び出し。添付ファイル処理。FastAPI POST ハンドラで直接レスポンス返却。 |
 | **AgentCore RuntimeEndpoint** | DEFAULT (各 Agent) | 両方 | 各 Runtime のデフォルトエンドポイント。 |
 | **ECR** | Verification Agent Image | 検証層 | Python 3.11, ARM64 コンテナイメージ。 |
 | **ECR** | Execution Agent Image | 実行層 | Python 3.11, ARM64 コンテナイメージ。 |
