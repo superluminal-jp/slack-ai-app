@@ -10,7 +10,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# Python virtualenv lib/ — scoped to root only (not cdk/lib/)
+/lib/
 lib64/
 parts/
 sdist/
@@ -25,7 +26,6 @@ MANIFEST
 venv/
 ENV/
 env/
-*.pyc
 
 # Node.js / TypeScript
 node_modules/
@@ -34,15 +34,12 @@ yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
 .pnpm-debug.log*
-dist/
 *.tsbuildinfo
 .npm
 .eslintcache
 .node_repl_history
 
-# AWS CDK
-*.js
-*.d.ts
+# AWS CDK (compiled .js/.d.ts handled by cdk/.gitignore)
 cdk.out/
 .cdk.staging/
 cdk.context.json
@@ -65,11 +62,6 @@ Thumbs.db
 # Logs
 *.log
 logs/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
 
 # Testing
 coverage/
@@ -83,13 +75,11 @@ htmlcov/
 .cache
 nosetests.xml
 coverage.xml
-*.cover
 .nyc_output
 
 # Temporary files
 *.tmp
 *.temp
-*.swp
 .cache/
 
 # AWS
