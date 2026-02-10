@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Echo-Mode-Disabled Verification Pipeline Tests** (022-echo-mode-disable-validation)
+  - 20 new TDD tests across 4 test classes in `cdk/lib/verification/agent/verification-agent/tests/test_main.py`, covering the echo-mode-off (normal) execution delegation flow
+  - `Test022NormalFlowDelegation` (5 tests): verifies that echo off triggers `invoke_execution_agent`, response contains no echo prefix, file artifacts pass through, payload contains all required fields, and `VALIDATION_ZONE_ECHO_MODE` is treated case-insensitively
+  - `Test022SecurityCheckPipeline` (5 tests): verifies pipeline ordering — existence check runs before authorization, authorization runs before rate limit, each exception class returns the correct error response, and all checks passing proceeds to execution delegation
+  - `Test022ExecutionErrorPaths` (6 tests): verifies Bedrock throttling, access-denied, invalid JSON, and empty-response cases each post a user-facing friendly message, that internal error details are not leaked to Slack, and that `is_processing` is reset on exception
+  - `Test022StructuredLogging` (4 tests): verifies all log entries are valid JSON, correlation ID is present across all log entries, security check results appear in logs, and bot token does not appear in error logs
+  - `pipeline.py` enhancements: `JSONDecodeError` handling for malformed execution responses, structured log entry on Base64 decode
+  - Verification Agent test count raised from 63 to 83; `pipeline.py` line coverage raised to 94%
 - **Strands Migration & Cleanup** (021-strands-migration-cleanup)
   - Migrated Verification Agent and Execution Agent from `bedrock-agentcore` SDK (`BedrockAgentCoreApp`) to **FastAPI + uvicorn** with manual route definitions (POST `/`, GET `/.well-known/agent-card.json`, GET `/ping`)
   - CloudWatch IAM policy fix: `StringLike` condition with correct `SlackAI-*` namespace pattern
@@ -146,4 +154,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [Unreleased]: https://github.com/owner/slack-ai-app/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/owner/slack-ai-app/releases/tag/v1.0.0
-

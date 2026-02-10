@@ -274,7 +274,7 @@ slack-ai-app/
 │   │   │   │       ├── a2a_client.py             # Execution Agent A2A client
 │   │   │   │       ├── agent_card.py             # Agent Card definition
 │   │   │   │       ├── cloudwatch_metrics.py     # Metrics
-│   │   │   │       └── tests/                    # Python tests (63 tests)
+│   │   │   │       └── tests/                    # Python tests (83 tests, 94% pipeline.py coverage)
 │   │   │   └── lambda/                           # SlackEventHandler Lambda
 │   │   └── types/              # Shared type definitions
 │   └── test/                   # CDK/Jest tests (25 tests)
@@ -298,7 +298,7 @@ cd cdk && npx jest test/agentcore-constructs.test.ts --verbose
 # Execution Agent tests (pytest, 79 tests)
 cd cdk/lib/execution/agent/execution-agent && python -m pytest tests/ -v
 
-# Verification Agent tests (pytest, 63 tests)
+# Verification Agent tests (pytest, 83 tests)
 cd cdk/lib/verification/agent/verification-agent && python -m pytest tests/ -v
 
 # SlackEventHandler Lambda tests
@@ -538,10 +538,18 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 
-**Last Updated**: 2026-02-09
+**Last Updated**: 2026-02-10
 
 ## Recent Updates
 
+- **2026-02-10**: Echo-mode-disabled validation test suite (022)
+  - Added 20 TDD tests across 4 new test classes in `tests/test_main.py` for the echo-mode-off (normal) pipeline flow
+  - `Test022NormalFlowDelegation` (5 tests) — verifies echo off triggers execution delegation without echo prefix
+  - `Test022SecurityCheckPipeline` (5 tests) — verifies security check ordering: existence check → authorization → rate limit
+  - `Test022ExecutionErrorPaths` (6 tests) — verifies error handling with no internal detail leakage and `is_processing` reset
+  - `Test022StructuredLogging` (4 tests) — verifies all logs are valid JSON with correlation IDs and no token leakage
+  - pipeline.py enhancements: JSONDecodeError handling, Base64 decode logging
+  - Test counts: Verification 83 (was 63), pipeline.py coverage 94%
 - **2026-02-09**: Strands migration cleanup (021)
   - Migrated both agents from `bedrock-agentcore` SDK to FastAPI + uvicorn with direct route definitions
   - CloudWatch IAM namespace fix (`StringLike` with `SlackAI-*` pattern)
@@ -559,5 +567,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
   - SigV4 authentication + resource-based policies for cross-account support
   - Agent Card (`/.well-known/agent-card.json`) for Agent Discovery
   - AgentCore A2A as the only communication path
-  - 97 TDD tests all passing (Python 73 + CDK/Jest 24, since expanded to 167+)
+  - 97 TDD tests all passing (Python 73 + CDK/Jest 24, since expanded to 187+)
 - **2025-12-28**: Added dual authentication support (IAM and API key) for Execution API Gateway

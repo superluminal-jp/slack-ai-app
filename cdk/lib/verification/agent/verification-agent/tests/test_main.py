@@ -822,3 +822,614 @@ class TestUS3VersionConstraints:
         assert "bedrock-agentcore" not in content, (
             "bedrock-agentcore should be removed from requirements.txt"
         )
+
+
+# ─── 022: Echo Mode Disable — Normal Flow & Security Check TDD ───
+
+
+class Test022NormalFlowDelegation:
+    """022 US1: When VALIDATION_ZONE_ECHO_MODE is disabled, pipeline delegates to Execution Agent."""
+
+    def _make_payload(self, text="Hello", channel="C01234567", thread_ts="1234.5678",
+                      team_id="T1234", user_id="U1234", correlation_id="corr-022"):
+        return {
+            "prompt": json.dumps({
+                "channel": channel,
+                "text": text,
+                "bot_token": "xoxb-test",
+                "thread_ts": thread_ts,
+                "correlation_id": correlation_id,
+                "team_id": team_id,
+                "user_id": user_id,
+                "attachments": [{"id": "F001", "name": "test.txt"}],
+            })
+        }
+
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.check_rate_limit")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_echo_off_delegates_to_execution_agent(
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+    ):
+        """T003: Echo mode off → invoke_execution_agent called, AI response posted to Slack."""
+        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
+        mock_rate.return_value = (True, 9)
+        mock_invoke.return_value = json.dumps({
+            "status": "success",
+            "response_text": "AI answer from execution",
+        })
+
+        from main import handle_message
+
+        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
+            result = handle_message(self._make_payload())
+
+        result_data = json.loads(result)
+        assert result_data["status"] == "completed"
+        mock_invoke.assert_called_once()
+        mock_send.assert_called_once()
+        assert mock_send.call_args[1]["text"] == "AI answer from execution"
+
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.check_rate_limit")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_echo_off_no_echo_prefix_in_response(
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+    ):
+        """T004: Echo mode off → response does NOT contain [Echo] prefix."""
+        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
+        mock_rate.return_value = (True, 9)
+        mock_invoke.return_value = json.dumps({
+            "status": "success",
+            "response_text": "Normal AI response",
+        })
+
+        from main import handle_message
+
+        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": "false"}, clear=False):
+            handle_message(self._make_payload())
+
+        posted_text = mock_send.call_args[1]["text"]
+        assert "[Echo]" not in posted_text
+        assert posted_text == "Normal AI response"
+
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.check_rate_limit")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_echo_off_with_file_artifact(
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+    ):
+        """T005: Echo mode off → file artifact from execution agent forwarded to Slack."""
+        import base64
+        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
+        mock_rate.return_value = (True, 9)
+        mock_invoke.return_value = json.dumps({
+            "status": "success",
+            "response_text": "See attached.",
+            "file_artifact": {
+                "artifactId": "art-022",
+                "name": "generated_file",
+                "parts": [{
+                    "kind": "file",
+                    "contentBase64": base64.b64encode(b"csv,data").decode("utf-8"),
+                    "fileName": "result.csv",
+                    "mimeType": "text/csv",
+                }],
+            },
+        })
+
+        from main import handle_message
+
+        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
+            handle_message(self._make_payload())
+
+        mock_send.assert_called_once()
+        call_kw = mock_send.call_args[1]
+        assert call_kw["text"] == "See attached."
+        assert call_kw["file_artifact"] is not None
+        assert call_kw["file_artifact"]["fileName"] == "result.csv"
+
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.check_rate_limit")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_echo_off_payload_contains_all_fields(
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+    ):
+        """T006: Execution payload includes all required fields."""
+        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
+        mock_rate.return_value = (True, 9)
+        mock_invoke.return_value = json.dumps({"status": "success", "response_text": "ok"})
+
+        from main import handle_message
+
+        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
+            handle_message(self._make_payload(
+                text="question", channel="C_TEST", thread_ts="999.000",
+                team_id="T_TEAM", user_id="U_USER", correlation_id="corr-fields"
+            ))
+
+        invoke_args = mock_invoke.call_args[0][0]
+        assert invoke_args["channel"] == "C_TEST"
+        assert invoke_args["text"] == "question"
+        assert invoke_args["bot_token"] == "xoxb-test"
+        assert invoke_args["thread_ts"] == "999.000"
+        assert invoke_args["correlation_id"] == "corr-fields"
+        assert invoke_args["team_id"] == "T_TEAM"
+        assert invoke_args["user_id"] == "U_USER"
+        assert invoke_args["attachments"] == [{"id": "F001", "name": "test.txt"}]
+
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.check_rate_limit")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_echo_off_env_var_case_insensitive(
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+    ):
+        """T007: VALIDATION_ZONE_ECHO_MODE 'false'/'False'/'FALSE'/'' all trigger normal flow."""
+        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
+        mock_rate.return_value = (True, 9)
+        mock_invoke.return_value = json.dumps({"status": "success", "response_text": "ok"})
+
+        from main import handle_message
+
+        for env_val in ["false", "False", "FALSE", "", "no", "0"]:
+            mock_invoke.reset_mock()
+            with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": env_val}, clear=False):
+                handle_message(self._make_payload())
+            mock_invoke.assert_called_once(), f"invoke not called for ECHO_MODE={env_val!r}"
+
+
+class Test022SecurityCheckPipeline:
+    """022 US2: Security check pipeline order and failure isolation with echo mode off."""
+
+    def _make_payload(self, team_id="T1234", user_id="U1234"):
+        return {
+            "prompt": json.dumps({
+                "channel": "C01234567",
+                "text": "Hello",
+                "bot_token": "xoxb-test",
+                "thread_ts": "1234.5678",
+                "correlation_id": "corr-022-sec",
+                "team_id": team_id,
+                "user_id": user_id,
+            })
+        }
+
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.check_rate_limit")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_existence_check_runs_before_authorization(
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+    ):
+        """T008: When existence check fails, authorization is NOT called."""
+        from existence_check import ExistenceCheckError
+        mock_existence.side_effect = ExistenceCheckError("Not found")
+
+        from main import handle_message
+
+        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
+            result = handle_message(self._make_payload())
+
+        result_data = json.loads(result)
+        assert result_data["error_code"] == "existence_check_failed"
+        mock_auth.assert_not_called()
+        mock_rate.assert_not_called()
+        mock_invoke.assert_not_called()
+
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.check_rate_limit")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_authorization_runs_before_rate_limit(
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+    ):
+        """T009: When authorization fails, rate_limit is NOT called."""
+        mock_auth.return_value = Mock(authorized=False, unauthorized_entities=["T_BAD"])
+
+        from main import handle_message
+
+        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
+            result = handle_message(self._make_payload())
+
+        result_data = json.loads(result)
+        assert result_data["error_code"] == "authorization_failed"
+        mock_existence.assert_called_once()
+        mock_rate.assert_not_called()
+        mock_invoke.assert_not_called()
+
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.check_rate_limit")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_rate_limit_exception_class_returns_error(
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+    ):
+        """T010: RateLimitExceededError exception returns rate_limit_exceeded error."""
+        from rate_limiter import RateLimitExceededError
+        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
+        mock_rate.side_effect = RateLimitExceededError("Too many requests")
+
+        from main import handle_message
+
+        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
+            result = handle_message(self._make_payload())
+
+        result_data = json.loads(result)
+        assert result_data["error_code"] == "rate_limit_exceeded"
+        mock_invoke.assert_not_called()
+
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.check_rate_limit")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_authorization_exception_returns_error(
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+    ):
+        """T011: Unexpected exception from authorize_request returns authorization_error."""
+        mock_auth.side_effect = Exception("DynamoDB connection failed")
+
+        from main import handle_message
+
+        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
+            result = handle_message(self._make_payload())
+
+        result_data = json.loads(result)
+        assert result_data["error_code"] == "authorization_error"
+        mock_invoke.assert_not_called()
+
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.check_rate_limit")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_all_checks_pass_delegates_to_execution(
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+    ):
+        """T012: When all 3 security checks pass, invoke_execution_agent is called."""
+        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
+        mock_rate.return_value = (True, 9)
+        mock_invoke.return_value = json.dumps({"status": "success", "response_text": "ok"})
+
+        from main import handle_message
+
+        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
+            result = handle_message({
+                "prompt": json.dumps({
+                    "channel": "C01234567",
+                    "text": "Hello",
+                    "bot_token": "xoxb-test",
+                    "team_id": "T1234",
+                    "user_id": "U1234",
+                })
+            })
+
+        result_data = json.loads(result)
+        assert result_data["status"] == "completed"
+        mock_existence.assert_called_once()
+        mock_auth.assert_called_once()
+        mock_rate.assert_called_once()
+        mock_invoke.assert_called_once()
+
+
+# ─── 022: Echo Mode Disable — Execution Error Paths TDD ───
+
+
+class Test022ExecutionErrorPaths:
+    """022 US3: Verify execution agent error codes produce correct user-friendly messages."""
+
+    def _make_payload(self, text="Hello", channel="C01234567"):
+        return {
+            "prompt": json.dumps({
+                "channel": channel,
+                "text": text,
+                "bot_token": "xoxb-secret-bot-token",
+                "thread_ts": "1234.5678",
+                "correlation_id": "corr-022-err",
+                "team_id": "T1234",
+                "user_id": "U1234",
+            })
+        }
+
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.check_rate_limit")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_bedrock_throttling_error_posts_friendly_message(
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+    ):
+        """T017: bedrock_throttling error code produces message containing '混雑'."""
+        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
+        mock_rate.return_value = (True, 9)
+        mock_invoke.return_value = json.dumps({
+            "status": "error",
+            "error_code": "bedrock_throttling",
+            "error_message": "ThrottlingException",
+        })
+
+        from main import handle_message
+
+        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
+            handle_message(self._make_payload())
+
+        mock_send.assert_called_once()
+        posted_text = mock_send.call_args[1]["text"]
+        assert "混雑" in posted_text, f"Expected '混雑' in throttling message, got: {posted_text}"
+
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.check_rate_limit")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_access_denied_error_posts_friendly_message(
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+    ):
+        """T018: access_denied error code produces message containing 'アクセス'."""
+        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
+        mock_rate.return_value = (True, 9)
+        mock_invoke.return_value = json.dumps({
+            "status": "error",
+            "error_code": "access_denied",
+            "error_message": "AccessDeniedException",
+        })
+
+        from main import handle_message
+
+        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
+            handle_message(self._make_payload())
+
+        mock_send.assert_called_once()
+        posted_text = mock_send.call_args[1]["text"]
+        assert "アクセス" in posted_text, f"Expected 'アクセス' in access_denied message, got: {posted_text}"
+
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.check_rate_limit")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_invalid_json_response_from_execution_posts_generic_error(
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+    ):
+        """T019: Non-JSON response from execution agent posts generic error message to Slack."""
+        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
+        mock_rate.return_value = (True, 9)
+        mock_invoke.return_value = "THIS IS NOT JSON {{{"
+
+        from main import handle_message
+
+        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
+            result = handle_message(self._make_payload())
+
+        result_data = json.loads(result)
+        assert result_data["status"] == "error"
+        assert result_data["error_code"] == "invalid_response"
+        mock_send.assert_called_once()
+        posted_text = mock_send.call_args[1]["text"]
+        assert "エラー" in posted_text, f"Expected generic error message, got: {posted_text}"
+
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.check_rate_limit")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_empty_response_from_execution_handles_gracefully(
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+    ):
+        """T020: Empty string response from execution agent does not crash, posts error to Slack."""
+        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
+        mock_rate.return_value = (True, 9)
+        mock_invoke.return_value = ""
+
+        from main import handle_message
+
+        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
+            result = handle_message(self._make_payload())
+
+        result_data = json.loads(result)
+        assert result_data["status"] == "error"
+        assert result_data["error_code"] == "invalid_response"
+        mock_send.assert_called_once()
+
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.check_rate_limit")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_exception_does_not_leak_internal_details(
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+    ):
+        """T021: Exception from execution agent — Slack message does NOT contain stack trace, ARN, or token."""
+        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
+        mock_rate.return_value = (True, 9)
+        mock_invoke.side_effect = Exception(
+            "arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/exec-agent failed"
+        )
+
+        from main import handle_message
+
+        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
+            handle_message(self._make_payload())
+
+        mock_send.assert_called_once()
+        posted_text = mock_send.call_args[1]["text"]
+        assert "arn:" not in posted_text, f"ARN leaked in Slack message: {posted_text}"
+        assert "Traceback" not in posted_text, f"Stack trace leaked in Slack message: {posted_text}"
+        assert "xoxb-" not in posted_text, f"Bot token leaked in Slack message: {posted_text}"
+
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.check_rate_limit")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_is_processing_reset_on_execution_exception(
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+    ):
+        """T022: pipeline.is_processing is False after execution agent raises exception."""
+        import pipeline
+
+        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
+        mock_rate.return_value = (True, 9)
+        mock_invoke.side_effect = RuntimeError("Connection timeout")
+
+        from main import handle_message
+
+        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
+            handle_message(self._make_payload())
+
+        assert pipeline.is_processing is False, "is_processing should be reset to False after exception"
+
+
+# ─── 022: Echo Mode Disable — Structured Logging TDD ───
+
+
+class Test022StructuredLogging:
+    """022 US4: Verify structured logging conforms to AWS Well-Architected Operational Excellence."""
+
+    def _make_payload(self, text="Hello", correlation_id="corr-022-log"):
+        return {
+            "prompt": json.dumps({
+                "channel": "C01234567",
+                "text": text,
+                "bot_token": "xoxb-secret-bot-token",
+                "thread_ts": "1234.5678",
+                "correlation_id": correlation_id,
+                "team_id": "T1234",
+                "user_id": "U1234",
+            })
+        }
+
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.check_rate_limit")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_all_logs_are_valid_json(
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke, capsys
+    ):
+        """T025: Every log line is parseable JSON with level, event_type, service keys."""
+        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
+        mock_rate.return_value = (True, 9)
+        mock_invoke.return_value = json.dumps({"status": "success", "response_text": "ok"})
+
+        from main import handle_message
+
+        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
+            handle_message(self._make_payload())
+
+        captured = capsys.readouterr()
+        lines = [line for line in captured.out.strip().split("\n") if line.strip()]
+        assert len(lines) > 0, "Expected at least one log line"
+
+        for i, line in enumerate(lines):
+            log = json.loads(line)  # Will raise if not valid JSON
+            assert "level" in log, f"Log line {i} missing 'level': {line}"
+            assert "event_type" in log, f"Log line {i} missing 'event_type': {line}"
+            assert "service" in log, f"Log line {i} missing 'service': {line}"
+            assert log["service"] == "verification-agent", f"Log line {i} wrong service: {log['service']}"
+
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.check_rate_limit")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_correlation_id_present_in_all_log_entries(
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke, capsys
+    ):
+        """T026: Every JSON log line contains correlation_id matching the request."""
+        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
+        mock_rate.return_value = (True, 9)
+        mock_invoke.return_value = json.dumps({"status": "success", "response_text": "ok"})
+
+        from main import handle_message
+
+        test_corr_id = "corr-026-unique"
+        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
+            handle_message(self._make_payload(correlation_id=test_corr_id))
+
+        captured = capsys.readouterr()
+        lines = [line for line in captured.out.strip().split("\n") if line.strip()]
+        assert len(lines) > 0, "Expected at least one log line"
+
+        for i, line in enumerate(lines):
+            log = json.loads(line)
+            assert "correlation_id" in log, f"Log line {i} missing 'correlation_id': {line}"
+            assert log["correlation_id"] == test_corr_id, (
+                f"Log line {i} correlation_id mismatch: expected {test_corr_id}, got {log.get('correlation_id')}"
+            )
+
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.check_rate_limit")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_security_check_logs_include_result(
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke, capsys
+    ):
+        """T027: Existence check, authorization, and rate limit steps emit log entries."""
+        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
+        mock_rate.return_value = (True, 9)
+        mock_invoke.return_value = json.dumps({"status": "success", "response_text": "ok"})
+
+        from main import handle_message
+
+        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
+            handle_message(self._make_payload())
+
+        captured = capsys.readouterr()
+        lines = [line for line in captured.out.strip().split("\n") if line.strip()]
+        event_types = [json.loads(line).get("event_type") for line in lines]
+
+        # Verify existence check logged
+        assert "existence_check_passed" in event_types or "existence_check_failed" in event_types, (
+            f"No existence check log found. Event types: {event_types}"
+        )
+        # Verify authorization logged (a2a_auth_event covers auth logging)
+        assert "a2a_auth_event" in event_types, (
+            f"No authorization log found. Event types: {event_types}"
+        )
+        # Verify delegation logged (confirms rate limit passed and pipeline continued)
+        assert "delegating_to_execution_agent" in event_types, (
+            f"No delegation log found. Event types: {event_types}"
+        )
+
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.check_rate_limit")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_error_log_does_not_contain_bot_token(
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke, capsys
+    ):
+        """T028: No log entry contains the bot_token value (no credential leakage)."""
+        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
+        mock_rate.return_value = (True, 9)
+        mock_invoke.side_effect = RuntimeError("Execution failed")
+
+        from main import handle_message
+
+        bot_token = "xoxb-secret-bot-token"
+        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
+            handle_message(self._make_payload())
+
+        captured = capsys.readouterr()
+        lines = [line for line in captured.out.strip().split("\n") if line.strip()]
+        assert len(lines) > 0, "Expected at least one log line"
+
+        for i, line in enumerate(lines):
+            assert bot_token not in line, (
+                f"Bot token leaked in log line {i}: {line}"
+            )
