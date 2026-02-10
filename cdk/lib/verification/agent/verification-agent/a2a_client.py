@@ -16,11 +16,17 @@ Tracing: correlation_id is passed through for end-to-end tracing.
 import json
 import os
 import time
+import traceback
 import uuid
 from typing import Any, Dict, Optional
 
 import boto3
 from botocore.exceptions import ClientError
+
+try:
+    from error_debug import log_execution_error
+except ImportError:
+    log_execution_error = None
 
 
 def _log(level: str, event_type: str, data: dict) -> None:
@@ -196,6 +202,7 @@ def _poll_async_task_result(
                 "error": str(e),
                 "error_type": type(e).__name__,
                 "poll_count": poll_count,
+                "traceback": traceback.format_exc(),
             })
             return json.dumps({
                 "status": "error",
@@ -304,7 +311,24 @@ def invoke_execution_agent(
                 raise
 
             # Parse response body (API returns "response" as StreamingBody, "contentType")
-            response_body = _read_invoke_response(response)
+            try:
+                response_body = _read_invoke_response(response)
+            except Exception as read_err:
+                _log("ERROR", "invoke_response_read_error", {
+                    "correlation_id": correlation_id,
+                    "execution_agent_arn": agent_arn,
+                    "error": str(read_err),
+                    "error_type": type(read_err).__name__,
+                    "traceback": traceback.format_exc(),
+                })
+                if log_execution_error:
+                    log_execution_error(correlation_id, read_err, traceback.format_exc())
+                return json.dumps({
+                    "status": "error",
+                    "error_code": "response_read_error",
+                    "error_message": "エラーが発生しました。しばらくしてからお試しください。",
+                    "correlation_id": correlation_id,
+                })
 
             # Check if response is async ("accepted" with task_id)
             try:
@@ -382,6 +406,7 @@ def invoke_execution_agent(
 
     except Exception as e:
         duration_ms = (time.time() - start_time) * 1000
+        tb_str = traceback.format_exc()
 
         _log("ERROR", "invoke_execution_agent_unexpected_error", {
             "correlation_id": correlation_id,
@@ -390,6 +415,8 @@ def invoke_execution_agent(
             "error_type": type(e).__name__,
             "duration_ms": round(duration_ms, 2),
         })
+        if log_execution_error:
+            log_execution_error(correlation_id, e, tb_str)
 
         return json.dumps({
             "status": "error",

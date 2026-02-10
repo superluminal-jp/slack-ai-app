@@ -19,6 +19,12 @@ export interface ExecutionStackProps extends cdk.StackProps {
   readonly awsRegion?: string;
 
   /**
+   * Bedrock model ID (passed to Execution Agent container)
+   * @default "amazon.nova-pro-v1:0"
+   */
+  readonly bedrockModelId?: string;
+
+  /**
    * Account ID of the Verification Stack (for cross-account A2A resource policy)
    */
   readonly verificationAccountId?: string;

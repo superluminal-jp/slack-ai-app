@@ -1,4 +1,5 @@
 import * as cdk from "aws-cdk-lib";
+import * as logs from "aws-cdk-lib/aws-logs";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as sqs from "aws-cdk-lib/aws-sqs";
@@ -157,6 +158,12 @@ export class VerificationStack extends cdk.Stack {
       stackName: this.stackName,
     });
 
+    const errorDebugLogGroup = new logs.LogGroup(this, "VerificationAgentErrorLogs", {
+      logGroupName: `/aws/bedrock-agentcore/${this.stackName}-verification-agent-errors`,
+      retention: logs.RetentionDays.ONE_WEEK,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
     this.verificationAgentRuntime = new VerificationAgentRuntime(
       this,
       "VerificationAgentRuntime",
@@ -173,6 +180,7 @@ export class VerificationStack extends cdk.Stack {
         executionAgentArn: executionAgentArn || undefined,
         validationZoneEchoMode: validationZoneEchoMode ?? false,
         slackPostRequestQueue: slackPoster.queue,
+        errorDebugLogGroup: errorDebugLogGroup,
       }
     );
     this.verificationAgentRuntimeArn = this.verificationAgentRuntime.runtimeArn;

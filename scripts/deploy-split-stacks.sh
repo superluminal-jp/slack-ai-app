@@ -32,6 +32,20 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Logging functions (defined early so config block can use them)
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
 # Configuration
 # Get script directory and project root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -75,23 +89,7 @@ BASE_VERIFICATION_STACK_NAME="${VERIFICATION_STACK_NAME:-SlackAI-Verification}"
 EXECUTION_STACK_NAME="${BASE_EXECUTION_STACK_NAME}-${ENVIRONMENT_SUFFIX}"
 VERIFICATION_STACK_NAME="${BASE_VERIFICATION_STACK_NAME}-${ENVIRONMENT_SUFFIX}"
 
-# Functions
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
+# Helper functions
 get_config_value() {
     local key=$1
     local config_file="${CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
@@ -303,6 +301,44 @@ deploy_verification_stack() {
     echo "${function_url}"
 }
 
+# Apply resource policy on Execution Agent (Runtime + Endpoint) so Verification Agent can invoke it.
+# Per AWS docs: both Runtime and Endpoint need explicit allow for the Verification Agent role.
+# CloudFormation does not support RuntimeResourcePolicy; use Control Plane API.
+apply_execution_agent_resource_policy() {
+    local exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn" 2>/dev/null || echo "")
+    [[ -z "${exec_agent_arn}" ]] && return 0
+
+    local profile_args=""
+    if [[ -n "${AWS_PROFILE}" ]]; then
+        profile_args="--profile ${AWS_PROFILE}"
+    fi
+    local account_id=$(aws sts get-caller-identity ${profile_args} --query Account --output text 2>/dev/null || echo "")
+    [[ -z "${account_id}" ]] && return 0
+
+    local verify_role_arn="arn:aws:iam::${account_id}:role/SlackAI_VerificationAgent-ExecutionRole"
+    local endpoint_arn="${exec_agent_arn}/runtime-endpoint/DEFAULT"
+
+    log_info "Applying resource policy: Execution Agent allows Verification Agent role"
+    AWS_REGION="${AWS_REGION}" AWS_PROFILE="${AWS_PROFILE}" python3 -c "
+import boto3
+import json
+import os
+
+region = os.environ.get('AWS_REGION', 'ap-northeast-1')
+session = boto3.Session(profile_name=os.environ.get('AWS_PROFILE')) if os.environ.get('AWS_PROFILE') else boto3.Session()
+client = session.client('bedrock-agentcore-control', region_name=region)
+
+runtime_arn = '${exec_agent_arn}'
+endpoint_arn = '${endpoint_arn}'
+principal = '${verify_role_arn}'
+
+for res_arn, label in [(runtime_arn, 'Runtime'), (endpoint_arn, 'Endpoint')]:
+    policy = {'Version': '2012-10-17', 'Statement': [{'Effect': 'Allow', 'Principal': {'AWS': principal}, 'Action': 'bedrock-agentcore:InvokeAgentRuntime', 'Resource': res_arn}]}
+    client.put_resource_policy(resourceArn=res_arn, policy=json.dumps(policy))
+    print('  ' + label + ' policy OK')
+" 2>/dev/null && log_success "Execution Agent resource policy applied" || log_warning "Could not apply resource policy (check bedrock-agentcore-control PutResourcePolicy permissions)"
+}
+
 # Extract AgentCore Runtime ID from ARN (arn:...:runtime/Name-xxxxx -> Name-xxxxx)
 # Control Plane API uses agent-runtime-id, not ARN; status is READY (not ACTIVE).
 get_agent_runtime_id_from_arn() {
@@ -433,6 +469,9 @@ main() {
 
     # Phase 2: Deploy Verification Stack (uses executionAgentArn from config)
     deploy_verification_stack
+
+    # Phase 2.5: Apply Execution Agent resource policy (allows Verification Agent to invoke)
+    apply_execution_agent_resource_policy
 
     # Phase 3: Validate AgentCore runtimes
     validate_agentcore

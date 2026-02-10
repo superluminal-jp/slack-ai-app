@@ -1,0 +1,3 @@
+# Minimum versions per AWS: bedrock-agentcore requires boto3 1.39.8+, botocore 1.33.8+
+# https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-troubleshooting.html
+boto3>=1.39.8

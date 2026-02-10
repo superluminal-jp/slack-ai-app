@@ -17,6 +17,10 @@ export interface ExecutionAgentRuntimeProps {
   readonly agentRuntimeName: string;
   /** ECR container image URI (including tag) */
   readonly containerImageUri: string;
+  /** Bedrock model ID (BEDROCK_MODEL_ID env) */
+  readonly bedrockModelId?: string;
+  /** AWS Region (AWS_REGION_NAME env) */
+  readonly awsRegion?: string;
   /** Account ID of the Verification Zone (for cross-account resource policy) */
   readonly verificationAccountId?: string;
 }
@@ -149,6 +153,18 @@ export class ExecutionAgentRuntime extends Construct {
         // Omit AuthorizerConfiguration: default is SigV4 for A2A
       },
     });
+
+    // EnvironmentVariables for container (BEDROCK_MODEL_ID, AWS_REGION_NAME)
+    const environmentVariables: Record<string, string> = {};
+    if (props.awsRegion) {
+      environmentVariables.AWS_REGION_NAME = props.awsRegion;
+    }
+    if (props.bedrockModelId) {
+      environmentVariables.BEDROCK_MODEL_ID = props.bedrockModelId;
+    }
+    if (Object.keys(environmentVariables).length > 0) {
+      this.runtime.addPropertyOverride("EnvironmentVariables", environmentVariables);
+    }
 
     // Ensure Runtime is created after the role's IAM policy (ECR permissions)
     // so that Bedrock AgentCore validation of ECR URI succeeds

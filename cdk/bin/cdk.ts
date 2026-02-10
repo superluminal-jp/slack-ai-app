@@ -254,9 +254,14 @@ const verificationEnv = getStackEnvironment(
   defaultEnv
 );
 
+// Bedrock model ID (Execution Agent + Verification Stack)
+const bedrockModelId = getConfigString("bedrockModelId", "amazon.nova-pro-v1:0");
+
 // Create Execution Stack (A2A only)
 const executionStack = new ExecutionStack(app, executionStackName, {
   env: executionEnv,
+  awsRegion: region,
+  bedrockModelId: bedrockModelId || undefined,
   verificationAccountId: verificationAccountId || undefined,
   executionAgentName: executionAgentName || undefined,
 });

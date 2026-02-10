@@ -18,6 +18,7 @@ from authorization import authorize_request
 from rate_limiter import check_rate_limit, RateLimitExceededError
 from a2a_client import invoke_execution_agent
 from slack_post_request import send_slack_post_request, build_file_artifact
+from error_debug import log_execution_error
 
 # Used by main.py for /ping HealthyBusy
 is_processing = False
@@ -162,7 +163,12 @@ def run(payload: dict) -> str:
                     "correlation_id": correlation_id,
                 })
         except Exception as e:
-            _log("ERROR", "authorization_error", {"correlation_id": correlation_id, "error": str(e)})
+            _log("ERROR", "authorization_error", {
+                "correlation_id": correlation_id,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "traceback": traceback.format_exc(),
+            })
             return json.dumps({
                 "status": "error",
                 "error_code": "authorization_error",
@@ -190,7 +196,11 @@ def run(payload: dict) -> str:
                 "correlation_id": correlation_id,
             })
         except Exception as e:
-            _log("WARN", "rate_limit_check_error", {"correlation_id": correlation_id, "error": str(e)})
+            _log("WARN", "rate_limit_check_error", {
+                "correlation_id": correlation_id,
+                "error": str(e),
+                "error_type": type(e).__name__,
+            })
 
         # 018: Echo mode
         if (os.environ.get("VALIDATION_ZONE_ECHO_MODE") or "").strip().lower() == "true":
@@ -299,11 +309,14 @@ def run(payload: dict) -> str:
 
         except Exception as e:
             is_processing = False
+            tb_str = traceback.format_exc()
             _log("ERROR", "execution_agent_error", {
                 "correlation_id": correlation_id,
                 "error": str(e),
                 "error_type": type(e).__name__,
+                "traceback": tb_str,
             })
+            log_execution_error(correlation_id, e, tb_str)
             send_slack_post_request(
                 channel=channel,
                 thread_ts=thread_ts,
@@ -319,12 +332,14 @@ def run(payload: dict) -> str:
             })
 
     except Exception as e:
+        tb_str = traceback.format_exc()
         _log("ERROR", "unhandled_exception", {
             "correlation_id": correlation_id,
             "error": str(e),
             "error_type": type(e).__name__,
-            "stack_trace": traceback.format_exc(),
+            "stack_trace": tb_str,
         })
+        log_execution_error(correlation_id, e, tb_str)
         return json.dumps({
             "status": "error",
             "error_code": "internal_error",

@@ -15,6 +15,7 @@
 import * as cdk from "aws-cdk-lib";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import * as logs from "aws-cdk-lib/aws-logs";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as sqs from "aws-cdk-lib/aws-sqs";
 import { Construct } from "constructs";
@@ -39,6 +40,8 @@ export interface VerificationAgentRuntimeProps {
   readonly validationZoneEchoMode?: boolean;
   /** 019: SQS queue for Slack post requests; Agent sends here instead of calling Slack API */
   readonly slackPostRequestQueue?: sqs.IQueue;
+  /** CloudWatch Log group for execution error debug (troubleshooting) */
+  readonly errorDebugLogGroup?: logs.ILogGroup;
 }
 
 export class VerificationAgentRuntime extends Construct {
@@ -205,6 +208,11 @@ export class VerificationAgentRuntime extends Construct {
       environmentVariables.SLACK_POST_REQUEST_QUEUE_URL =
         props.slackPostRequestQueue.queueUrl;
       props.slackPostRequestQueue.grantSendMessages(this.executionRole);
+    }
+    if (props.errorDebugLogGroup) {
+      environmentVariables.EXECUTION_AGENT_ERROR_LOG_GROUP =
+        props.errorDebugLogGroup.logGroupName;
+      props.errorDebugLogGroup.grantWrite(this.executionRole);
     }
 
     // Create AgentCore Runtime using L1 CfnResource

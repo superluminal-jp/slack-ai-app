@@ -46,7 +46,7 @@ export class SlackEventHandler extends Construct {
           command: [
             "bash",
             "-c",
-            "pip install --no-cache-dir -r requirements.txt -t /asset-output && cp -au . /asset-output",
+            "pip install --no-cache-dir -r requirements.txt -t /asset-output && cp -r . /asset-output",
           ],
           // Local bundling for faster builds and Colima compatibility
           local: {

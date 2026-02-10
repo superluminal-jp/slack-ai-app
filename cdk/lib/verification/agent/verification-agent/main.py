@@ -15,6 +15,7 @@ FastAPI で直接ルーティングする。
 import json
 import os
 import time
+import traceback
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -50,33 +51,56 @@ def agent_card_endpoint():
 async def handle_invocation(request: Request):
     """Handle invoke_agent_runtime payload — parse and run pipeline."""
     start_time = time.time()
-    body = await request.body()
-    payload = json.loads(body)
+    correlation_id = ""
 
-    # Extract correlation_id from nested prompt for tracing
-    raw_prompt = payload.get("prompt", "{}")
-    task_payload = json.loads(raw_prompt) if isinstance(raw_prompt, str) else raw_prompt
-    correlation_id = task_payload.get("correlation_id", "")
+    try:
+        body = await request.body()
+        payload = json.loads(body)
 
-    _log("INFO", "request_received", {
-        "correlation_id": correlation_id,
-        "channel": task_payload.get("channel", ""),
-        "text_length": len(task_payload.get("text", "")),
-        "has_thread_ts": bool(task_payload.get("thread_ts")),
-        "payload_bytes": len(body),
-    })
+        # Extract correlation_id from nested prompt for tracing
+        raw_prompt = payload.get("prompt", "{}")
+        task_payload = json.loads(raw_prompt) if isinstance(raw_prompt, str) else raw_prompt
+        correlation_id = task_payload.get("correlation_id", "")
 
-    result = run_pipeline(payload)
-    duration_ms = (time.time() - start_time) * 1000
+        _log("INFO", "request_received", {
+            "correlation_id": correlation_id,
+            "channel": task_payload.get("channel", ""),
+            "text_length": len(task_payload.get("text", "")),
+            "has_thread_ts": bool(task_payload.get("thread_ts")),
+            "payload_bytes": len(body),
+        })
 
-    result_data = json.loads(result) if isinstance(result, str) else result
-    _log("INFO", "request_completed", {
-        "correlation_id": correlation_id,
-        "status": result_data.get("status", ""),
-        "duration_ms": round(duration_ms, 2),
-    })
+        result = run_pipeline(payload)
+        duration_ms = (time.time() - start_time) * 1000
 
-    return JSONResponse(content=result_data)
+        result_data = json.loads(result) if isinstance(result, str) else result
+        _log("INFO", "request_completed", {
+            "correlation_id": correlation_id,
+            "status": result_data.get("status", ""),
+            "duration_ms": round(duration_ms, 2),
+        })
+
+        return JSONResponse(content=result_data)
+
+    except json.JSONDecodeError as e:
+        _log("ERROR", "payload_parse_error", {
+            "correlation_id": correlation_id,
+            "error": str(e),
+            "error_type": type(e).__name__,
+        })
+        return JSONResponse(
+            content={"status": "error", "error_code": "invalid_payload", "error_message": "Invalid JSON payload"},
+        )
+    except Exception as e:
+        _log("ERROR", "invocation_error", {
+            "correlation_id": correlation_id,
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "traceback": traceback.format_exc(),
+        })
+        return JSONResponse(
+            content={"status": "error", "error_code": "internal_error", "error_message": "Internal server error"},
+        )
 
 
 # Backward-compatible entrypoint for tests (delegates to pipeline.run)
