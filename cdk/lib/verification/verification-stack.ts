@@ -14,6 +14,7 @@ import { VerificationAgentRuntime } from "./constructs/verification-agent-runtim
 import { VerificationAgentEcr } from "./constructs/verification-agent-ecr";
 import { AgentInvoker } from "./constructs/agent-invoker";
 import { SlackPoster } from "./constructs/slack-poster";
+import { FileExchangeBucket } from "./constructs/file-exchange-bucket";
 import { VerificationStackProps } from "../types/stack-config";
 
 /**
@@ -92,12 +93,7 @@ export class VerificationStack extends cdk.Stack {
       props.bedrockModelId ||
       this.node.tryGetContext("bedrockModelId") ||
       "amazon.nova-pro-v1:0";
-    const validationZoneEchoMode =
-      props.validationZoneEchoMode ??
-      (this.node.tryGetContext("validationZoneEchoMode") === true ||
-        this.node.tryGetContext("validationZoneEchoMode") === "true");
-
-    const slackSigningSecretResource = new secretsmanager.Secret(
+const slackSigningSecretResource = new secretsmanager.Secret(
       this,
       "SlackSigningSecret",
       {
@@ -122,6 +118,7 @@ export class VerificationStack extends cdk.Stack {
     const existenceCheckCache = new ExistenceCheckCache(this, "ExistenceCheckCache");
     const whitelistConfig = new WhitelistConfig(this, "WhitelistConfig");
     const rateLimit = new RateLimit(this, "RateLimit");
+    const fileExchangeBucket = new FileExchangeBucket(this, "FileExchangeBucket");
 
     const agentInvocationDlq = new sqs.Queue(this, "AgentInvocationRequestDlq", {
       queueName: `${this.stackName}-agent-invocation-dlq`,
@@ -178,9 +175,9 @@ export class VerificationStack extends cdk.Stack {
         slackSigningSecret: slackSigningSecretResource,
         slackBotTokenSecret: slackBotTokenSecret,
         executionAgentArn: executionAgentArn || undefined,
-        validationZoneEchoMode: validationZoneEchoMode ?? false,
-        slackPostRequestQueue: slackPoster.queue,
+slackPostRequestQueue: slackPoster.queue,
         errorDebugLogGroup: errorDebugLogGroup,
+        fileExchangeBucket: fileExchangeBucket.bucket,
       }
     );
     this.verificationAgentRuntimeArn = this.verificationAgentRuntime.runtimeArn;
@@ -197,7 +194,6 @@ export class VerificationStack extends cdk.Stack {
       bedrockModelId,
       verificationAgentArn: this.verificationAgentRuntimeArn,
       agentInvocationQueue: this.agentInvocationQueue,
-      validationZoneEchoMode,
     });
 
     new AgentInvoker(this, "AgentInvoker", {

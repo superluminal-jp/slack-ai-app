@@ -5,7 +5,7 @@
 **ドキュメントタイプ**: セットアップガイド  
 **ステータス**: 推奨  
 **バージョン**: 1.1  
-**最終更新日**: 2026-02-07  
+**最終更新日**: 2026-02-11  
 **対象読者**: 開発者、DevOps エンジニア、システム管理者
 
 ---
@@ -37,6 +37,34 @@
 - ✅ **AWS CLI**（設定済み、認証情報設定済み）
 - ✅ **AWS CDK CLI**（`npm install -g aws-cdk`）
 - ✅ **Docker**（ARM64 対応、AgentCore コンテナビルド用。macOS の場合は Colima 推奨）
+
+#### Colima で Docker を使う（macOS）
+
+macOS では Docker Desktop の代わりに [Colima](https://github.com/abiosoft/colima) を使うと、CDK の Lambda バンドル・ECR イメージビルドや `npx jest` の Verification Stack テストが安定して動作します。
+
+1. **Colima と Docker CLI のインストール**
+
+   ```bash
+   # Homebrew で Colima と Docker CLI をインストール
+   brew install colima docker
+   ```
+
+2. **Colima の起動**
+
+   ```bash
+   colima start
+   ```
+
+   起動後、`docker` コマンドは Colima のコンテキストを自動的に使います（`docker context` で `colima` が選択されます）。
+
+3. **デプロイ・テスト前の確認**
+
+   ```bash
+   docker context ls   # current が colima であること
+   docker info         # Server が表示されれば OK
+   ```
+
+   CDK デプロイ（`./scripts/deploy-split-stacks.sh`）や CDK Jest テスト（`cd cdk && npx jest`）実行時は、先に `colima start` しておいてください。Lambda のローカル pip バンドルが失敗した場合に Docker にフォールバックするため、Colima が動いている必要があります。
 
 ### AWS サービス要件
 

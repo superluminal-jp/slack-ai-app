@@ -5,7 +5,7 @@ End-to-end tests that verify the full Slack message flow:
 
 ## Prerequisites
 
-1. **Deployed environment** with echo mode enabled (`VALIDATION_ZONE_ECHO_MODE=true`)
+1. **Deployed environment** (Verification + Execution stacks)
 2. **Slack Bot** added to the test channel
 3. **Environment variables** set before running tests
 
@@ -42,31 +42,17 @@ E2E_TIMEOUT=120 pytest tests/e2e/ -v
 
 ## Test Cases
 
-### `test_echo_mode_full_flow`
-Sends a message mentioning the bot and verifies:
-- Bot replies within the timeout window
-- Reply contains `[Echo]` prefix
-- Reply contains the original test text
-- Reports latency for each step
-
-### `test_echo_mode_preserves_thread`
-Verifies the bot reply is posted in the same thread as the original message.
+E2E tests send a signed app_mention to the Lambda and verify the bot reply (when configured).
 
 ## Expected Output
 
 ```
-tests/e2e/test_slack_flow.py::TestEchoModeFullFlow::test_echo_mode_full_flow PASSED
-tests/e2e/test_slack_flow.py::TestEchoModeFullFlow::test_echo_mode_preserves_thread PASSED
-
---- E2E Latency Report (test_id=a1b2c3d4) ---
-  Post message:   0.45s
-  Wait for reply: 8.23s
-  Total:          8.68s
+pytest tests/e2e/ -v
 ```
 
 ## Troubleshooting
 
 - **Tests SKIPPED**: Ensure all required environment variables are set
-- **Bot did not reply**: Check that echo mode is enabled and the bot is in the test channel
+- **Bot did not reply**: Ensure the bot is in the test channel and the Lambda URL is correct
 - **SlackAPIError: not_in_channel**: Invite the bot to the test channel first
 - **SlackAPIError: invalid_auth**: Verify `SLACK_BOT_TOKEN` is correct and not expired

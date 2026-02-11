@@ -18,6 +18,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 import uvicorn
 
+from botocore.exceptions import ClientError
+
 from bedrock_client_converse import invoke_bedrock
 from response_formatter import format_success_response, format_error_response
 from attachment_processor import process_attachments, get_processing_summary
@@ -27,13 +29,20 @@ from agent_card import get_agent_card, get_health_status
 _active_tasks = 0
 _active_tasks_lock = threading.Lock()
 
-# Error message catalog
+# Error message catalog (FR-013: user-friendly messages in user's language)
 ERROR_MESSAGES = {
     "bedrock_timeout": "AI サービスが応答に時間がかかっています。しばらくしてからお試しください。",
     "bedrock_throttling": "AI サービスが混雑しています。1分後にお試しください。",
     "bedrock_access_denied": "AI サービスへの接続に問題があります。管理者にお問い合わせください。",
     "invalid_response": "AI サービスから予期しない応答を受信しました。再度お試しください。",
     "attachment_download_failed": "添付ファイルのダウンロードに失敗しました。ファイルを再アップロードしてお試しください。",
+    "download_failed": "添付ファイルのダウンロードに失敗しました。ファイルを再アップロードしてお試しください。",
+    "url_not_available": "添付ファイルのダウンロードに失敗しました。ファイルを再アップロードしてお試しください。",
+    "file_too_large": "ファイルサイズが上限を超えています。画像は10MB、ドキュメントは5MBまでです。",
+    "unsupported_file_type": "サポートされていないファイル形式です。画像: PNG, JPEG, GIF, WebP。ドキュメント: PDF, DOCX, XLSX, CSV, TXT, PPTX。",
+    "unsupported_image_type": "サポートされていない画像形式です。PNG, JPEG, GIF, WebP をご利用ください。",
+    "unsupported_type": "サポートされていないファイル形式です。",
+    "extraction_failed": "ファイルの内容を読み取れませんでした。破損しているか、パスワード保護されている可能性があります。",
     "generic": "エラーが発生しました。問題は記録され、修正に取り組んでいます。後ほどお試しください。",
 }
 
@@ -47,22 +56,24 @@ def _log(level: str, event_type: str, data: dict) -> None:
         "timestamp": time.time(),
         **data,
     }
-    print(json.dumps(log_entry, default=str))
+    print(json.dumps(log_entry, default=str, ensure_ascii=False))
 
 
 def _map_error_to_response(error: Exception) -> tuple:
     """Map an exception to a user-friendly error code and message."""
     error_type = type(error).__name__
-    error_msg = str(error)
+    error_msg = str(error).lower()
 
-    if "Timeout" in error_type or "timeout" in error_msg.lower():
+    if "timeout" in error_type.lower() or "timeout" in error_msg:
         return "bedrock_timeout", ERROR_MESSAGES["bedrock_timeout"]
-    elif "Throttling" in error_msg or "ThrottlingException" in error_msg:
+    elif "throttling" in error_msg or "throttlingexception" in error_msg:
         return "bedrock_throttling", ERROR_MESSAGES["bedrock_throttling"]
-    elif "AccessDenied" in error_msg or "AccessDeniedException" in error_msg:
+    elif "accessdenied" in error_msg or "accessdeniedexception" in error_msg:
         return "bedrock_access_denied", ERROR_MESSAGES["bedrock_access_denied"]
-    elif "ValidationException" in error_msg:
+    elif "validationexception" in error_msg:
         return "invalid_response", ERROR_MESSAGES["invalid_response"]
+    elif "resourcenotfound" in error_msg or "modelnotfound" in error_msg:
+        return "bedrock_access_denied", ERROR_MESSAGES["bedrock_access_denied"]
     else:
         return "generic", ERROR_MESSAGES["generic"]
 
@@ -121,33 +132,37 @@ def handle_message_tool(payload_json: str) -> str:
 
         # Validate required fields
         if not channel:
-            return json.dumps(format_error_response(
-                channel="unknown", error_code="missing_channel",
-                error_message="Missing channel", bot_token=bot_token or "unknown",
-                correlation_id=correlation_id,
-            ))
+            err = {"status": "error", "error_code": "missing_channel", "error_message": "Missing channel", "correlation_id": correlation_id}
+            if bot_token and bot_token.strip().startswith("xoxb-"):
+                return json.dumps(format_error_response(channel="unknown", error_code="missing_channel", error_message="Missing channel", bot_token=bot_token, correlation_id=correlation_id))
+            return json.dumps(err)
 
-        if not text:
-            return json.dumps(format_error_response(
-                channel=channel, error_code="missing_text",
-                error_message="Missing text", bot_token=bot_token or "unknown",
-                correlation_id=correlation_id,
-            ))
+        if not text and not (attachments and len(attachments) > 0):
+            err = {"status": "error", "error_code": "missing_text", "error_message": "Missing text", "channel": channel, "thread_ts": thread_ts, "correlation_id": correlation_id}
+            if bot_token and bot_token.strip().startswith("xoxb-"):
+                return json.dumps(format_error_response(channel=channel, error_code="missing_text", error_message="Missing text", bot_token=bot_token, thread_ts=thread_ts, correlation_id=correlation_id))
+            return json.dumps(err)
 
         # Process request (synchronous — strands executor handles async)
         with _active_tasks_lock:
             _active_tasks += 1
 
         try:
+            model_id = os.environ.get("BEDROCK_MODEL_ID", "not_set")
             _log("INFO", "processing_started", {
                 "correlation_id": correlation_id,
                 "channel": channel,
                 "text_length": len(text) if text else 0,
                 "attachment_count": len(attachments) if attachments else 0,
+                "bedrock_model_id": model_id,
             })
 
             # Process attachments if present
-            attachment_context = ""
+            native_documents = []
+            document_texts_fallback = []
+            image_bytes_list = []
+            image_formats_list = []
+            skip_msg = ""
             if attachments:
                 try:
                     processed_attachments = process_attachments(
@@ -159,18 +174,80 @@ def handle_message_tool(payload_json: str) -> str:
                         **summary,
                     })
 
-                    doc_texts = []
-                    for att in processed_attachments:
-                        if att.get("processing_status") == "success" and att.get("content_type") == "document":
-                            doc_texts.append(
-                                f"[Document: {att.get('file_name', 'unknown')}]\n{att.get('content', '')}"
-                            )
-                    if doc_texts:
-                        attachment_context = (
-                            "\n\n--- Attached Documents ---\n"
-                            + "\n\n".join(doc_texts)
-                            + "\n--- End of Documents ---\n"
+                    # FR-013: When all attachments failed, return user-friendly error
+                    if attachments and summary.get("success", 0) == 0 and summary.get("failed", 0) > 0:
+                        failed_att = next(
+                            (a for a in processed_attachments if a.get("processing_status") == "failed"),
+                            None,
                         )
+                        if failed_att:
+                            err_code = failed_att.get("error_code", "generic")
+                            user_msg = ERROR_MESSAGES.get(
+                                err_code, ERROR_MESSAGES["generic"]
+                            )
+                            _log("WARN", "all_attachments_failed", {
+                                "correlation_id": correlation_id,
+                                "error_code": err_code,
+                                "failed_count": summary["failed"],
+                            })
+                            return json.dumps(
+                                format_error_response(
+                                    channel=channel,
+                                    error_code=err_code,
+                                    error_message=user_msg,
+                                    bot_token=bot_token,
+                                    thread_ts=thread_ts,
+                                    correlation_id=correlation_id,
+                                )
+                            )
+
+                    for att in processed_attachments:
+                        if att.get("processing_status") != "success":
+                            continue
+                        if att.get("content_type") == "document":
+                            if att.get("document_bytes") and att.get("document_format"):
+                                native_documents.append({
+                                    "bytes": att["document_bytes"],
+                                    "format": att["document_format"],
+                                    "name": att.get("file_name", "document"),
+                                })
+                            if att.get("content"):
+                                document_texts_fallback.append(
+                                    f"[Document: {att.get('file_name', 'unknown')}]\n{att.get('content', '')}"
+                                )
+                        elif att.get("content_type") == "image":
+                            image_bytes_list.append(att["content"])
+                            fmt = att.get("mimetype", "image/png").split("/")[-1].lower()
+                            image_formats_list.append("jpeg" if fmt == "jpg" else fmt)
+
+                    # US3 (FR-012): cap documents and images per Bedrock request; skip message if truncated
+                    MAX_DOCUMENTS_PER_REQUEST = 5
+                    MAX_IMAGES_PER_REQUEST = 20
+                    original_n_docs = len(native_documents) + (
+                        len(document_texts_fallback) if not native_documents else 0
+                    )
+                    original_n_images = len(image_bytes_list)
+                    if len(native_documents) > MAX_DOCUMENTS_PER_REQUEST:
+                        native_documents = native_documents[:MAX_DOCUMENTS_PER_REQUEST]
+                    if len(document_texts_fallback) > MAX_DOCUMENTS_PER_REQUEST:
+                        document_texts_fallback = document_texts_fallback[
+                            :MAX_DOCUMENTS_PER_REQUEST
+                        ]
+                    if len(image_bytes_list) > MAX_IMAGES_PER_REQUEST:
+                        image_bytes_list = image_bytes_list[:MAX_IMAGES_PER_REQUEST]
+                        image_formats_list = image_formats_list[:MAX_IMAGES_PER_REQUEST]
+                    skip_msg = ""
+                    if original_n_docs > MAX_DOCUMENTS_PER_REQUEST or original_n_images > MAX_IMAGES_PER_REQUEST:
+                        skip_msg = (
+                            " (Note: Some files were not processed due to the limit of "
+                            "5 documents and 20 images per request.)"
+                        )
+                    if skip_msg:
+                        _log("WARN", "attachment_limit_truncation", {
+                            "correlation_id": correlation_id,
+                            "original_docs": original_n_docs,
+                            "original_images": original_n_images,
+                        })
                 except Exception as e:
                     _log("ERROR", "attachment_processing_error", {
                         "correlation_id": correlation_id,
@@ -178,9 +255,43 @@ def handle_message_tool(payload_json: str) -> str:
                         "error_type": type(e).__name__,
                     })
 
-            # Build full prompt and invoke Bedrock
-            full_prompt = text + attachment_context if attachment_context else text
-            ai_response = invoke_bedrock(full_prompt)
+            # File-only message: default prompt for document summary
+            prompt_for_bedrock = text.strip() if text and text.strip() else None
+            if prompt_for_bedrock is None and (native_documents or document_texts_fallback):
+                prompt_for_bedrock = "Please summarize the attached document(s)."
+            if skip_msg:
+                prompt_for_bedrock = (prompt_for_bedrock or "") + skip_msg
+
+            document_texts_first = (
+                document_texts_fallback if not native_documents else None
+            )
+            documents_first = native_documents if native_documents else None
+            try:
+                ai_response = invoke_bedrock(
+                    prompt=prompt_for_bedrock or "",
+                    document_texts=document_texts_first,
+                    documents=documents_first,
+                    images=image_bytes_list if image_bytes_list else None,
+                    image_formats=image_formats_list if image_formats_list else None,
+                )
+            except ClientError as e:
+                if (
+                    e.response.get("Error", {}).get("Code") == "ValidationException"
+                    and document_texts_fallback
+                ):
+                    _log("WARN", "bedrock_document_validation_fallback", {
+                        "correlation_id": correlation_id,
+                        "message": "Falling back to text extraction after ValidationException",
+                    })
+                    ai_response = invoke_bedrock(
+                        prompt=prompt_for_bedrock or "",
+                        document_texts=document_texts_fallback,
+                        documents=None,
+                        images=image_bytes_list if image_bytes_list else None,
+                        image_formats=image_formats_list if image_formats_list else None,
+                    )
+                else:
+                    raise
 
             duration_ms = (time.time() - start_time) * 1000
             _log("INFO", "bedrock_response_received", {
@@ -213,10 +324,22 @@ def handle_message_tool(payload_json: str) -> str:
                 "error_type": type(e).__name__,
                 "error_code": error_code,
                 "error_message": str(e),
+                "error_repr": repr(e),
                 "duration_ms": round(duration_ms, 2),
+                "bedrock_model_id": os.environ.get("BEDROCK_MODEL_ID", "not_set"),
                 "traceback": traceback.format_exc(),
             })
 
+            # When bot_token is missing, return minimal error (Verification Agent has its own context)
+            if not bot_token or not bot_token.strip() or not bot_token.startswith("xoxb-"):
+                return json.dumps({
+                    "status": "error",
+                    "error_code": error_code,
+                    "error_message": user_message,
+                    "channel": channel or "unknown",
+                    "thread_ts": thread_ts,
+                    "correlation_id": correlation_id,
+                })
             error_result = format_error_response(
                 channel=channel,
                 error_code=error_code,
@@ -236,6 +359,7 @@ def handle_message_tool(payload_json: str) -> str:
             "correlation_id": correlation_id,
             "error": str(e),
             "error_type": type(e).__name__,
+            "error_repr": repr(e),
             "traceback": traceback.format_exc(),
         })
         return json.dumps({

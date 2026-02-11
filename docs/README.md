@@ -18,6 +18,7 @@ AgentCore Runtime + FastAPI による A2A ゾーン間通信アーキテクチ�
 
 - [クイックスタート](./quickstart.md) — デプロイ手順
 - [トラブルシューティング](./how-to/troubleshooting.md) — 問題解決ガイド
+- [024 添付ファイル QA](../specs/024-slack-file-attachment/quickstart.md) — 添付ファイル機能のクイックスタート
 - [返信なし診断](./how-to/troubleshooting-no-reply.md) — メンションに無応答時のチェックリスト
 - [処理フロー検証](./how-to/verify-processing-flow.md) — E2E フローの確認手順
 
@@ -51,4 +52,4 @@ AgentCore Runtime + FastAPI による A2A ゾーン間通信アーキテクチ�
 
 ---
 
-**最終更新日**: 2026-02-10
+**最終更新日**: 2026-02-11

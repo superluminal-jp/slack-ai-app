@@ -45,8 +45,6 @@ export interface CdkConfig {
   verificationAgentName?: string;
   /** ARN of the Execution Agent Runtime for A2A (optional; from Execution Stack output or config) */
   executionAgentArn?: string;
-  /** When true, Verification Agent echoes task text to Slack without calling Execution Agent (021) */
-  validationZoneEchoMode?: boolean;
 }
 
 /**
@@ -97,7 +95,6 @@ const CdkConfigSchema = z.object({
       "executionAgentArn must be a valid AgentCore Runtime ARN"
     )
     .optional(),
-  validationZoneEchoMode: z.boolean().optional().default(false),
 });
 
 /**

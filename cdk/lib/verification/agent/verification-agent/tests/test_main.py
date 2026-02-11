@@ -444,219 +444,6 @@ class TestExecutionDelegation:
         mock_send.assert_called_once()
 
 
-class Test018EchoModeAtRuntime:
-    """018: When VALIDATION_ZONE_ECHO_MODE is 'true', Verification Agent enqueues echo to Slack Poster and does NOT call invoke_execution_agent."""
-
-    @patch("pipeline.invoke_execution_agent")
-    @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.check_rate_limit")
-    @patch("pipeline.authorize_request")
-    @patch("pipeline.check_entity_existence")
-    def test_echo_mode_on_does_not_call_invoke_execution_agent_posts_echo_returns_success(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
-    ):
-        """When VALIDATION_ZONE_ECHO_MODE is 'true', handle_message does NOT call invoke_execution_agent; calls send_slack_post_request with [Echo] + text and returns success (T003)."""
-        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
-        mock_rate.return_value = (True, 9)
-
-        from main import handle_message
-
-        payload = {
-            "prompt": json.dumps({
-                "channel": "C01234567",
-                "text": "hello world",
-                "bot_token": "xoxb-test",
-                "thread_ts": "1234.5678",
-                "correlation_id": "corr-018",
-                "team_id": "T1234",
-                "user_id": "U1234",
-            }),
-        }
-
-        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": "true"}, clear=False):
-            result = handle_message(payload)
-
-        result_data = json.loads(result)
-        assert result_data.get("status") == "completed"
-        mock_invoke.assert_not_called()
-        mock_send.assert_called_once()
-        call_kw = mock_send.call_args[1]
-        assert call_kw["channel"] == "C01234567"
-        assert call_kw["text"] == "[Echo] hello world"
-        assert call_kw["bot_token"] == "xoxb-test"
-        assert call_kw["thread_ts"] == "1234.5678"
-
-    @patch("pipeline.invoke_execution_agent")
-    @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.check_rate_limit")
-    @patch("pipeline.authorize_request")
-    @patch("pipeline.check_entity_existence")
-    def test_echo_mode_on_post_to_slack_called_with_channel_thread_ts_and_echo_text(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
-    ):
-        """When echo mode is on, send_slack_post_request is called with channel, thread_ts, and text '[Echo] ' + task text (T004)."""
-        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
-        mock_rate.return_value = (True, 9)
-
-        from main import handle_message
-
-        task_text = "echo this message"
-        payload = {
-            "prompt": json.dumps({
-                "channel": "C09999999",
-                "text": task_text,
-                "bot_token": "xoxb-test",
-                "thread_ts": "9999.000000",
-                "correlation_id": "corr-018-2",
-                "team_id": "T1234",
-                "user_id": "U1234",
-            }),
-        }
-
-        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": "true"}, clear=False):
-            handle_message(payload)
-
-        mock_send.assert_called_once()
-        call_kw = mock_send.call_args[1]
-        assert call_kw["channel"] == "C09999999"
-        assert call_kw["thread_ts"] == "9999.000000"
-        assert call_kw["text"] == "[Echo] " + task_text
-        mock_invoke.assert_not_called()
-
-
-class Test018EchoContentAndTarget:
-    """018 US3: Echo uses only current task channel, thread_ts, and text; no cross-request mixing."""
-
-    @patch("pipeline.invoke_execution_agent")
-    @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.check_rate_limit")
-    @patch("pipeline.authorize_request")
-    @patch("pipeline.check_entity_existence")
-    def test_echo_uses_task_channel_thread_ts_text_only_post_to_slack_matching(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
-    ):
-        """Verification Agent echo uses task channel, task thread_ts, and task text only; send_slack_post_request called with matching args (T012)."""
-        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
-        mock_rate.return_value = (True, 9)
-
-        from main import handle_message
-
-        task_channel = "C_US3_CH"
-        task_thread_ts = "12345.67890"
-        task_text = "only this request text"
-        payload = {
-            "prompt": json.dumps({
-                "channel": task_channel,
-                "text": task_text,
-                "bot_token": "xoxb-test",
-                "thread_ts": task_thread_ts,
-                "correlation_id": "corr-us3",
-                "team_id": "T1234",
-                "user_id": "U1234",
-            }),
-        }
-
-        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": "true"}, clear=False):
-            handle_message(payload)
-
-        mock_send.assert_called_once()
-        call_kw = mock_send.call_args[1]
-        assert call_kw["channel"] == task_channel
-        assert call_kw["thread_ts"] == task_thread_ts
-        assert call_kw["text"] == "[Echo] " + task_text
-        mock_invoke.assert_not_called()
-
-
-class Test018EchoModeOff:
-    """018 US2: When VALIDATION_ZONE_ECHO_MODE is unset or not 'true', Verification Agent calls invoke_execution_agent and does NOT post echo."""
-
-    @patch("pipeline.invoke_execution_agent")
-    @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.check_rate_limit")
-    @patch("pipeline.authorize_request")
-    @patch("pipeline.check_entity_existence")
-    def test_echo_mode_unset_calls_invoke_execution_agent_does_not_post_echo(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
-    ):
-        """When VALIDATION_ZONE_ECHO_MODE is unset, handle_message calls invoke_execution_agent and sends result to Slack Poster (T010)."""
-        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
-        mock_rate.return_value = (True, 9)
-        mock_invoke.return_value = json.dumps({
-            "status": "success",
-            "response_text": "AI answer",
-        })
-
-        from main import handle_message
-
-        payload = {
-            "prompt": json.dumps({
-                "channel": "C01234567",
-                "text": "hello",
-                "bot_token": "xoxb-test",
-                "thread_ts": "1234.5678",
-                "correlation_id": "corr-us2",
-                "team_id": "T1234",
-                "user_id": "U1234",
-            }),
-        }
-
-        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
-            result = handle_message(payload)
-
-        result_data = json.loads(result)
-        assert result_data.get("status") == "completed"
-        mock_invoke.assert_called_once()
-        mock_send.assert_called_once()
-        call_kw = mock_send.call_args[1]
-        assert call_kw["channel"] == "C01234567"
-        assert call_kw["text"] == "AI answer"
-        assert call_kw["bot_token"] == "xoxb-test"
-        assert call_kw["thread_ts"] == "1234.5678"
-
-    @patch("pipeline.invoke_execution_agent")
-    @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.check_rate_limit")
-    @patch("pipeline.authorize_request")
-    @patch("pipeline.check_entity_existence")
-    def test_echo_mode_false_calls_invoke_execution_agent_does_not_post_echo(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
-    ):
-        """When VALIDATION_ZONE_ECHO_MODE is 'false', handle_message calls invoke_execution_agent and sends result to Slack Poster (T010)."""
-        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
-        mock_rate.return_value = (True, 9)
-        mock_invoke.return_value = json.dumps({
-            "status": "success",
-            "response_text": "Normal response",
-        })
-
-        from main import handle_message
-
-        payload = {
-            "prompt": json.dumps({
-                "channel": "C09999",
-                "text": "question",
-                "bot_token": "xoxb-test",
-                "thread_ts": "999.000",
-                "correlation_id": "corr-us2b",
-                "team_id": "T1234",
-                "user_id": "U1234",
-            }),
-        }
-
-        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": "false"}, clear=False):
-            result = handle_message(payload)
-
-        result_data = json.loads(result)
-        assert result_data.get("status") == "completed"
-        mock_invoke.assert_called_once()
-        mock_send.assert_called_once()
-        call_kw = mock_send.call_args[1]
-        assert call_kw["channel"] == "C09999"
-        assert call_kw["text"] == "Normal response"
-        assert call_kw["bot_token"] == "xoxb-test"
-        assert call_kw["thread_ts"] == "999.000"
-
-
 class TestErrorMessageMapping:
     """Test user-friendly error message mapping."""
 
@@ -828,7 +615,7 @@ class TestUS3VersionConstraints:
 
 
 class Test022NormalFlowDelegation:
-    """022 US1: When VALIDATION_ZONE_ECHO_MODE is disabled, pipeline delegates to Execution Agent."""
+    """022 US1: Pipeline delegates to Execution Agent (normal flow)."""
 
     def _make_payload(self, text="Hello", channel="C01234567", thread_ts="1234.5678",
                       team_id="T1234", user_id="U1234", correlation_id="corr-022"):
@@ -863,8 +650,7 @@ class Test022NormalFlowDelegation:
 
         from main import handle_message
 
-        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
-            result = handle_message(self._make_payload())
+        result = handle_message(self._make_payload())
 
         result_data = json.loads(result)
         assert result_data["status"] == "completed"
@@ -890,8 +676,7 @@ class Test022NormalFlowDelegation:
 
         from main import handle_message
 
-        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": "false"}, clear=False):
-            handle_message(self._make_payload())
+        handle_message(self._make_payload())
 
         posted_text = mock_send.call_args[1]["text"]
         assert "[Echo]" not in posted_text
@@ -926,8 +711,7 @@ class Test022NormalFlowDelegation:
 
         from main import handle_message
 
-        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
-            handle_message(self._make_payload())
+        handle_message(self._make_payload())
 
         mock_send.assert_called_once()
         call_kw = mock_send.call_args[1]
@@ -950,16 +734,16 @@ class Test022NormalFlowDelegation:
 
         from main import handle_message
 
-        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
-            handle_message(self._make_payload(
-                text="question", channel="C_TEST", thread_ts="999.000",
-                team_id="T_TEAM", user_id="U_USER", correlation_id="corr-fields"
-            ))
+        handle_message(self._make_payload(
+            text="question", channel="C_TEST", thread_ts="999.000",
+            team_id="T_TEAM", user_id="U_USER", correlation_id="corr-fields"
+        ))
 
         invoke_args = mock_invoke.call_args[0][0]
         assert invoke_args["channel"] == "C_TEST"
         assert invoke_args["text"] == "question"
-        assert invoke_args["bot_token"] == "xoxb-test"
+        # bot_token required for response formatting (success/error)
+        assert invoke_args.get("bot_token") == "xoxb-test"
         assert invoke_args["thread_ts"] == "999.000"
         assert invoke_args["correlation_id"] == "corr-fields"
         assert invoke_args["team_id"] == "T_TEAM"
@@ -974,7 +758,7 @@ class Test022NormalFlowDelegation:
     def test_echo_off_env_var_case_insensitive(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
-        """T007: VALIDATION_ZONE_ECHO_MODE 'false'/'False'/'FALSE'/'' all trigger normal flow."""
+        """T007: Normal flow (delegation to execution agent) regardless of env."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
         mock_invoke.return_value = json.dumps({"status": "success", "response_text": "ok"})
@@ -983,8 +767,7 @@ class Test022NormalFlowDelegation:
 
         for env_val in ["false", "False", "FALSE", "", "no", "0"]:
             mock_invoke.reset_mock()
-            with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": env_val}, clear=False):
-                handle_message(self._make_payload())
+            handle_message(self._make_payload())
             mock_invoke.assert_called_once(), f"invoke not called for ECHO_MODE={env_val!r}"
 
 
@@ -1018,8 +801,7 @@ class Test022SecurityCheckPipeline:
 
         from main import handle_message
 
-        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
-            result = handle_message(self._make_payload())
+        result = handle_message(self._make_payload())
 
         result_data = json.loads(result)
         assert result_data["error_code"] == "existence_check_failed"
@@ -1040,8 +822,7 @@ class Test022SecurityCheckPipeline:
 
         from main import handle_message
 
-        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
-            result = handle_message(self._make_payload())
+        result = handle_message(self._make_payload())
 
         result_data = json.loads(result)
         assert result_data["error_code"] == "authorization_failed"
@@ -1064,8 +845,7 @@ class Test022SecurityCheckPipeline:
 
         from main import handle_message
 
-        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
-            result = handle_message(self._make_payload())
+        result = handle_message(self._make_payload())
 
         result_data = json.loads(result)
         assert result_data["error_code"] == "rate_limit_exceeded"
@@ -1084,8 +864,7 @@ class Test022SecurityCheckPipeline:
 
         from main import handle_message
 
-        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
-            result = handle_message(self._make_payload())
+        result = handle_message(self._make_payload())
 
         result_data = json.loads(result)
         assert result_data["error_code"] == "authorization_error"
@@ -1106,16 +885,15 @@ class Test022SecurityCheckPipeline:
 
         from main import handle_message
 
-        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
-            result = handle_message({
-                "prompt": json.dumps({
-                    "channel": "C01234567",
-                    "text": "Hello",
-                    "bot_token": "xoxb-test",
-                    "team_id": "T1234",
-                    "user_id": "U1234",
-                })
+        result = handle_message({
+            "prompt": json.dumps({
+                "channel": "C01234567",
+                "text": "Hello",
+                "bot_token": "xoxb-test",
+                "team_id": "T1234",
+                "user_id": "U1234",
             })
+        })
 
         result_data = json.loads(result)
         assert result_data["status"] == "completed"
@@ -1163,8 +941,7 @@ class Test022ExecutionErrorPaths:
 
         from main import handle_message
 
-        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
-            handle_message(self._make_payload())
+        handle_message(self._make_payload())
 
         mock_send.assert_called_once()
         posted_text = mock_send.call_args[1]["text"]
@@ -1189,8 +966,7 @@ class Test022ExecutionErrorPaths:
 
         from main import handle_message
 
-        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
-            handle_message(self._make_payload())
+        handle_message(self._make_payload())
 
         mock_send.assert_called_once()
         posted_text = mock_send.call_args[1]["text"]
@@ -1211,8 +987,7 @@ class Test022ExecutionErrorPaths:
 
         from main import handle_message
 
-        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
-            result = handle_message(self._make_payload())
+        result = handle_message(self._make_payload())
 
         result_data = json.loads(result)
         assert result_data["status"] == "error"
@@ -1236,8 +1011,7 @@ class Test022ExecutionErrorPaths:
 
         from main import handle_message
 
-        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
-            result = handle_message(self._make_payload())
+        result = handle_message(self._make_payload())
 
         result_data = json.loads(result)
         assert result_data["status"] == "error"
@@ -1261,8 +1035,7 @@ class Test022ExecutionErrorPaths:
 
         from main import handle_message
 
-        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
-            handle_message(self._make_payload())
+        handle_message(self._make_payload())
 
         mock_send.assert_called_once()
         posted_text = mock_send.call_args[1]["text"]
@@ -1287,8 +1060,7 @@ class Test022ExecutionErrorPaths:
 
         from main import handle_message
 
-        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
-            handle_message(self._make_payload())
+        handle_message(self._make_payload())
 
         assert pipeline.is_processing is False, "is_processing should be reset to False after exception"
 
@@ -1327,8 +1099,7 @@ class Test022StructuredLogging:
 
         from main import handle_message
 
-        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
-            handle_message(self._make_payload())
+        handle_message(self._make_payload())
 
         captured = capsys.readouterr()
         lines = [line for line in captured.out.strip().split("\n") if line.strip()]
@@ -1357,8 +1128,7 @@ class Test022StructuredLogging:
         from main import handle_message
 
         test_corr_id = "corr-026-unique"
-        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
-            handle_message(self._make_payload(correlation_id=test_corr_id))
+        handle_message(self._make_payload(correlation_id=test_corr_id))
 
         captured = capsys.readouterr()
         lines = [line for line in captured.out.strip().split("\n") if line.strip()]
@@ -1386,8 +1156,7 @@ class Test022StructuredLogging:
 
         from main import handle_message
 
-        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
-            handle_message(self._make_payload())
+        handle_message(self._make_payload())
 
         captured = capsys.readouterr()
         lines = [line for line in captured.out.strip().split("\n") if line.strip()]
@@ -1422,8 +1191,7 @@ class Test022StructuredLogging:
         from main import handle_message
 
         bot_token = "xoxb-secret-bot-token"
-        with patch.dict(os.environ, {"VALIDATION_ZONE_ECHO_MODE": ""}, clear=False):
-            handle_message(self._make_payload())
+        handle_message(self._make_payload())
 
         captured = capsys.readouterr()
         lines = [line for line in captured.out.strip().split("\n") if line.strip()]

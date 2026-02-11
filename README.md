@@ -204,7 +204,7 @@ This separation enables:
 
 - **Multi-model support**: Works with Claude, Nova, and other Bedrock models
 - **Thread context**: Maintains conversation history within Slack threads
-- **Attachment processing**: Handles images and documents in requests
+- **Attachment processing** (024): Images (PNG, JPEG, GIF, WebP) and documents (PDF, DOCX, XLSX, CSV, TXT, PPTX). Files flow via S3 pre-signed URLs; max 5 files per message, 10 MB for images, 5 MB for documents. Native Bedrock document blocks for high-quality Q&A.
 
 ### Infrastructure
 
@@ -260,7 +260,7 @@ slack-ai-app/
 │   │   │   │       ├── main.py                  # A2A server
 │   │   │   │       ├── agent_card.py            # Agent Card definition
 │   │   │   │       ├── cloudwatch_metrics.py    # Metrics
-│   │   │   │       └── tests/                   # Python tests (79 tests)
+│   │   │   │       └── tests/                   # Python tests (110 tests)
 │   │   │   └── lambda/                          # Legacy Lambda code
 │   │   ├── verification/       # Verification Stack
 │   │   │   ├── verification-stack.ts
@@ -274,7 +274,7 @@ slack-ai-app/
 │   │   │   │       ├── a2a_client.py             # Execution Agent A2A client
 │   │   │   │       ├── agent_card.py             # Agent Card definition
 │   │   │   │       ├── cloudwatch_metrics.py     # Metrics
-│   │   │   │       └── tests/                    # Python tests (83 tests, 94% pipeline.py coverage)
+│   │   │   │       └── tests/                    # Python tests (93 tests)
 │   │   │   └── lambda/                           # SlackEventHandler Lambda
 │   │   └── types/              # Shared type definitions
 │   └── test/                   # CDK/Jest tests (25 tests)
@@ -295,10 +295,10 @@ slack-ai-app/
 # CDK construct tests (Jest, 25 tests)
 cd cdk && npx jest test/agentcore-constructs.test.ts --verbose
 
-# Execution Agent tests (pytest, 79 tests)
+# Execution Agent tests (pytest, 110 tests)
 cd cdk/lib/execution/agent/execution-agent && python -m pytest tests/ -v
 
-# Verification Agent tests (pytest, 83 tests)
+# Verification Agent tests (pytest, 93 tests)
 cd cdk/lib/verification/agent/verification-agent && python -m pytest tests/ -v
 
 # SlackEventHandler Lambda tests
@@ -516,6 +516,7 @@ See [Troubleshooting Guide](docs/how-to/troubleshooting.md).
 | Existence Check fails        | Verify Bot Token OAuth scopes                  |
 | Bot doesn't respond          | Check Event Subscriptions and bot installation |
 | File not showing in thread (014) | Add **`files:write`** to Bot Token Scopes in Slack App OAuth & Permissions. Reinstall app to workspace. |
+| File attachment errors (024) | Add **`files:read`** to Bot Token Scopes for attachment downloads. Supported: images (PNG, JPEG, GIF, WebP), documents (PDF, DOCX, XLSX, CSV, TXT, PPTX). Max 5 files, 10 MB/image, 5 MB/doc. |
 
 ## Contributing
 
@@ -538,12 +539,19 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 
-**Last Updated**: 2026-02-10
+**Last Updated**: 2026-02-11
 
 ## Recent Updates
 
-- **2026-02-10**: Echo-mode-disabled validation test suite (022)
-  - Added 20 TDD tests across 4 new test classes in `tests/test_main.py` for the echo-mode-off (normal) pipeline flow
+- **2026-02-11**: Slack file attachment support (024)
+  - S3-based secure file transfer: Verification Agent downloads from Slack, uploads to S3, generates pre-signed URLs; Execution Agent downloads via pre-signed URL (no bot token in execution zone)
+  - Document Q&A: PDF, DOCX, XLSX, CSV, TXT via native Bedrock document blocks; PPTX via text extraction fallback
+  - Image analysis: PNG, JPEG, GIF, WebP via Bedrock image blocks
+  - Multiple files: up to 5 files per message; limits 10 MB/image, 5 MB/document
+  - User-friendly error messages (FR-013), structured logging with correlation IDs (FR-014)
+  - Test counts: Verification 93, Execution 110
+- **2026-02-10**: Normal flow validation test suite (022)
+  - Added 20 TDD tests across 4 new test classes in `tests/test_main.py` for the normal pipeline flow (delegation to Execution Agent)
   - `Test022NormalFlowDelegation` (5 tests) — verifies echo off triggers execution delegation without echo prefix
   - `Test022SecurityCheckPipeline` (5 tests) — verifies security check ordering: existence check → authorization → rate limit
   - `Test022ExecutionErrorPaths` (6 tests) — verifies error handling with no internal detail leakage and `is_processing` reset
@@ -553,7 +561,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 - **2026-02-09**: Strands migration cleanup (021)
   - Migrated both agents from `bedrock-agentcore` SDK to FastAPI + uvicorn with direct route definitions
   - CloudWatch IAM namespace fix (`StringLike` with `SlackAI-*` pattern)
-  - Echo mode config (`validationZoneEchoMode` in CdkConfig)
   - Dependency version pinning (`~=`), E2E test suite
   - Test counts: Verification 63, Execution 79, CDK 25
 - **2026-02-08**: A2A file to Slack (014)

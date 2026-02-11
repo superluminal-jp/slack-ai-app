@@ -61,10 +61,9 @@ aws logs tail /aws/lambda/SlackAI-Verification-Dev-AgentInvokerHandler544912-08w
 
 - `agent_invocation_success` が出ていれば、Verification Agent (Runtime) まで届いている。
 
-**Verification Agent (Runtime)** のログ（エコーモード時）：
+**Verification Agent (Runtime)** のログ：
 
 - ロググループは `/aws/bedrock-agentcore/` 以下。マネジメントコンソールの **CloudWatch → ロググループ** で `SlackAI_VerificationAgent` や `VerificationAgent` を含むものを開く。
-- `echo_mode_response` が出ていれば、Runtime 側でエコー処理まで実行している。
 
 ---
 
@@ -76,7 +75,7 @@ aws logs tail /aws/lambda/SlackAI-Verification-Dev-AgentInvokerHandler544912-08w
 | Request URL が Verified にならない | Signing Secret が CDK/Secrets Manager と Slack アプリの「Signing Secret」が一致しているか |
 | `existence_check_failed` | Slack Bot Token のスコープ（`users:read`, `conversations:read` 等）と実在する channel/user/team か |
 | `whitelist_authorization_failed` | 使用している team_id / channel_id / user_id がホワイトリストに含まれているか |
-| `sqs_enqueue_success` は出るが返信がない | Agent Invoker のログで `agent_invocation_success` の有無、Runtime のログで `echo_mode_response` の有無を確認 |
+| `sqs_enqueue_success` は出るが返信がない | Agent Invoker のログで `agent_invocation_success` の有無、Runtime のログで `delegating_to_execution_agent` 等の有無を確認 |
 
 ---
 
@@ -114,4 +113,4 @@ https://gzqk7e3d5nxyzy5k2cinwjzjrm0icnak.lambda-url.ap-northeast-1.on.aws/
 1. **Slack** → Request URL が正しいか・`app_mentions` 購読・Bot をチャンネルに招待。
 2. **Lambda** → ログに `event_callback_received` と `sqs_enqueue_success` が出ていれば、Lambda は正常に SQS まで送れている。
 3. **Agent Invoker** → ログに `agent_invocation_failed` と **424** が出ている場合は、**Verification Agent Runtime の起動待ち**の可能性が高い。数分待ってから再試行する。
-4. **Runtime** → ログに `echo_mode_response` が出ていれば、エコー処理まで到達している。出ていなければ Runtime がまだ受け付けていないか、環境変数・ペイロードの不備を疑う。
+4. **Runtime** → ログに `delegating_to_execution_agent` 等が出ていれば、Runtime はリクエストを受け付けている。出ていなければ Runtime がまだ受け付けていないか、ペイロードの不備を疑う。

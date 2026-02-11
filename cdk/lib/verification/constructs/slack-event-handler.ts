@@ -22,8 +22,6 @@ export interface SlackEventHandlerProps {
   verificationAgentArn: string;
   /** SQS queue for async agent invocation (016). When set, handler sends requests here instead of invoking AgentCore directly. */
   agentInvocationQueue?: sqs.IQueue;
-  /** 017: When true, handler echoes received message to Slack and returns 200 without SQS/AgentCore (validation zone verification). Default unset = normal behavior. */
-  validationZoneEchoMode?: boolean;
 }
 
 export class SlackEventHandler extends Construct {
@@ -102,10 +100,6 @@ export class SlackEventHandler extends Construct {
         // 016: when set, handler sends to SQS instead of invoking AgentCore directly
         ...(props.agentInvocationQueue && {
           AGENT_INVOCATION_QUEUE_URL: props.agentInvocationQueue.queueUrl,
-        }),
-        // 017: echo mode — when true, post received text to Slack and return 200 (no SQS, no AgentCore)
-        ...(props.validationZoneEchoMode === true && {
-          VALIDATION_ZONE_ECHO_MODE: "true",
         }),
       },
     });

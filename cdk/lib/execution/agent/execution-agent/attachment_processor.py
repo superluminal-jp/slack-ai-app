@@ -18,7 +18,7 @@ Reference:
 import json
 import time
 from typing import List, Dict, Optional, Any
-from file_downloader import download_file, get_file_download_url
+from file_downloader import download_file, get_file_download_url, download_from_presigned_url
 
 
 def _log(level: str, event_type: str, data: dict) -> None:
@@ -115,6 +115,15 @@ except ImportError as e:
 MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
 MAX_DOCUMENT_SIZE = 5 * 1024 * 1024  # 5MB
 
+# Native Bedrock document formats (for document_bytes; PPTX not included)
+MIME_TO_BEDROCK_DOCUMENT_FORMAT = {
+    "application/pdf": "pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    "text/csv": "csv",
+    "text/plain": "txt",
+}
+
 
 def process_attachments(
     attachments: List[Dict[str, Any]], bot_token: str, correlation_id: Optional[str] = None
@@ -152,6 +161,7 @@ def process_attachments(
         file_name = attachment.get("name", "unknown")
         mime_type = attachment.get("mimetype", "")
         file_size = attachment.get("size", 0)
+        presigned_url = attachment.get("presigned_url")
         download_url = attachment.get("url_private_download")
 
         log_data = {
@@ -162,6 +172,64 @@ def process_attachments(
         }
         if correlation_id:
             log_data["correlation_id"] = correlation_id
+
+        # Download: prefer S3 pre-signed URL (US4); fallback to Slack when absent.
+        # For images, expected_mimetype triggers magic-bytes validation in download_from_presigned_url;
+        # validated bytes are then passed as content for Bedrock image blocks (US2).
+        if presigned_url:
+            file_bytes = download_from_presigned_url(
+                presigned_url,
+                expected_size=file_size if file_size else None,
+                expected_mimetype=mime_type if is_image_attachment(mime_type) else None,
+                correlation_id=correlation_id,
+            )
+            url_source = "presigned_url"
+        else:
+            if not bot_token:
+                _log("ERROR", "attachment_download_no_bot_token", {
+                    **log_data,
+                    "message": "Slack download requires bot_token when presigned_url is absent",
+                })
+                processed.append({
+                    "file_id": file_id,
+                    "file_name": file_name,
+                    "mimetype": mime_type,
+                    "content_type": "unknown",
+                    "processing_status": "failed",
+                    "error_code": "url_not_available",
+                    "error_message": "Download URL not available (missing bot_token and presigned_url)",
+                })
+                continue
+            # Step 1: Get fresh download URL from files.info API
+            fresh_download_url = get_file_download_url(file_id, bot_token)
+            effective_download_url = fresh_download_url or download_url
+            url_source = "files_info" if fresh_download_url else "event_payload"
+            if not effective_download_url:
+                _log("ERROR", "attachment_download_url_missing", {
+                    **log_data,
+                    "files_info_failed": fresh_download_url is None,
+                    "event_url_missing": download_url is None,
+                })
+                processed.append({
+                    "file_id": file_id,
+                    "file_name": file_name,
+                    "mimetype": mime_type,
+                    "content_type": "unknown",
+                    "processing_status": "failed",
+                    "error_code": "url_not_available",
+                    "error_message": "Could not obtain download URL from Slack (files.info API and event payload both failed)",
+                })
+                continue
+            _log("INFO", "attachment_download_started", {
+                **log_data,
+                "url_source": url_source,
+            })
+            file_bytes = download_file(
+                effective_download_url,
+                bot_token,
+                expected_size=file_size,
+                expected_mimetype=mime_type,
+            )
 
         # Check if image type is supported by Bedrock
         if is_image_attachment(mime_type) and not is_supported_image_type(mime_type):
@@ -213,43 +281,6 @@ def process_attachments(
                     "error_message": f"Document file size ({file_size} bytes) exceeds maximum allowed size ({MAX_DOCUMENT_SIZE} bytes)",
                 })
                 continue
-
-        # Step 1: Get fresh download URL from files.info API
-        fresh_download_url = get_file_download_url(file_id, bot_token)
-
-        # Use fresh URL (preferred) or fallback to event payload URL
-        effective_download_url = fresh_download_url or download_url
-        url_source = "files_info" if fresh_download_url else "event_payload"
-
-        if not effective_download_url:
-            _log("ERROR", "attachment_download_url_missing", {
-                **log_data,
-                "files_info_failed": fresh_download_url is None,
-                "event_url_missing": download_url is None,
-            })
-            processed.append({
-                "file_id": file_id,
-                "file_name": file_name,
-                "mimetype": mime_type,
-                "content_type": "unknown",
-                "processing_status": "failed",
-                "error_code": "url_not_available",
-                "error_message": "Could not obtain download URL from Slack (files.info API and event payload both failed)",
-            })
-            continue
-
-        _log("INFO", "attachment_download_started", {
-            **log_data,
-            "url_source": url_source,
-        })
-
-        # Step 2: Download file with validation
-        file_bytes = download_file(
-            effective_download_url,
-            bot_token,
-            expected_size=file_size,
-            expected_mimetype=mime_type,
-        )
 
         if not file_bytes:
             _log("ERROR", "attachment_download_failed", {
@@ -326,14 +357,20 @@ def process_attachments(
                     })
 
             if text_content:
-                processed.append({
+                doc_result = {
                     "file_id": file_id,
                     "file_name": file_name,
                     "mimetype": mime_type,
                     "content_type": "document",
                     "content": text_content,
                     "processing_status": "success",
-                })
+                }
+                # Native Bedrock document block (PDF, DOCX, XLSX, CSV, TXT); PPTX stays text-only
+                bedrock_format = MIME_TO_BEDROCK_DOCUMENT_FORMAT.get(mime_type)
+                if bedrock_format:
+                    doc_result["document_bytes"] = file_bytes
+                    doc_result["document_format"] = bedrock_format
+                processed.append(doc_result)
             elif not slide_images:
                 processed.append({
                     "file_id": file_id,
