@@ -12,11 +12,21 @@ import * as cdk from "aws-cdk-lib";
 import * as iam from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
 
+/** Lifecycle configuration for AgentCore Runtime (optional). See specs/026 research.md §2. */
+export interface AgentCoreLifecycleConfig {
+  /** Idle session timeout in seconds (60–28800). Default: 900. */
+  readonly idleRuntimeSessionTimeoutSeconds?: number;
+  /** Max instance lifetime in seconds (60–28800). Default: 28800. */
+  readonly maxLifetimeSeconds?: number;
+}
+
 export interface ExecutionAgentRuntimeProps {
   /** Name for the AgentCore Runtime */
   readonly agentRuntimeName: string;
   /** ECR container image URI (including tag) */
   readonly containerImageUri: string;
+  /** Lifecycle configuration (optional). Omit to use platform defaults. */
+  readonly lifecycleConfiguration?: AgentCoreLifecycleConfig;
   /** Bedrock model ID (BEDROCK_MODEL_ID env) */
   readonly bedrockModelId?: string;
   /** AWS Region (AWS_REGION_NAME env) */
@@ -121,7 +131,10 @@ export class ExecutionAgentRuntime extends Construct {
       })
     );
 
-    // Bedrock InvokeModel permissions for AI processing
+    // Bedrock InvokeModel permissions for AI processing.
+    // 026 US1: Per AWS docs, foundation-model ARN scoping is supported
+    // (arn:aws:bedrock:region::foundation-model/model-id). CDK addToPolicy merges with
+    // other statements; when using raw CFn/IAM, scope to foundation-model ARN for least privilege.
     this.executionRole.addToPolicy(
       new iam.PolicyStatement({
         sid: "BedrockInvokeModel",
@@ -153,6 +166,15 @@ export class ExecutionAgentRuntime extends Construct {
         // Omit AuthorizerConfiguration: default is SigV4 for A2A
       },
     });
+    if (props.lifecycleConfiguration) {
+      const lc = props.lifecycleConfiguration;
+      const idle = lc.idleRuntimeSessionTimeoutSeconds ?? 900;
+      const maxLt = lc.maxLifetimeSeconds ?? 28800;
+      this.runtime.addPropertyOverride("LifecycleConfiguration", {
+        IdleRuntimeSessionTimeout: Math.max(60, Math.min(28800, idle)),
+        MaxLifetime: Math.max(60, Math.min(28800, maxLt)),
+      });
+    }
 
     // EnvironmentVariables for container (BEDROCK_MODEL_ID, AWS_REGION_NAME)
     const environmentVariables: Record<string, string> = {};

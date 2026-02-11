@@ -28,6 +28,7 @@ cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLO
 Python 3.11 (コンテナ: `python:3.11-slim`, ARM64): Follow standard conventions
 
 ## Recent Changes
+- 026-best-practices-alignment: Bedrock/AgentCore/Strands/CDK ベストプラクティス適用（HTTPS、最小権限、grant*()、暗号化、スコープ定義、計装、評価戦略）。requirements.txt は `~=` でバージョン固定
 - Reaction swap on reply: Slack Poster removes 👀 and adds ✅ when posting AI response; `message_ts` in SQS payload
 - 024-slack-file-attachment: Added Python 3.11 (agents), TypeScript 5.x (CDK) + FastAPI, uvicorn, boto3, requests, aws-cdk-lib
 - 023-remove-echo-mode: Added Python 3.11 (Verification Agent), TypeScript 5.x (CDK), Bash (deploy scripts) + FastAPI, uvicorn, boto3, aws-cdk-lib, zod

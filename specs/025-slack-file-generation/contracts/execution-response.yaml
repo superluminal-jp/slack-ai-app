@@ -1,0 +1,66 @@
+# Execution Agent Response Contract
+# Execution Agent → Verification Agent
+# Updated for 025-slack-file-generation
+# NOTE: No structural changes — file_artifact already supports generated files
+
+ExecutionResponse:
+  type: object
+  required:
+    - status
+    - correlation_id
+  properties:
+    status:
+      type: string
+      enum: [success, error]
+      description: Overall processing status
+    response_text:
+      type: string
+      description: AI-generated response text (includes file description when file_artifact present)
+    correlation_id:
+      type: string
+      format: uuid
+      description: Request correlation ID (echoed from request)
+    channel:
+      type: string
+      description: Slack channel ID (echoed from request)
+    thread_ts:
+      type: string
+      description: Slack thread timestamp (echoed from request)
+    file_artifact:
+      $ref: '#/FileArtifact'
+      description: Generated file (when tool creates a file)
+    error_code:
+      type: string
+      description: Error identifier (when status=error)
+    error_message:
+      type: string
+      description: User-friendly error message in Japanese (when status=error)
+
+FileArtifact:
+  type: object
+  properties:
+    contentBase64:
+      type: string
+      format: byte
+      description: Base64-encoded file content
+    fileName:
+      type: string
+      description: Output filename with extension
+    mimeType:
+      type: string
+      description: Output MIME type
+      enum:
+        # Text-based (existing)
+        - text/csv
+        - text/plain
+        - application/json
+        # New for 025
+        - text/markdown
+        - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+        - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+        - application/vnd.openxmlformats-officedocument.presentationml.presentation
+        - image/png
+
+# Changes from 024 contract:
+# - FileArtifact.mimeType: Added text/markdown, docx, xlsx, pptx, png MIME types
+# - No structural changes to ExecutionResponse

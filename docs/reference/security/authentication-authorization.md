@@ -746,6 +746,7 @@ const existenceCheckAlarm = new cloudwatch.Alarm(
 
 - [セキュリティ要件](./requirements.md) - 機能的・非機能的セキュリティ要件
 - [脅威モデル](./threat-model.md) - リスク分析とアクター
+- [Bedrock CMK 検討ガイド](./bedrock-cmk-consideration.md) - 規制要件時の CMK 検討（026）
 - [セキュリティ実装](./implementation.md) - 多層防御の実装詳細
 - [ADR-004](../explanation/adr/004-slack-api-existence-check.md) - Existence Check の採用理由
 - [アーキテクチャ概要](../architecture/overview.md) - セキュリティ設計の原則

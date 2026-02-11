@@ -226,6 +226,17 @@ print(json.dumps(log_entry, cls=_DecimalEncoder))
 
 **参照（AWS 公式）**: [Invoke an AgentCore Runtime agent](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-invoke-agent.html) | [Troubleshoot AgentCore Runtime](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-troubleshooting.html) | [A2A protocol contract](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-a2a-protocol-contract.html) | [CreateAgentRuntime API](https://docs.aws.amazon.com/bedrock-agentcore-control/latest/APIReference/API_CreateAgentRuntime.html)。InvokeAgentRuntime 利用時は boto3 1.39.8+ / botocore 1.33.8+ を推奨（[runtime-troubleshooting](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-troubleshooting.html)）。
 
+### runtimeSessionId とペイロードサイズ制限
+
+InvokeAgentRuntime 利用時は以下の制限を遵守してください。
+
+| 項目 | 制限 | 本プロジェクトの実装 |
+|------|------|----------------------|
+| **runtimeSessionId** | 長さ 33–256 文字 | `str(uuid.uuid4())` を使用（36 文字）。API 要件を満たす |
+| **ペイロードサイズ** | 最大 100 MB | テキスト・添付ファイル（024）を含めても通常は遠く下回る。マルチモーダル拡張時は監視を推奨 |
+
+スレッド単位でコンテキストを維持するユースケースでは、同一スレッドで同じ `runtimeSessionId` を再利用可能。本アプリはリクエスト毎に新しいセッション ID を使用（非同期 SQS 経由のため）。
+
 ### 症状: AgentCore Agent が起動しない
 
 **考えられる原因**:

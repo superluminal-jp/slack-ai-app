@@ -21,11 +21,21 @@ import * as s3 from "aws-cdk-lib/aws-s3";
 import * as sqs from "aws-cdk-lib/aws-sqs";
 import { Construct } from "constructs";
 
+/** Lifecycle configuration for AgentCore Runtime (optional). See research.md §2. */
+export interface AgentCoreLifecycleConfig {
+  /** Idle session timeout in seconds (60–28800). Default: 900. */
+  readonly idleRuntimeSessionTimeoutSeconds?: number;
+  /** Max instance lifetime in seconds (60–28800). Default: 28800. */
+  readonly maxLifetimeSeconds?: number;
+}
+
 export interface VerificationAgentRuntimeProps {
   /** Name for the AgentCore Runtime */
   readonly agentRuntimeName: string;
   /** ECR container image URI (including tag) */
   readonly containerImageUri: string;
+  /** Lifecycle configuration (optional). Omit to use platform defaults. */
+  readonly lifecycleConfiguration?: AgentCoreLifecycleConfig;
   /** DynamoDB tables for security validation */
   readonly tokenTable: dynamodb.ITable;
   readonly dedupeTable: dynamodb.ITable;
@@ -168,8 +178,10 @@ export class VerificationAgentRuntime extends Construct {
       })
     );
 
-    // AgentCore InvokeAgentRuntime permission (for calling Execution Agent)
-    // Supports cross-account: scoped to specific Execution Agent ARN when provided
+    // AgentCore InvokeAgentRuntime permission (for calling Execution Agent).
+    // 026 US1 (T007): Least privilege — scope to executionAgentArn when provided (same-account
+    // or cross-account). cdk.ts passes executionAgentArn from ExecutionStack when both deployed.
+    // See audit-iam-bedrock.md §2.3.
     this.executionRole.addToPolicy(
       new iam.PolicyStatement({
         sid: "AgentCoreInvoke",
@@ -178,13 +190,9 @@ export class VerificationAgentRuntime extends Construct {
           "bedrock-agentcore:InvokeAgentRuntime",
           "bedrock-agentcore:GetAsyncTaskResult",
         ],
-        // Scope to specific Execution Agent ARN if provided, otherwise wildcard
-        // Cross-account: ARN includes the Execution Account's account ID
         resources: props.executionAgentArn
           ? [props.executionAgentArn]
-          : [
-              `arn:aws:bedrock-agentcore:${stack.region}:*:runtime/*`,
-            ],
+          : [`arn:aws:bedrock-agentcore:${stack.region}:*:runtime/*`],
       })
     );
 
@@ -238,6 +246,15 @@ if (props.slackPostRequestQueue) {
         },
       },
     });
+    if (props.lifecycleConfiguration) {
+      const lc = props.lifecycleConfiguration;
+      const idle = lc.idleRuntimeSessionTimeoutSeconds ?? 900;
+      const maxLt = lc.maxLifetimeSeconds ?? 28800;
+      this.runtime.addPropertyOverride("LifecycleConfiguration", {
+        IdleRuntimeSessionTimeout: Math.max(60, Math.min(28800, idle)),
+        MaxLifetime: Math.max(60, Math.min(28800, maxLt)),
+      });
+    }
     // EnvironmentVariables (string-to-string map) are in CreateAgentRuntime API but not in CDK L1 schema; applied at deploy time
     this.runtime.addPropertyOverride("EnvironmentVariables", environmentVariables);
 

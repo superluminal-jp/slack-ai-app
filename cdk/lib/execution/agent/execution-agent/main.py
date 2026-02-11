@@ -81,13 +81,29 @@ def _map_error_to_response(error: Exception) -> tuple:
 # ─── strands-agents Tool: Bedrock processing entrypoint ───
 
 def handle_message_tool(payload_json: str) -> str:
-    """Process an A2A message: parse, invoke Bedrock, return formatted response.
+    """A2A メッセージを処理し、Bedrock で AI 推論を行い、フォーマット済みレスポンスを返す。
+
+    026 US3 (T014): ツール定義の明確化 — purpose、パラメータ、戻り値を明記。
+
+    Purpose:
+        Verification Agent から受け取った A2A ペイロードをパースし、Bedrock Converse API で
+        AI 推論を実行。テキスト・添付ファイル（画像・ドキュメント）をマルチモーダル入力として
+        処理し、Slack 投稿用の JSON レスポンスを返す。
 
     Args:
-        payload_json: JSON string containing the task payload with prompt field.
+        payload_json: JSON 文字列。期待する構造:
+            - "prompt": タスクペイロード（JSON 文字列またはオブジェクト）。以下を含む:
+                - channel (str): Slack チャンネル ID
+                - text (str): ユーザーメッセージ本文
+                - bot_token (str): Slack Bot Token
+                - thread_ts (str, optional): スレッドタイムスタンプ
+                - attachments (list, optional): 024 添付ファイル情報のリスト
+                - correlation_id (str, optional): トレース用 ID
 
     Returns:
-        JSON string with processing result.
+        JSON 文字列。成功時: {"status": "success", "response_text": "...", "channel": "...", ...}
+        エラー時: {"status": "error", "error_code": "...", "error_message": "...", ...}
+        file_artifact を含む場合: 014 生成ファイルのメタデータ。
     """
     global _active_tasks
     correlation_id = str(uuid.uuid4())

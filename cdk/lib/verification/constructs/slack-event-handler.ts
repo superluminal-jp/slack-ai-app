@@ -127,6 +127,7 @@ export class SlackEventHandler extends Construct {
     );
 
     // Grant AgentCore Runtime invocation permission (A2A path).
+    // 026 US1 (T007): Least privilege — scoped to specific ARNs per audit-iam-bedrock.md.
     // Per AWS: both runtime and endpoint may be evaluated for InvokeAgentRuntime.
     // https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/resource-based-policies.html
     const runtimeEndpointArn = `${props.verificationAgentArn}/runtime-endpoint/DEFAULT`;

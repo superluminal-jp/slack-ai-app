@@ -73,7 +73,8 @@ export class AgentInvoker extends Construct {
       },
     });
 
-    // Grant InvokeAgentRuntime on Verification Agent runtime and its DEFAULT endpoint
+    // Grant InvokeAgentRuntime on Verification Agent runtime and its DEFAULT endpoint.
+    // 026 US1 (T007): Least privilege — scoped to specific ARNs per audit-iam-bedrock.md.
     const runtimeEndpointArn = `${props.verificationAgentArn}/runtime-endpoint/DEFAULT`;
     this.function.addToRolePolicy(
       new iam.PolicyStatement({
