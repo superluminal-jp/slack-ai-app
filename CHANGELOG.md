@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Reaction swap on Slack reply**: When posting AI response to Slack, the system now removes the 👀 (eyes) reaction and adds ✅ (white_check_mark) on the original message, providing clear visual feedback that processing completed successfully
 - **Slack File Attachment Support** (024-slack-file-attachment)
   - S3-based secure file transfer: Verification Agent downloads from Slack, uploads to S3, generates pre-signed URLs; Execution Agent downloads via pre-signed URL (no bot token in execution zone)
   - Document Q&A: PDF, DOCX, XLSX, CSV, TXT via native Bedrock document blocks; PPTX via text extraction fallback

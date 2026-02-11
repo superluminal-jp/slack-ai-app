@@ -22,7 +22,7 @@ oauth_config:
       - groups:history
       - files:read # 024: Required for Slack file attachment downloads (S3 transfer)
       - files:write # 014: Required for posting AI-generated files to thread
-      - reactions:write # Required for adding/removing reactions (👀, ✅, ❌)
+      - reactions:write # Required for adding/removing reactions (👀 on receive, swap to ✅ on reply)
       - team:read # Required for Existence Check (team_id verification)
       - users:read # Required for Existence Check (user_id verification)
       - channels:read # Required for Existence Check (channel_id verification)

@@ -12,7 +12,7 @@
     ▼ [A] HTTPS POST (X-Slack-Signature)
 [Slack Event Handler] Lambda (Function URL)
     │ 署名検証・Existence Check・ホワイトリスト・レート制限・重複排除
-    │ → リアクション 👀 で 200 返却
+    │ → リアクション 👀 を付与して 200 返却
     ▼ [B] SQS SendMessage (agent-invocation-request)
 [Agent Invoker] Lambda (SQS トリガー)
     │
@@ -30,6 +30,8 @@
 [Slack Poster] Lambda (SQS トリガー)
     │
     ▼ [F] Slack API (chat.postMessage / files.upload_v2)
+    │ 投稿成功後: リアクション 👀 を削除して ✅ を付与
+    ▼
 [Slack] スレッドに返信
 ```
 

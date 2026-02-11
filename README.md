@@ -116,7 +116,7 @@ The system processes requests through two independent zones via a single **Agent
 │ Verification Zone                                            │
 │ ┌─────────────────────────────────────────────────────────┐ │
 │ │ SlackEventHandler Lambda (Function URL)                 │ │
-│ │ - Signature verification, reaction (👀) response         │ │
+│ │ - Signature verification, reaction (👀 on receive, ✅ on reply) │ │
 │ │ - AgentCore A2A path (only path)                          │ │
 │ │ [2] InvokeAgentRuntime (SigV4)                          │ │
 │ └──────────────────────┬──────────────────────────────────┘ │
@@ -543,6 +543,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## Recent Updates
 
+- **2026-02-11**: Reaction swap on reply (eyes→checkmark)
+  - When posting AI response to Slack, the system removes 👀 and adds ✅ on the original message for clear completion feedback
+  - Slack Poster Lambda performs reaction swap after successful post; `message_ts` added to SQS payload for reaction target
 - **2026-02-11**: Slack file attachment support (024)
   - S3-based secure file transfer: Verification Agent downloads from Slack, uploads to S3, generates pre-signed URLs; Execution Agent downloads via pre-signed URL (no bot token in execution zone)
   - Document Q&A: PDF, DOCX, XLSX, CSV, TXT via native Bedrock document blocks; PPTX via text extraction fallback

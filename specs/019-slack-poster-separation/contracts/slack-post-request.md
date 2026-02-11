@@ -29,3 +29,4 @@ Verification Agent は Slack に直接投稿せず、この形式のメッセー
 1. Verification Agent が検証・実行結果を処理したあと、投稿すべき内容をこの形式で 1 メッセージにまとめる。
 2. `boto3.client("sqs").send_message(QueueUrl=SLACK_POST_REQUEST_QUEUE_URL, MessageBody=json.dumps(body))` で送信。
 3. Slack Poster Lambda が SQS から取得し、`text` があれば `chat.postMessage`、`file_artifact` があれば `files.upload`（または files_upload_v2）を実行。
+4. 投稿成功後、`message_ts`（または `thread_ts` のフォールバック）がある場合、元メッセージのリアクションを 👀 から ✅ に差し替える（`reactions_remove` + `reactions_add`）。

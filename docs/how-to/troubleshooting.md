@@ -387,6 +387,7 @@ AI 生成ファイル（CSV/JSON 等）をスレッドに投稿する機能（01
 | **2. SQS → Agent Invoker** | `/aws/lambda/SlackAI-Verification-Dev-AgentInvokerHandler544912-*` | `agent_invocation_success` | `agent_invocation_failed` → **InvokeAgentRuntime 失敗**（下記 424 を参照） |
 | **3. Verification Agent（AgentCore）** | `/aws/bedrock-agentcore/runtimes/SlackAI_VerificationAgent-*-DEFAULT` | `delegating_to_execution_agent` → `execution_result_received` → `slack_response_posted` | ログが無い → Agent Invoker の呼び出しが届いていない（424 等） |
 | **4. Execution Agent（AgentCore）** | `/aws/bedrock-agentcore/runtimes/SlackAI_ExecutionAgent-*-DEFAULT` | 推論・応答のログ | Verification のログに `delegating_to_execution_agent` はあるが Execution にログが無い → A2A または Execution 側の不調 |
+| **5. Slack Poster → Slack** | `/aws/lambda/SlackAI-Verification-Dev-SlackPoster...` | `slack_post_success` → リアクション 👀→✅ 差し替え | 投稿成功時は元メッセージのリアクションが 👀 から ✅ に変わる。返信が来ない場合は Poster のログを確認 |
 
 **CLI で直近ログを確認する例**（リージョン・ロググループ名は環境に合わせて変更）:
 

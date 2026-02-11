@@ -28,6 +28,7 @@ cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLO
 Python 3.11 (コンテナ: `python:3.11-slim`, ARM64): Follow standard conventions
 
 ## Recent Changes
+- Reaction swap on reply: Slack Poster removes 👀 and adds ✅ when posting AI response; `message_ts` in SQS payload
 - 024-slack-file-attachment: Added Python 3.11 (agents), TypeScript 5.x (CDK) + FastAPI, uvicorn, boto3, requests, aws-cdk-lib
 - 023-remove-echo-mode: Added Python 3.11 (Verification Agent), TypeScript 5.x (CDK), Bash (deploy scripts) + FastAPI, uvicorn, boto3, aws-cdk-lib, zod
 - 021-strands-migration-cleanup: Added Python 3.11 (コンテナ: `python:3.11-slim`, ARM64) + `strands-agents[a2a]~=1.25.0`, `fastapi`, `uvicorn`, `boto3`, `slack-sdk`

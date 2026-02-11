@@ -116,7 +116,7 @@ export DEPLOYMENT_ENV=prod
 │ 検証ゾーン (Verification Zone)                               │
 │ ┌─────────────────────────────────────────────────────────┐ │
 │ │ SlackEventHandler Lambda (Function URL)                 │ │
-│ │ - 署名検証、リアクション(👀)応答                         │ │
+│ │ - 署名検証、リアクション（受付時👀、返信時✅）           │ │
 │ │ - AgentCore A2A パス（唯一の経路）                      │ │
 │ │ [2] InvokeAgentRuntime (SigV4)                          │ │
 │ └──────────────────────┬──────────────────────────────────┘ │
@@ -548,10 +548,18 @@ Signing Secret + Bot Token の両方が漏洩した場合、攻撃者は：
 
 ---
 
-**最終更新日**: 2026-02-09
+**最終更新日**: 2026-02-11
 
 ## 最近の更新
 
+- **2026-02-11**: 返信時のリアクション差し替え（👀→✅）
+  - Slack に AI レスポンスを投稿する際、元メッセージの 👀 を削除して ✅ を付与し、処理完了を視覚的に表示
+  - Slack Poster Lambda が投稿成功後にリアクション差し替えを実行。SQS ペイロードに `message_ts` を追加
+- **2026-02-11**: Slack 添付ファイル対応（024）
+  - S3 ベースのセキュアファイル転送: Verification Agent が Slack からダウンロード→S3 にアップロード→署名付き URL 生成。Execution Agent は署名付き URL 経由で取得（実行ゾーンに bot token 不要）
+  - ドキュメント Q&A: PDF, DOCX, XLSX, CSV, TXT を Bedrock ネイティブブロックで。PPTX はテキスト抽出フォールバック
+  - 画像分析: PNG, JPEG, GIF, WebP を Bedrock 画像ブロックで
+  - 複数ファイル: 1 メッセージ最大 5 ファイル、画像 10 MB・ドキュメント 5 MB 制限
 - **2026-02-09**: Strands マイグレーション & クリーンアップ（021）
   - Verification Agent / Execution Agent を `bedrock-agentcore` SDK から FastAPI + uvicorn に移行（直接ルート定義）
   - CloudWatch IAM ネームスペース修正（`StringLike` + `SlackAI-*` パターン）
