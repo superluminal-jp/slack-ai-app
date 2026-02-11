@@ -14,11 +14,26 @@ Converse API advantages:
 Note: Migrated from InvokeModel API to Converse API for better image handling.
 """
 
+import json
 import os
+import time
 from typing import Optional, List, Dict, Any
 
 import boto3
 from botocore.exceptions import ClientError
+
+
+def _log(level: str, event_type: str, data: dict) -> None:
+    """Structured JSON logging for CloudWatch (searchable, parseable)."""
+    log_entry = {
+        "level": level,
+        "event_type": event_type,
+        "service": "execution-agent",
+        "component": "bedrock_client",
+        "timestamp": time.time(),
+        **data,
+    }
+    print(json.dumps(log_entry, default=str, ensure_ascii=False))
 
 
 # Model configuration
@@ -67,6 +82,66 @@ def get_max_tokens_for_model(model_id: str) -> int:
     
     # Default: 4096 tokens (safe fallback for unknown models)
     return 4096
+
+
+# MIME to Bedrock document format (per data-model; PPTX not native)
+MIME_TO_DOCUMENT_FORMAT = {
+    "application/pdf": "pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    "text/csv": "csv",
+    "text/plain": "txt",
+}
+# PPTX -> text extraction only (not in map)
+
+
+def _sanitize_document_name(file_name: str, max_length: int = 100) -> str:
+    """
+    Sanitize document name for Bedrock: alphanumeric, hyphens, spaces only.
+    Prevents prompt injection via filename. Strip extension, truncate.
+    """
+    import re
+    base = file_name.rsplit(".", 1)[0] if "." in file_name else file_name
+    sanitized = re.sub(r"[^a-zA-Z0-9\s\-()\[\]]", "-", base)
+    sanitized = re.sub(r"\s+", " ", sanitized).strip() or "document"
+    return sanitized[:max_length]
+
+
+def prepare_document_content_converse(
+    raw_bytes: bytes,
+    mimetype: str,
+    file_name: str,
+) -> Optional[Dict[str, Any]]:
+    """
+    Build Bedrock Converse API document content block for native document support.
+
+    Supported formats (per data-model): pdf, docx, xlsx, csv, txt.
+    PPTX returns None to trigger text extraction fallback.
+
+    Args:
+        raw_bytes: Raw document file bytes.
+        mimetype: MIME type (e.g. application/pdf).
+        file_name: Original filename (sanitized for name field).
+
+    Returns:
+        Document content block {"document": {"name", "format", "source": {"bytes"}}}
+        or None for unsupported formats (e.g. PPTX).
+    """
+    if not raw_bytes or not isinstance(raw_bytes, bytes):
+        return None
+
+    format_val = MIME_TO_DOCUMENT_FORMAT.get(mimetype)
+    if format_val is None:
+        return None
+
+    name = _sanitize_document_name(file_name)
+    return {
+        "document": {
+            "name": name,
+            "format": format_val,
+            "source": {"bytes": raw_bytes},
+        },
+    }
 
 
 def prepare_image_content_converse(image_bytes: bytes, mime_type: str = "image/png") -> Dict[str, Any]:
@@ -131,6 +206,7 @@ def invoke_bedrock(
     images: Optional[List[bytes]] = None,
     image_formats: Optional[List[str]] = None,
     document_texts: Optional[List[str]] = None,
+    documents: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     """
     Invoke Amazon Bedrock model using Converse API.
@@ -148,7 +224,9 @@ def invoke_bedrock(
         images: Optional list of image bytes (raw binary data, NOT Base64)
         image_formats: Optional list of image formats (e.g., ["png", "jpeg"])
                       Must match length of images list
-        document_texts: Optional list of extracted document text strings
+        document_texts: Optional list of extracted document text strings (fallback, e.g. PPTX)
+        documents: Optional list of native document blocks: [{"bytes", "format", "name"}, ...]
+                  (PDF, DOCX, XLSX, CSV, TXT). Max 5 per Bedrock API.
         
     Returns:
         str: AI-generated response text
@@ -188,16 +266,28 @@ def invoke_bedrock(
         - Prompt is not validated for PII (deferred to post-MVP)
         - No Guardrails applied (deferred to post-MVP)
     """
-    # Validate input - at least one of prompt, images, or document_texts must be provided
-    if not prompt and not images and not document_texts:
-        raise ValueError("At least one of prompt, images, or document_texts must be provided")
+    # Validate input - at least one of prompt, images, document_texts, or documents must be provided
+    if not prompt and not images and not document_texts and not documents:
+        raise ValueError(
+            "At least one of prompt, images, document_texts, or documents must be provided"
+        )
     
     # Validate image formats match images length
     if images and image_formats and len(images) != len(image_formats):
         raise ValueError(
             f"Number of images ({len(images)}) must match number of formats ({len(image_formats)})"
         )
-    
+
+    # FR-012 / Bedrock API limits: max 5 documents, max 20 images per request
+    MAX_DOCUMENTS_PER_REQUEST = 5
+    MAX_IMAGES_PER_REQUEST = 20
+    if documents and len(documents) > MAX_DOCUMENTS_PER_REQUEST:
+        documents = documents[:MAX_DOCUMENTS_PER_REQUEST]
+    if images and len(images) > MAX_IMAGES_PER_REQUEST:
+        images = images[:MAX_IMAGES_PER_REQUEST]
+        if image_formats:
+            image_formats = image_formats[:MAX_IMAGES_PER_REQUEST]
+
     # Get configuration from environment variables
     aws_region = os.environ.get("AWS_REGION_NAME", "ap-northeast-1")
     model_id = os.environ.get("BEDROCK_MODEL_ID", "amazon.nova-pro-v1:0")
@@ -210,19 +300,37 @@ def invoke_bedrock(
         service_name="bedrock-runtime", region_name=aws_region
     )
     
-    # Build content array for current message (text + images + document texts)
+    # Build content array: text first (required alongside documents), then document blocks, then images
     content_parts = []
-    
-    # Add text prompt if present
+
+    # Text block first (required when documents are present per Bedrock API)
     if prompt and prompt.strip():
         content_parts.append({"text": prompt.strip()})
-    
-    # Add document texts if present
+    elif documents:
+        content_parts.append({"text": "Please summarize or analyze the attached document(s)."})
+
+    # Add document texts if present (fallback path, e.g. PPTX)
     if document_texts:
         for doc_text in document_texts:
             if doc_text:
                 content_parts.append({"text": f"\n\n[Document content]\n{doc_text}"})
-    
+
+    # Add native document blocks if present
+    if documents:
+        for doc in documents:
+            raw_bytes = doc.get("bytes")
+            format_val = doc.get("format")
+            name = doc.get("name", "document")
+            if raw_bytes and format_val:
+                safe_name = _sanitize_document_name(name)
+                content_parts.append({
+                    "document": {
+                        "name": safe_name,
+                        "format": format_val,
+                        "source": {"bytes": raw_bytes},
+                    },
+                })
+
     # Add images if present (binary data, no Base64 encoding)
     if images:
         formats = image_formats if image_formats else ["png"] * len(images)
@@ -256,32 +364,22 @@ def invoke_bedrock(
     }
     
     try:
-        # Log request details
-        print(f"Invoking Bedrock model (Converse API): {model_id}")
-        print(f"Max tokens: {max_tokens} (model-specific limit)")
-        print(f"Prompt length: {len(prompt)} characters")
+        # Log request details (structured JSON for CloudWatch)
+        image_summary = []
         if images:
-            print(f"Image count: {len(images)}")
+            fmt = image_formats if image_formats else ["png"] * len(images)
             for i, img_bytes in enumerate(images):
-                print(f"  Image {i}: {len(img_bytes)} bytes, format: {formats[i]}")
-        if document_texts:
-            print(f"Document text count: {len(document_texts)}")
-        print(f"Total messages: {len(messages)}")
-        
-        # Log message structure (without full content)
-        for i, msg in enumerate(messages):
-            role = msg.get("role", "unknown")
-            content = msg.get("content", [])
-            content_summary = []
-            for part in content:
-                if "text" in part:
-                    content_summary.append(f"text({len(part['text'])} chars)")
-                elif "image" in part:
-                    img = part["image"]
-                    img_format = img.get("format", "unknown")
-                    img_bytes_len = len(img.get("source", {}).get("bytes", b""))
-                    content_summary.append(f"image({img_format}, {img_bytes_len} bytes)")
-            print(f"Message {i} [{role}]: {content_summary}")
+                image_summary.append({"index": i, "bytes": len(img_bytes), "format": fmt[i]})
+        _log("INFO", "bedrock_converse_request", {
+            "model_id": model_id,
+            "max_tokens": max_tokens,
+            "prompt_length": len(prompt),
+            "image_count": len(images) if images else 0,
+            "document_text_count": len(document_texts) if document_texts else 0,
+            "native_document_count": len(documents) if documents else 0,
+            "message_count": len(messages),
+            "image_summary": image_summary,
+        })
         
         # Call Converse API
         response = bedrock_runtime.converse(
@@ -291,9 +389,14 @@ def invoke_bedrock(
         )
         
         # Parse response
-        print(f"Bedrock response received (Converse API)")
-        print(f"Stop reason: {response.get('stopReason')}")
-        print(f"Usage: {response.get('usage')}")
+        content_blocks = response.get("output", {}).get("message", {}).get("content", [])
+        resp_len = len(content_blocks[0].get("text", "")) if content_blocks else 0
+        _log("INFO", "bedrock_converse_response", {
+            "model_id": model_id,
+            "stop_reason": response.get("stopReason"),
+            "usage": response.get("usage"),
+            "response_length": resp_len,
+        })
         
         # Extract AI-generated text from response
         # Converse API response format:
@@ -321,35 +424,40 @@ def invoke_bedrock(
         if not ai_response:
             raise ValueError("Empty text in Bedrock response")
         
-        print(f"AI response length: {len(ai_response)} characters")
         return ai_response
     
     except ClientError as e:
         # AWS service errors (throttling, access denied, etc.)
         error_code = e.response["Error"]["Code"]
         error_message = e.response["Error"]["Message"]
-        print(f"Bedrock ClientError (Converse API): {error_code} - {error_message}")
-        
-        # Log additional details for ValidationException
-        if error_code == "ValidationException":
-            print(f"Request details:")
-            print(f"  Model: {model_id}")
-            print(f"  Messages count: {len(messages)}")
-            if images:
-                print(f"  Images count: {len(images)}")
-                for i, img_bytes in enumerate(images):
-                    print(f"    Image {i}: {len(img_bytes)} bytes, format: {formats[i]}")
-        
+        error_details = {
+            "error_code": error_code,
+            "error_message": error_message,
+            "model_id": model_id,
+            "message_count": len(messages),
+            "http_status": e.response.get("ResponseMetadata", {}).get("HTTPStatusCode"),
+        }
+        if error_code == "ValidationException" and images:
+            error_details["image_count"] = len(images)
+            error_details["image_sizes"] = [len(b) for b in images]
+            error_details["image_formats"] = image_formats if image_formats else ["png"] * len(images)
+        _log("ERROR", "bedrock_client_error", error_details)
         raise
     
     except ValueError as e:
-        # Invalid response format
-        print(f"Bedrock response validation error: {str(e)}")
+        _log("ERROR", "bedrock_response_validation_error", {
+            "error": str(e),
+            "model_id": model_id,
+        })
         raise
     
     except Exception as e:
-        # Unexpected errors
-        print(f"Unexpected error invoking Bedrock (Converse API): {str(e)}")
+        _log("ERROR", "bedrock_unexpected_error", {
+            "error_type": type(e).__name__,
+            "error": str(e),
+            "error_repr": repr(e),
+            "model_id": model_id,
+        })
         raise
 
 

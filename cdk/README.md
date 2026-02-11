@@ -7,7 +7,7 @@ This CDK project deploys the Slack AI application infrastructure to AWS using tw
 The application uses two independent stacks that can be deployed separately, supporting both same-account and cross-account deployments:
 
 - **ExecutionStack**: Execution Agent (AgentCore Runtime + ECR)
-- **VerificationStack**: SlackEventHandler Lambda + Verification Agent (AgentCore Runtime) + DynamoDB + Secrets
+- **VerificationStack**: SlackEventHandler Lambda + Verification Agent (AgentCore Runtime) + S3 file exchange bucket + DynamoDB + Secrets
 
 Communication between zones is exclusively via AgentCore A2A (no API Gateway or SQS).
 
@@ -425,7 +425,7 @@ npx jest test/verification-stack.test.ts
 
 # Run Python agent tests
 cd lib/execution/agent/execution-agent && python -m pytest tests/ -v     # 79 tests
-cd lib/verification/agent/verification-agent && python -m pytest tests/ -v  # 63 tests
+cd lib/verification/agent/verification-agent && python -m pytest tests/ -v  # 93 tests
 ```
 
 ### Test Coverage
@@ -433,6 +433,6 @@ cd lib/verification/agent/verification-agent && python -m pytest tests/ -v  # 63
 | Test Suite | Framework | Tests | Description |
 |------------|-----------|-------|-------------|
 | AgentCore Constructs | Jest | 25 | Runtime, IAM, cross-account policies, echo mode config |
-| Execution Agent | pytest | 79 | FastAPI server, Bedrock, Agent Card, metrics, file artifacts |
-| Verification Agent | pytest | 63 | Security pipeline, A2A client, Slack posting, Agent Card, file posting |
-| **Total** | | **167** | **All passing** |
+| Execution Agent | pytest | 110 | FastAPI server, Bedrock, Agent Card, metrics, file artifacts, attachment processing |
+| Verification Agent | pytest | 93 | Security pipeline, A2A client, Slack posting, Agent Card, file posting, S3 file transfer |
+| **Total** | | **228** | **All passing** |

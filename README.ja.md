@@ -204,7 +204,7 @@ export DEPLOYMENT_ENV=prod
 
 - **マルチモデルサポート**: Claude、Nova、その他の Bedrock モデルで動作
 - **スレッドコンテキスト**: Slack スレッド内で会話履歴を維持
-- **添付ファイル処理**: リクエスト内の画像とドキュメントを処理
+- **添付ファイル処理** (024): 画像（PNG, JPEG, GIF, WebP）とドキュメント（PDF, DOCX, XLSX, CSV, TXT, PPTX）。S3 署名付き URL 経由。1 メッセージ最大 5 ファイル、画像 10 MB、ドキュメント 5 MB。Bedrock ネイティブドキュメントブロックで高品質 Q&A。
 
 ### インフラストラクチャ
 
@@ -260,7 +260,7 @@ slack-ai-app/
 │   │   │   │       ├── main.py                  # A2A サーバー
 │   │   │   │       ├── agent_card.py            # Agent Card 定義
 │   │   │   │       ├── cloudwatch_metrics.py    # メトリクス
-│   │   │   │       └── tests/                   # Python テスト (79 tests)
+│   │   │   │       └── tests/                   # Python テスト (110 tests)
 │   │   │   └── lambda/                          # レガシー Lambda コード
 │   │   ├── verification/       # Verification Stack
 │   │   │   ├── verification-stack.ts
@@ -274,7 +274,7 @@ slack-ai-app/
 │   │   │   │       ├── a2a_client.py             # Execution Agent A2A クライアント
 │   │   │   │       ├── agent_card.py             # Agent Card 定義
 │   │   │   │       ├── cloudwatch_metrics.py     # メトリクス
-│   │   │   │       └── tests/                    # Python テスト (63 tests)
+│   │   │   │       └── tests/                    # Python テスト (93 tests)
 │   │   │   └── lambda/                           # SlackEventHandler Lambda
 │   │   └── types/              # 共通型定義
 │   └── test/                   # CDK/Jest テスト (25 tests)
@@ -295,10 +295,10 @@ slack-ai-app/
 # CDK コンストラクトテスト (Jest, 25 tests)
 cd cdk && npx jest test/agentcore-constructs.test.ts --verbose
 
-# Execution Agent テスト (pytest, 79 tests)
+# Execution Agent テスト (pytest, 110 tests)
 cd cdk/lib/execution/agent/execution-agent && python -m pytest tests/ -v
 
-# Verification Agent テスト (pytest, 63 tests)
+# Verification Agent テスト (pytest, 93 tests)
 cd cdk/lib/verification/agent/verification-agent && python -m pytest tests/ -v
 
 # SlackEventHandler Lambda テスト
@@ -555,8 +555,7 @@ Signing Secret + Bot Token の両方が漏洩した場合、攻撃者は：
 - **2026-02-09**: Strands マイグレーション & クリーンアップ（021）
   - Verification Agent / Execution Agent を `bedrock-agentcore` SDK から FastAPI + uvicorn に移行（直接ルート定義）
   - CloudWatch IAM ネームスペース修正（`StringLike` + `SlackAI-*` パターン）
-  - Echo モード設定（CdkConfig に `validationZoneEchoMode` 追加）
-  - 依存関係バージョンピニング（`~=`）、E2E テストスイート追加
+- 依存関係バージョンピニング（`~=`）、E2E テストスイート追加
   - テスト数: Verification 63、Execution 79、CDK 25
 - **2026-02-08**: A2A ファイルを Slack スレッドに返す機能を実装（014）
   - Execution Zone が AI 生成ファイル（CSV/JSON/テキスト）を `generated_file` artifact で返却

@@ -17,6 +17,7 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
+import * as s3 from "aws-cdk-lib/aws-s3";
 import * as sqs from "aws-cdk-lib/aws-sqs";
 import { Construct } from "constructs";
 
@@ -36,12 +37,12 @@ export interface VerificationAgentRuntimeProps {
   readonly slackBotTokenSecret: secretsmanager.ISecret;
   /** ARN of the Execution Agent Runtime (for A2A invocation) */
   readonly executionAgentArn?: string;
-  /** 018: When true, Verification Agent echoes task text to Slack and does not call Execution Agent */
-  readonly validationZoneEchoMode?: boolean;
-  /** 019: SQS queue for Slack post requests; Agent sends here instead of calling Slack API */
+/** 019: SQS queue for Slack post requests; Agent sends here instead of calling Slack API */
   readonly slackPostRequestQueue?: sqs.IQueue;
   /** CloudWatch Log group for execution error debug (troubleshooting) */
   readonly errorDebugLogGroup?: logs.ILogGroup;
+  /** S3 bucket for temporary file exchange between zones (024) */
+  readonly fileExchangeBucket?: s3.IBucket;
 }
 
 export class VerificationAgentRuntime extends Construct {
@@ -201,10 +202,7 @@ export class VerificationAgentRuntime extends Construct {
     if (props.executionAgentArn) {
       environmentVariables.EXECUTION_AGENT_ARN = props.executionAgentArn;
     }
-    if (props.validationZoneEchoMode === true) {
-      environmentVariables.VALIDATION_ZONE_ECHO_MODE = "true";
-    }
-    if (props.slackPostRequestQueue) {
+if (props.slackPostRequestQueue) {
       environmentVariables.SLACK_POST_REQUEST_QUEUE_URL =
         props.slackPostRequestQueue.queueUrl;
       props.slackPostRequestQueue.grantSendMessages(this.executionRole);
@@ -213,6 +211,14 @@ export class VerificationAgentRuntime extends Construct {
       environmentVariables.EXECUTION_AGENT_ERROR_LOG_GROUP =
         props.errorDebugLogGroup.logGroupName;
       props.errorDebugLogGroup.grantWrite(this.executionRole);
+    }
+    if (props.fileExchangeBucket) {
+      environmentVariables.FILE_EXCHANGE_BUCKET =
+        props.fileExchangeBucket.bucketName;
+      environmentVariables.FILE_EXCHANGE_PREFIX = "attachments/";
+      environmentVariables.PRESIGNED_URL_EXPIRY = "900";
+      props.fileExchangeBucket.grantReadWrite(this.executionRole, "attachments/*");
+      props.fileExchangeBucket.grantDelete(this.executionRole, "attachments/*");
     }
 
     // Create AgentCore Runtime using L1 CfnResource

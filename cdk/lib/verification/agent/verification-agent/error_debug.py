@@ -64,3 +64,50 @@ def log_execution_error(
             pass  # Ignore
     except Exception:
         pass  # Fail silently
+
+
+def log_execution_agent_error_response(
+    correlation_id: str,
+    error_code: str,
+    error_message: str,
+    raw_response: dict | None = None,
+) -> None:
+    """
+    Log structured error response from Execution Agent for debugging.
+
+    When Execution Agent returns status=error (not an exception), write details
+    to CloudWatch so we can diagnose without container stdout visibility.
+    """
+    log_group = (os.environ.get("EXECUTION_AGENT_ERROR_LOG_GROUP") or "").strip()
+    if not log_group:
+        return
+
+    try:
+        client = _get_logs_client()
+        ts_ms = int(time.time() * 1000)
+        stream_name = f"err-resp-{correlation_id[:8]}-{ts_ms}"
+
+        client.create_log_stream(
+            logGroupName=log_group,
+            logStreamName=stream_name,
+        )
+
+        event = {
+            "correlation_id": correlation_id,
+            "source": "execution_agent_error_response",
+            "error_code": error_code,
+            "error_message": error_message,
+            "raw_response": raw_response,
+        }
+        message = json.dumps(event, ensure_ascii=False, default=str)
+
+        client.put_log_events(
+            logGroupName=log_group,
+            logStreamName=stream_name,
+            logEvents=[{"timestamp": ts_ms, "message": message}],
+        )
+    except ClientError as e:
+        if e.response["Error"]["Code"] != "ResourceAlreadyExistsException":
+            pass
+    except Exception:
+        pass

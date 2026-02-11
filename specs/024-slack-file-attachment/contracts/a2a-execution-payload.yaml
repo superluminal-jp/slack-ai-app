@@ -1,0 +1,69 @@
+# A2A Execution Payload Contract
+# Verification Agent → Execution Agent
+# Updated for S3-based file transfer (024-slack-file-attachment)
+
+ExecutionPayload:
+  type: object
+  required:
+    - correlation_id
+    - channel
+    - text
+    - thread_ts
+    - team_id
+    - user_id
+  properties:
+    correlation_id:
+      type: string
+      format: uuid
+      description: Unique request identifier for tracing and S3 cleanup
+    channel:
+      type: string
+      description: Slack channel ID (e.g., C01234567)
+    text:
+      type: string
+      description: User message text (may be empty if file-only message)
+    thread_ts:
+      type: string
+      description: Slack thread timestamp for reply threading
+    team_id:
+      type: string
+      description: Slack team/workspace ID
+    user_id:
+      type: string
+      description: Slack user ID
+    attachments:
+      type: array
+      description: File attachments with S3 pre-signed URLs
+      items:
+        $ref: '#/EnrichedAttachment'
+
+EnrichedAttachment:
+  type: object
+  required:
+    - id
+    - name
+    - mimetype
+    - size
+    - presigned_url
+  properties:
+    id:
+      type: string
+      description: Slack file ID (e.g., F01234567)
+    name:
+      type: string
+      description: Original filename
+    mimetype:
+      type: string
+      description: MIME type
+    size:
+      type: integer
+      description: File size in bytes
+    presigned_url:
+      type: string
+      format: uri
+      description: S3 pre-signed GET URL (15-min expiry)
+
+# Changes from previous contract:
+# - REMOVED: bot_token (no longer needed in execution zone for file downloads)
+# - REMOVED: url_private_download (replaced by presigned_url)
+# - ADDED: presigned_url (S3 pre-signed GET URL)

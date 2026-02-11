@@ -69,11 +69,6 @@ export interface VerificationStackProps extends cdk.StackProps {
    */
   readonly executionAgentArn?: string;
 
-  /**
-   * 017: When true, SlackEventHandler runs in echo mode (post received text to Slack, no SQS/AgentCore). Use for validation zone verification.
-   * @default false (unset = normal behavior)
-   */
-  readonly validationZoneEchoMode?: boolean;
 }
 
 /**

@@ -7,7 +7,7 @@ type: How-to
 audience: [Developer, Operations]
 status: Published
 created: 2025-12-27
-updated: 2026-02-08
+updated: 2026-02-11
 
 ---
 
@@ -25,9 +25,8 @@ updated: 2026-02-08
 - [JSON シリアライゼーションエラー](#json-シリアライゼーションエラー)
 - [AgentCore A2A エラー](#agentcore-a2a-エラー)
 - [ファイルがスレッドに表示されない（014）](#ファイルがスレッドに表示されない014)
+- [添付ファイル処理エラー（024）](#添付ファイル処理エラー024)
 - [016 非同期起動（SQS / Agent Invoker / DLQ）](#016-非同期起動sqs--agent-invoker--dlq)
-- [017 Validation Zone Echo（エコーモード）](#017-validation-zone-echoエコーモード)
-- [018 Echo at Verification Agent (Runtime)](#018-echo-at-verification-agent-runtime)
 - [ログの確認方法](#ログの確認方法)
 
 ---
@@ -321,6 +320,37 @@ AI 生成ファイル（CSV/JSON 等）をスレッドに投稿する機能（01
 
 ---
 
+## 添付ファイル処理エラー（024）
+
+ユーザーがメッセージに添付した画像・ドキュメントの処理でエラーが発生する場合の確認ポイントです。
+
+### 症状
+
+- 添付ファイル付きメッセージでエラーが返る
+- 「添付ファイルのダウンロードに失敗しました」等のメッセージが表示される
+- 「サポートされていないファイル形式です」と表示される
+
+### 確認手順
+
+1. **Bot Token スコープ**  
+   Slack App の **OAuth & Permissions** → **Bot Token Scopes** に **`files:read`** が含まれているか確認。含まれていない場合は追加し、ワークスペースに再インストールする。
+
+2. **サポート形式**  
+   - 画像: PNG, JPEG, GIF, WebP（最大 10 MB）
+   - ドキュメント: PDF, DOCX, XLSX, CSV, TXT, PPTX（最大 5 MB）
+   - 1 メッセージあたり最大 5 ファイル
+
+3. **Verification Agent のログ**  
+   CloudWatch で `attachment_slack_download_failed`、`attachment_s3_upload_failed`、`attachments_exceed_limit` が出ていないか確認。
+
+4. **Execution Agent のログ**  
+   `attachment_download_failed`、`attachment_size_exceeded`、`unsupported_image_type`、`extraction_failed` が出ていないか確認。
+
+5. **関連ドキュメント**  
+   [024 クイックスタート](../../specs/024-slack-file-attachment/quickstart.md)、[Slack 設定（files:read）](../reference/operations/slack-setup.md)。
+
+---
+
 ## 016 非同期起動（SQS / Agent Invoker / DLQ）
 
 016 ではメンション受信後に SlackEventHandler が SQS へ実行リクエストを送り即 200 を返し、Agent Invoker Lambda がキューを消費して Verification Agent を呼びます。以下はその経路で起きる問題の確認方法です。
@@ -468,85 +498,6 @@ aws logs filter-log-events --region ap-northeast-1 \
 
 ---
 
-## 017 Validation Zone Echo（エコーモード）
-
-017 では SlackEventHandler に **エコーモード** を導入し、AgentCore（検証ゾーン）単体の動作確認ができるようにしています。有効時は SQS 送信・InvokeAgentRuntime を行わず、受信メッセージ本文に `[Echo]` を付けて同じスレッドに返します。
-
-### エコーモードの有効化・無効化
-
-| 方法 | 有効化 | 無効化 |
-|------|--------|--------|
-| **CDK デプロイ** | `cdk deploy -c validationZoneEchoMode=true` またはスタック props で `validationZoneEchoMode: true` | 上記を付けずにデプロイ、または `-c validationZoneEchoMode=false` |
-| **Lambda 環境変数** | `VALIDATION_ZONE_ECHO_MODE=true` を追加 | 変数を削除するか `false` に設定 |
-
-有効とみなされるのは値が文字列 `"true"` のときのみ（大文字小文字は正規化して判定）です。
-
-### 症状: エコーが返ってこない（有効にしたつもりなのに）
-
-**確認手順**:
-
-1. **環境変数**  
-   SlackEventHandler Lambda の「設定」→「環境変数」で `VALIDATION_ZONE_ECHO_MODE` が `true` になっているか確認。CDK で渡している場合は `-c validationZoneEchoMode=true` でデプロイしたか、または `VerificationStack` に `validationZoneEchoMode: true` を渡しているか確認。
-
-2. **ログ**  
-   CloudWatch で SlackEventHandler のログを開き、`echo_mode_response` が出ているか確認。出ていなければエコー分岐に入っていない（署名・認可・レート制限で早期 return している可能性）。
-
-3. **Bot Token**  
-   エコー投稿には Bot Token が必要。既存の 👀 リアクションが付くかで Bot Token 取得を確認できる。リアクションは付くがエコーが出ない場合は `chat_postMessage` の失敗をログで確認（`echo_mode_post_failed` / `echo_mode_post_error`）。
-
-### 症状: エコーを無効にしたのに AI 応答が返らない
-
-エコーモード無効後も「エコーだけ返る」場合は、Lambda の環境変数がまだ `true` のままか、デプロイが反映されていない可能性があります。環境変数を削除または `false` にし、Lambda の設定を保存したうえで再度メンションを試してください。
-
-### 症状: 別スレッドにエコーが投稿される
-
-実装では `event.thread_ts` または `event.ts` を `thread_ts` に渡しています。別スレッドに投稿される場合は、Slack イベントの `thread_ts` / `ts` が正しく渡っているか CloudWatch ログで確認してください。[017 echo response 契約](../../specs/017-validation-zone-echo/contracts/echo-response.md) を参照。
-
-**関連ドキュメント**: [017 quickstart](../../specs/017-validation-zone-echo/quickstart.md)、[017 spec](../../specs/017-validation-zone-echo/spec.md)。
-
----
-
-## 018 Echo at Verification Agent (Runtime)
-
-018 ではエコーを **Verification Agent (AgentCore Runtime)** 側で行います。Lambda は 017 の「Lambda 内エコー」を行わず、常に SQS に送信します。エコーモード有効時は Runtime の環境変数 `VALIDATION_ZONE_ECHO_MODE=true` により、Verification Agent が Execution を呼ばず [Echo] を Slack に投稿します。
-
-### エコーモードの有効化・無効化（018）
-
-| 方法 | 有効化 | 無効化 |
-|------|--------|--------|
-| **CDK デプロイ** | `cdk deploy -c validationZoneEchoMode=true` またはスタック props で `validationZoneEchoMode: true` | 上記を付けずにデプロイ、または `-c validationZoneEchoMode=false` |
-| **Runtime 環境変数** | Verification Agent Runtime に `VALIDATION_ZONE_ECHO_MODE: "true"` が渡る（CDK の `VerificationAgentRuntime` が設定） | 渡さない、または `"false"` |
-
-有効とみなされるのは値が文字列 `"true"` のときのみ（大文字小文字は正規化して判定）です。
-
-### 症状: エコーが返ってこない（018 で有効にしたつもりなのに）
-
-**確認手順**:
-
-1. **Runtime の環境変数**  
-   CloudFormation で Verification Agent の Runtime（`AWS::BedrockAgentCore::Runtime`）の `EnvironmentVariables` に `VALIDATION_ZONE_ECHO_MODE: "true"` が含まれているか確認。CDK で `validationZoneEchoMode: true` を渡してデプロイしたか確認。
-
-2. **Lambda は SQS に送っているか**  
-   SlackEventHandler のログで `sqs_enqueue_success` が出ているか確認。018 では Lambda はエコーせず常に SQS に送る。
-
-3. **Verification Agent (Runtime) のログ**  
-   CloudWatch で Verification Agent Runtime のログを開き、`echo_mode_response` が出ているか確認。出ていなければエコー分岐に入っていない（環境変数が `"true"` でない、またはセキュリティパイプラインで早期 return している可能性）。
-
-4. **Agent Invoker**  
-   Agent Invoker のログで `agent_invocation_success` が出ているか確認。SQS → Agent Invoker → Verification Agent まで届いているか。
-
-### 症状: エコーを無効にしたのに [Echo] だけ返る
-
-Runtime の `VALIDATION_ZONE_ECHO_MODE` がまだ `"true"` のままか、デプロイが反映されていない可能性があります。`validationZoneEchoMode: false` で再デプロイし、数分待ってから再試行してください。コンテナの再起動が必要な場合があります。
-
-### 症状: Execution が呼ばれてしまう（エコーにしたいのに AI 応答が返る）
-
-Runtime に `VALIDATION_ZONE_ECHO_MODE` が正しく `"true"` で渡っているか、CloudFormation の Runtime リソースの `EnvironmentVariables` を確認してください。
-
-**関連ドキュメント**: [018 quickstart](../../specs/018-echo-at-agentcore-runtime/quickstart.md)、[018 spec](../../specs/018-echo-at-agentcore-runtime/spec.md)。
-
----
-
 ## ログの確認方法
 
 ### CloudWatch ログの確認
@@ -577,8 +528,6 @@ aws logs filter-log-events \
 | `slack_post_file_failed`             | 014: ファイルの Slack 投稿失敗   |
 | `agent_invocation_failed`            | 016: Agent Invoker の InvokeAgentRuntime 失敗 |
 | `agent_invocation_success`           | 016: Agent Invoker の InvokeAgentRuntime 成功 |
-| `echo_mode_response`                 | 017: Lambda でエコー応答。018: Verification Agent (Runtime) でエコー応答した（Execution は未使用） |
-| `echo_mode_post_failed` / `echo_mode_post_error` | 017: Lambda でのエコー投稿失敗。018 では Runtime 側でエコー投稿 |
 
 ---
 

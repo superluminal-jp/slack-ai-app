@@ -288,11 +288,11 @@ class TestHandleMessageProcessing:
         handle_message(payload)
 
         mock_attachments.assert_called_once()
-        # Bedrock should receive text with attached document context
-        call_args = mock_bedrock.call_args
-        prompt_text = call_args[0][0]
+        # Bedrock should receive text with attached document context (kwargs)
+        call_kw = mock_bedrock.call_args[1]
+        prompt_text = call_kw.get("prompt", "")
         assert "Summarize this" in prompt_text
-        assert "Attached Documents" in prompt_text
+        assert call_kw.get("documents") or call_kw.get("document_texts")
 
 
 class TestErrorMapping:

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Slack File Attachment Support** (024-slack-file-attachment)
+  - S3-based secure file transfer: Verification Agent downloads from Slack, uploads to S3, generates pre-signed URLs; Execution Agent downloads via pre-signed URL (no bot token in execution zone)
+  - Document Q&A: PDF, DOCX, XLSX, CSV, TXT via native Bedrock document blocks; PPTX via text extraction fallback
+  - Image analysis: PNG, JPEG, GIF, WebP via Bedrock image blocks
+  - Multiple files: up to 5 files per message; limits 10 MB/image, 5 MB/document
+  - User-friendly error messages (FR-013), structured logging with correlation IDs (FR-014)
+  - `files:read` Slack scope required for attachment downloads
+  - Test counts: Verification Agent 93, Execution Agent 110
 - **Echo-Mode-Disabled Verification Pipeline Tests** (022-echo-mode-disable-validation)
   - 20 new TDD tests across 4 test classes in `cdk/lib/verification/agent/verification-agent/tests/test_main.py`, covering the echo-mode-off (normal) execution delegation flow
   - `Test022NormalFlowDelegation` (5 tests): verifies that echo off triggers `invoke_execution_agent`, response contains no echo prefix, file artifacts pass through, payload contains all required fields, and `VALIDATION_ZONE_ECHO_MODE` is treated case-insensitively

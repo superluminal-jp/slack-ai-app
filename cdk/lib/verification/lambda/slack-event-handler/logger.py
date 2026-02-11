@@ -16,7 +16,7 @@ import hashlib
 import os
 from decimal import Decimal
 from typing import Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 
@@ -173,7 +173,7 @@ def _build_log_entry(
     log_entry = {
         "level": level,
         "event": event_type,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         **sanitized_data,
     }
     

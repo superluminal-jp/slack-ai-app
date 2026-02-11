@@ -217,6 +217,107 @@ def validate_image_content(content: bytes, expected_mimetype: str) -> Tuple[bool
     return True, ""
 
 
+def download_from_presigned_url(
+    presigned_url: str,
+    expected_size: Optional[int] = None,
+    expected_mimetype: Optional[str] = None,
+    timeout: int = 30,
+    max_retries: int = MAX_RETRIES,
+    correlation_id: Optional[str] = None,
+) -> Optional[bytes]:
+    """
+    Download file from S3 (or any HTTP GET) via pre-signed URL. No Authorization header.
+
+    Used by execution agent when verification agent provides presigned_url (US4).
+    Retries on 5xx; validates Content-Type and optional magic bytes for images.
+
+    Args:
+        presigned_url: Pre-signed GET URL (e.g. S3).
+        expected_size: Expected size in bytes (for validation/logging).
+        expected_mimetype: If set and image/*, validate magic bytes via validate_image_content.
+        timeout: Request timeout in seconds.
+        max_retries: Max retry attempts on transient errors.
+        correlation_id: Optional correlation ID for structured logging (FR-014).
+
+    Returns:
+        File content as bytes, or None if download fails after retries or validation fails.
+    """
+    if not presigned_url:
+        return None
+
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(
+                presigned_url,
+                headers={},
+                timeout=timeout,
+                stream=True,
+            )
+
+            if response.status_code >= 500:
+                last_error = f"Server error: {response.status_code}"
+                _log("WARN", "presigned_download_server_error", {
+                    "status_code": response.status_code,
+                    "attempt": attempt + 1,
+                    **({"correlation_id": correlation_id} if correlation_id else {}),
+                })
+                time.sleep(_calculate_backoff_delay(attempt))
+                continue
+
+            if response.status_code >= 400:
+                _log("ERROR", "presigned_download_client_error", {
+                    "status_code": response.status_code,
+                    **({"correlation_id": correlation_id} if correlation_id else {}),
+                })
+                return None
+
+            response.raise_for_status()
+            content = response.content
+
+            if expected_size is not None and expected_size > 0:
+                if len(content) < expected_size * 0.5:
+                    _log("WARN", "presigned_download_size_mismatch", {
+                        "expected_size": expected_size,
+                        "actual_size": len(content),
+                    })
+
+            if expected_mimetype and expected_mimetype.startswith("image/"):
+                is_valid, error_msg = validate_image_content(content, expected_mimetype)
+                if not is_valid:
+                    _log("ERROR", "presigned_download_validation_failed", {
+                        "expected_mimetype": expected_mimetype,
+                        "error": error_msg,
+                        **({"correlation_id": correlation_id} if correlation_id else {}),
+                    })
+                    return None
+
+            return content
+
+        except requests.exceptions.Timeout:
+            last_error = "timeout"
+            _log("WARN", "presigned_download_timeout", {
+                "attempt": attempt + 1,
+                **({"correlation_id": correlation_id} if correlation_id else {}),
+            })
+            time.sleep(_calculate_backoff_delay(attempt))
+        except requests.exceptions.RequestException as e:
+            last_error = str(e)
+            _log("ERROR", "presigned_download_request_error", {
+                "attempt": attempt + 1,
+                "error": str(e),
+                **({"correlation_id": correlation_id} if correlation_id else {}),
+            })
+            time.sleep(_calculate_backoff_delay(attempt))
+
+    _log("ERROR", "presigned_download_failed_after_retries", {
+        "last_error": last_error,
+        "max_retries": max_retries,
+        **({"correlation_id": correlation_id} if correlation_id else {}),
+    })
+    return None
+
+
 def download_file(
     download_url: str,
     bot_token: str,

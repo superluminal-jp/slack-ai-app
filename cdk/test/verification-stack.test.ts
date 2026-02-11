@@ -1,7 +1,56 @@
+/**
+ * VerificationStack CDK unit tests.
+ *
+ * Synthesis runs Lambda asset bundling (local pip first, then Docker). For CI/sandbox:
+ * - Prefer local pip so Docker/Colima is not required.
+ * - If using Docker, ensure Colima (or Docker) is running and DOCKER_HOST is set.
+ */
 import * as cdk from "aws-cdk-lib";
 import { Template, Match } from "aws-cdk-lib/assertions";
 import { VerificationStack } from "../lib/verification/verification-stack";
-import { validateConfig } from "../lib/types/cdk-config";
+
+/** Resource with optional Properties.QueueName (SQS, etc.) */
+type ResourceWithQueueName = { Properties?: { QueueName?: string } };
+
+/** IAM policy resource with Statement array */
+type IAMPolicyResource = {
+  Properties?: { PolicyDocument?: { Statement?: unknown[] } };
+};
+
+/** IAM statement with Action (string or string[]) */
+type IAMStatement = { Action?: string | string[]; Effect?: string };
+
+function findQueueByName(
+  template: Template,
+  nameSubstring: string
+): [string, unknown] | undefined {
+  const queues = template.findResources("AWS::SQS::Queue");
+  return Object.entries(queues).find(([, res]) =>
+    (res as ResourceWithQueueName).Properties?.QueueName?.includes?.(nameSubstring)
+  );
+}
+
+function findLambdaByLogicalId(
+  template: Template,
+  predicate: (logicalId: string) => boolean
+): [string, unknown] | undefined {
+  const lambdas = template.findResources("AWS::Lambda::Function");
+  return Object.entries(lambdas).find(([logicalId]) => predicate(logicalId));
+}
+
+function policyHasAction(
+  policies: Record<string, unknown>,
+  action: string
+): boolean {
+  return Object.values(policies).some((res) => {
+    const doc = (res as IAMPolicyResource).Properties?.PolicyDocument;
+    const stmts = (doc?.Statement ?? []) as IAMStatement[];
+    return stmts.some((s) => {
+      const a = s.Action;
+      return Array.isArray(a) ? a.includes(action) : a === action;
+    });
+  });
+}
 
 describe("VerificationStack", () => {
   let app: cdk.App;
@@ -28,47 +77,31 @@ describe("VerificationStack", () => {
 
   describe("A2A only (no legacy)", () => {
     it("must NOT contain ExecutionResponseQueue SQS queue", () => {
-      const queues = template.findResources("AWS::SQS::Queue");
-      const executionResponseQueue = Object.entries(queues).find(
-        ([_, res]) =>
-          (res as { Properties?: { QueueName?: string } }).Properties?.QueueName?.includes?.(
-            "execution-response"
-          )
-      );
-      expect(executionResponseQueue).toBeUndefined();
+      expect(findQueueByName(template, "execution-response")).toBeUndefined();
     });
 
     it("must NOT contain SlackResponseHandler Lambda", () => {
-      const lambdas = template.findResources("AWS::Lambda::Function");
-      const slackResponseHandler = Object.entries(lambdas).find(
-        ([logicalId]) => logicalId.includes("SlackResponseHandler")
-      );
-      expect(slackResponseHandler).toBeUndefined();
+      expect(
+        findLambdaByLogicalId(template, (id) => id.includes("SlackResponseHandler"))
+      ).toBeUndefined();
     });
 
     it("must NOT have outputs ExecutionResponseQueueUrl, ExecutionResponseQueueArn", () => {
-      expect(template.toJSON().Outputs?.ExecutionResponseQueueUrl).toBeUndefined();
-      expect(template.toJSON().Outputs?.ExecutionResponseQueueArn).toBeUndefined();
+      const outputs = template.toJSON().Outputs ?? {};
+      expect(outputs.ExecutionResponseQueueUrl).toBeUndefined();
+      expect(outputs.ExecutionResponseQueueArn).toBeUndefined();
     });
   });
 
   describe("016 async invocation (SQS + Agent Invoker)", () => {
     it("must contain SQS queue for agent-invocation-request", () => {
-      const queues = template.findResources("AWS::SQS::Queue");
-      const mainQueue = Object.entries(queues).find(
-        ([_, res]) =>
-          (res as { Properties?: { QueueName?: string } }).Properties?.QueueName?.includes?.(
-            "agent-invocation-request"
-          )
-      );
-      expect(mainQueue).toBeDefined();
+      expect(findQueueByName(template, "agent-invocation-request")).toBeDefined();
     });
 
     it("must contain Lambda function for Agent Invoker", () => {
-      const lambdas = template.findResources("AWS::Lambda::Function");
-      const agentInvoker = Object.entries(lambdas).find(
-        ([logicalId]) =>
-          logicalId.includes("AgentInvoker") && !logicalId.includes("SlackEventHandler")
+      const agentInvoker = findLambdaByLogicalId(
+        template,
+        (id) => id.includes("AgentInvoker") && !id.includes("SlackEventHandler")
       );
       expect(agentInvoker).toBeDefined();
     });
@@ -88,23 +121,9 @@ describe("VerificationStack", () => {
 
     it("Agent Invoker Lambda role must have bedrock-agentcore:InvokeAgentRuntime", () => {
       const policies = template.findResources("AWS::IAM::Policy");
-      const hasInvokerWithAgentCore = Object.values(policies).some(
-        (res) => {
-          const doc = (res as { Properties?: { PolicyDocument?: { Statement?: unknown[] } } })
-            .Properties?.PolicyDocument;
-          const stmts = doc?.Statement ?? [];
-          return stmts.some(
-            (s: unknown) =>
-              typeof s === "object" &&
-              s !== null &&
-              "Action" in s &&
-              (Array.isArray((s as { Action: unknown }).Action)
-                ? (s as { Action: string[] }).Action.includes("bedrock-agentcore:InvokeAgentRuntime")
-                : (s as { Action: string }).Action === "bedrock-agentcore:InvokeAgentRuntime")
-          );
-        }
-      );
-      expect(hasInvokerWithAgentCore).toBe(true);
+      expect(
+        policyHasAction(policies, "bedrock-agentcore:InvokeAgentRuntime")
+      ).toBe(true);
     });
 
     it("agent-invocation-request queue must have redrivePolicy with deadLetterTargetArn and maxReceiveCount 3", () => {
@@ -124,17 +143,6 @@ describe("VerificationStack", () => {
         Runtime: "python3.11",
         Timeout: 120,
       });
-    });
-
-    it("should not have VALIDATION_ZONE_ECHO_MODE when not provided", () => {
-      const lambdas = template.findResources("AWS::Lambda::Function");
-      const slackHandler = Object.entries(lambdas).find(([logicalId]) =>
-        logicalId.includes("SlackEventHandler")
-      );
-      expect(slackHandler).toBeDefined();
-      const env = (slackHandler![1] as { Properties?: { Environment?: { Variables?: Record<string, string> } } })
-        .Properties?.Environment?.Variables ?? {};
-      expect(env.VALIDATION_ZONE_ECHO_MODE).toBeUndefined();
     });
 
     it("should have Function URL enabled", () => {
@@ -230,48 +238,58 @@ describe("VerificationStack", () => {
     });
   });
 
-  describe("017 Validation Zone Echo mode", () => {
-    it("should set VALIDATION_ZONE_ECHO_MODE when validationZoneEchoMode is true", () => {
-      process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
-      process.env.SLACK_SIGNING_SECRET = "test-signing-secret";
-      const appWithEcho = new cdk.App();
-      const stackWithEcho = new VerificationStack(appWithEcho, "VerificationStackWithEcho", {
-        env: { account: "123456789012", region: "ap-northeast-1" },
-        executionAgentArn:
-          "arn:aws:bedrock-agentcore:ap-northeast-1:123456789012:runtime/TestExecutionAgent",
-        validationZoneEchoMode: true,
-      });
-      const templateEcho = Template.fromStack(stackWithEcho);
-      templateEcho.hasResourceProperties("AWS::Lambda::Function", {
-        Environment: {
-          Variables: Match.objectLike({
-            VALIDATION_ZONE_ECHO_MODE: "true",
-          }),
+  describe("S3 File Exchange Bucket (024)", () => {
+    it("should create S3 bucket for file exchange", () => {
+      const buckets = template.findResources("AWS::S3::Bucket");
+      const bucketKeys = Object.keys(buckets);
+      // At least one S3 bucket exists (file-exchange + possibly auto-delete custom resource bucket)
+      expect(bucketKeys.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("should have block public access enabled on file exchange bucket", () => {
+      template.hasResourceProperties("AWS::S3::Bucket", {
+        PublicAccessBlockConfiguration: {
+          BlockPublicAcls: true,
+          BlockPublicPolicy: true,
+          IgnorePublicAcls: true,
+          RestrictPublicBuckets: true,
         },
       });
-      delete process.env.SLACK_BOT_TOKEN;
-      delete process.env.SLACK_SIGNING_SECRET;
     });
-  });
 
-  describe("018 Echo at Runtime (VALIDATION_ZONE_ECHO_MODE on Verification Agent Runtime)", () => {
-    it("should create stack with validationZoneEchoMode true and Runtime resource (env VAR set via addPropertyOverride at deploy)", () => {
-      process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
-      process.env.SLACK_SIGNING_SECRET = "test-signing-secret";
-      const appWithEcho = new cdk.App();
-      const stackWithEcho = new VerificationStack(appWithEcho, "VerificationStackWithEcho018", {
-        env: { account: "123456789012", region: "ap-northeast-1" },
-        executionAgentArn:
-          "arn:aws:bedrock-agentcore:ap-northeast-1:123456789012:runtime/TestExecutionAgent",
-        validationZoneEchoMode: true,
+    it("should have lifecycle rule for attachments/ prefix with 1-day expiry", () => {
+      template.hasResourceProperties("AWS::S3::Bucket", {
+        LifecycleConfiguration: {
+          Rules: Match.arrayWith([
+            Match.objectLike({
+              Prefix: "attachments/",
+              ExpirationInDays: 1,
+              Status: "Enabled",
+            }),
+          ]),
+        },
       });
-      const templateEcho = Template.fromStack(stackWithEcho);
-      const runtimes = templateEcho.findResources("AWS::BedrockAgentCore::Runtime");
-      expect(Object.keys(runtimes).length).toBe(1);
-      // VALIDATION_ZONE_ECHO_MODE is passed to VerificationAgentRuntime in code and set via addPropertyOverride;
-      // CDK L1 schema may not expose EnvironmentVariables in synthesized template
-      delete process.env.SLACK_BOT_TOKEN;
-      delete process.env.SLACK_SIGNING_SECRET;
+    });
+
+    it("should have SSE-S3 encryption (BucketEncryption with AES256)", () => {
+      template.hasResourceProperties("AWS::S3::Bucket", {
+        BucketEncryption: {
+          ServerSideEncryptionConfiguration: Match.arrayWith([
+            Match.objectLike({
+              ServerSideEncryptionByDefault: {
+                SSEAlgorithm: "AES256",
+              },
+            }),
+          ]),
+        },
+      });
+    });
+
+    it("verification agent role must have S3 permissions for file exchange bucket", () => {
+      const policies = template.findResources("AWS::IAM::Policy");
+      expect(policyHasAction(policies, "s3:GetObject*")).toBe(true);
+      expect(policyHasAction(policies, "s3:PutObject")).toBe(true);
+      expect(policyHasAction(policies, "s3:DeleteObject*")).toBe(true);
     });
   });
 
@@ -293,36 +311,5 @@ describe("VerificationStack", () => {
         Description: Match.stringLikeRegexp("SlackEventHandler Lambda ARN"),
       });
     });
-  });
-});
-
-describe("US4: CdkConfig validationZoneEchoMode type safety", () => {
-  const baseConfig = {
-    awsRegion: "ap-northeast-1",
-    bedrockModelId: "amazon.nova-pro-v1:0",
-    deploymentEnv: "dev",
-    verificationStackName: "SlackAI-Verification",
-    executionStackName: "SlackAI-Execution",
-    verificationAccountId: "123456789012",
-    executionAccountId: "123456789012",
-  };
-
-  it("T036: should accept validationZoneEchoMode as boolean (true, false, undefined)", () => {
-    // true
-    const configTrue = validateConfig({ ...baseConfig, validationZoneEchoMode: true });
-    expect(configTrue.validationZoneEchoMode).toBe(true);
-
-    // false
-    const configFalse = validateConfig({ ...baseConfig, validationZoneEchoMode: false });
-    expect(configFalse.validationZoneEchoMode).toBe(false);
-
-    // undefined (omitted)
-    const configUndefined = validateConfig({ ...baseConfig });
-    expect(configUndefined.validationZoneEchoMode).toBeDefined();
-  });
-
-  it("T037: should default validationZoneEchoMode to false when not specified", () => {
-    const config = validateConfig({ ...baseConfig });
-    expect(config.validationZoneEchoMode).toBe(false);
   });
 });

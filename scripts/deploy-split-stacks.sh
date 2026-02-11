@@ -11,10 +11,6 @@
 #   export DEPLOYMENT_ENV=dev  # or 'prod'
 #   ./scripts/deploy-split-stacks.sh
 #
-# Optional (017): Enable Validation Zone Echo mode (SlackEventHandler echoes message, no SQS/AgentCore):
-#   export VALIDATION_ZONE_ECHO_MODE=true
-#   ./scripts/deploy-split-stacks.sh
-#
 # Prerequisites:
 #   - AWS CLI configured with appropriate credentials
 #   - SLACK_BOT_TOKEN environment variable set
@@ -274,12 +270,7 @@ deploy_verification_stack() {
         profile_args="--profile ${AWS_PROFILE}"
     fi
     
-    # 017: Optional echo mode for validation zone verification
     local context_args="--context deploymentEnv=${DEPLOYMENT_ENV}"
-    if [[ "${VALIDATION_ZONE_ECHO_MODE:-}" == "true" ]]; then
-        context_args="${context_args} --context validationZoneEchoMode=true"
-        log_info "017: Validation Zone Echo mode will be ENABLED (VALIDATION_ZONE_ECHO_MODE=true)"
-    fi
 
     log_info "Deploying ${VERIFICATION_STACK_NAME}..."
     if ! npx cdk deploy "${VERIFICATION_STACK_NAME}" ${profile_args} --require-approval never ${context_args}; then
