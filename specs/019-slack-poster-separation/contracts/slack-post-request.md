@@ -8,6 +8,7 @@ Verification Agent は Slack に直接投稿せず、この形式のメッセー
 |-----------|-----|------|------|
 | `channel` | string | Yes | Slack チャンネル ID |
 | `thread_ts` | string \| null | No | スレッドの ts（省略時はチャンネルに直投稿） |
+| `message_ts` | string \| null | No | 元メッセージの ts（👀→✅ リアクション差し替え用） |
 | `text` | string \| null | No | 投稿するテキスト（最大 4000 文字は Poster 側で分割） |
 | `file_artifact` | object \| null | No | ファイル投稿時。下記参照 |
 | `bot_token` | string | Yes | Slack Bot Token (xoxb-...) |

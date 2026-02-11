@@ -680,6 +680,7 @@ def lambda_handler(event, context):
                             "text": user_text,
                             "bot_token": bot_token,
                             "thread_ts": message_timestamp,
+                            "message_ts": slack_event.get("ts"),  # For reaction swap (eyes -> checkmark)
                             "attachments": attachments if attachments else [],
                             "correlation_id": str(context.aws_request_id if context else ""),
                             "team_id": team_id,
@@ -740,6 +741,7 @@ def lambda_handler(event, context):
                         "text": user_text,
                         "bot_token": bot_token,
                         "thread_ts": message_timestamp,
+                        "message_ts": slack_event.get("ts"),  # For reaction swap (eyes -> checkmark)
                         "attachments": attachments if attachments else [],
                         "correlation_id": str(
                             context.aws_request_id if context else ""

@@ -36,6 +36,7 @@ def send_slack_post_request(
     file_artifact: Optional[dict] = None,
     bot_token: Optional[str] = None,
     correlation_id: str = "",
+    message_ts: Optional[str] = None,
 ) -> None:
     """
     Enqueue a Slack post request to SQS. No-op if SLACK_POST_REQUEST_QUEUE_URL
@@ -55,6 +56,7 @@ def send_slack_post_request(
     body = {
         "channel": channel,
         "thread_ts": thread_ts,
+        "message_ts": message_ts,
         "text": (text or "").strip() or None,
         "file_artifact": file_artifact,
         "bot_token": bot_token,

@@ -93,6 +93,41 @@ def _post_file(
         raise
 
 
+def _swap_reaction_to_checkmark(
+    client: WebClient,
+    channel: str,
+    message_ts: str,
+) -> None:
+    """
+    Remove eyes reaction and add white_check_mark on the message.
+    Non-blocking: logs and continues on failure (e.g. reaction already removed).
+    """
+    if not channel or not message_ts or not _is_valid_timestamp(message_ts):
+        return
+    try:
+        client.reactions_remove(channel=channel, name="eyes", timestamp=message_ts)
+        _log("INFO", "reaction_removed", {"channel": channel, "emoji": "eyes"})
+    except SlackApiError as e:
+        err = e.response.get("error", "")
+        if err == "no_reaction":
+            pass  # Eyes already removed or never added
+        else:
+            _log("WARN", "reaction_remove_failed", {"channel": channel, "error": err})
+    except Exception as e:
+        _log("WARN", "reaction_remove_error", {"channel": channel, "error": str(e)})
+    try:
+        client.reactions_add(channel=channel, name="white_check_mark", timestamp=message_ts)
+        _log("INFO", "reaction_added", {"channel": channel, "emoji": "white_check_mark"})
+    except SlackApiError as e:
+        err = e.response.get("error", "")
+        if err == "already_reacted":
+            pass
+        else:
+            _log("WARN", "reaction_add_failed", {"channel": channel, "error": err})
+    except Exception as e:
+        _log("WARN", "reaction_add_error", {"channel": channel, "error": str(e)})
+
+
 def _process_one(body: dict) -> None:
     channel = (body.get("channel") or "").strip()
     bot_token = (body.get("bot_token") or "").strip()
@@ -102,6 +137,12 @@ def _process_one(body: dict) -> None:
     thread_ts = body.get("thread_ts")
     if thread_ts is not None and not isinstance(thread_ts, str):
         thread_ts = None
+    message_ts = body.get("message_ts")
+    if message_ts is not None and not isinstance(message_ts, str):
+        message_ts = None
+    # Fallback: for root messages, thread_ts equals the message with eyes
+    reaction_ts = message_ts if _is_valid_timestamp(message_ts or "") else (thread_ts if _is_valid_timestamp(thread_ts or "") else None)
+
     text = body.get("text")
     file_artifact = body.get("file_artifact")
     if not text and not file_artifact:
@@ -116,6 +157,10 @@ def _process_one(body: dict) -> None:
         mime = file_artifact.get("mimeType")
         if b64 and name and mime:
             _post_file(client, channel, b64, name, mime, thread_ts)
+
+    # Swap eyes -> checkmark on the original message (done after successful post)
+    if reaction_ts:
+        _swap_reaction_to_checkmark(client, channel, reaction_ts)
 
 
 def lambda_handler(event: dict, context: Any) -> dict:

@@ -151,6 +151,7 @@ def run(payload: dict) -> str:
         text = task_payload.get("text", "")
         bot_token = task_payload.get("bot_token", "")
         thread_ts = task_payload.get("thread_ts")
+        message_ts = task_payload.get("message_ts")  # For reaction swap (eyes -> checkmark)
         team_id = task_payload.get("team_id", "")
         user_id = task_payload.get("user_id", "")
         attachments = task_payload.get("attachments", [])
@@ -327,6 +328,7 @@ def run(payload: dict) -> str:
                     text=DEFAULT_ERROR_MESSAGE,
                     bot_token=bot_token,
                     correlation_id=correlation_id,
+                    message_ts=message_ts,
                 )
                 return json.dumps({
                     "status": "error",
@@ -354,6 +356,7 @@ def run(payload: dict) -> str:
                     file_artifact=file_artifact,
                     bot_token=bot_token,
                     correlation_id=correlation_id,
+                    message_ts=message_ts,
                 )
                 _log("INFO", "slack_post_request_sent", {
                     "correlation_id": correlation_id,
@@ -377,6 +380,7 @@ def run(payload: dict) -> str:
                     text=user_friendly_message,
                     bot_token=bot_token,
                     correlation_id=correlation_id,
+                    message_ts=message_ts,
                 )
                 _log("INFO", "slack_error_post_request_sent", {
                     "correlation_id": correlation_id,
@@ -409,6 +413,7 @@ def run(payload: dict) -> str:
                 text="エラーが発生しました。しばらくしてからお試しください。",
                 bot_token=bot_token,
                 correlation_id=correlation_id,
+                message_ts=message_ts,
             )
             return json.dumps({
                 "status": "error",
