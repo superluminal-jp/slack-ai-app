@@ -1,10 +1,12 @@
 """
-Unit tests for s3_file_manager (US4 Secure Cross-Zone File Transfer).
+Unit tests for s3_file_manager (US4 Secure Cross-Zone File Transfer, 028).
 
 Tests:
 - upload_file_to_s3: correct S3 key structure, content type set, error handling
 - generate_presigned_url: returns HTTPS URL, expiry parameter passed
 - cleanup_request_files: lists and deletes all objects under correlation_id prefix
+- upload_generated_file_to_s3 (028): generated_files/ prefix, sanitized filename
+- generate_presigned_url_for_generated_file (028): delegates to generate_presigned_url
 """
 
 import os
@@ -207,3 +209,82 @@ class TestCleanupRequestFiles:
         if mock_s3.delete_objects.called:
             delete_kw = mock_s3.delete_objects.call_args[1]
             assert len(delete_kw.get("Delete", {}).get("Objects", [])) == 0
+
+
+class TestUploadGeneratedFileToS3:
+    """Tests for upload_generated_file_to_s3 (028)."""
+
+    @patch.dict(os.environ, {"FILE_EXCHANGE_BUCKET": "test-bucket"}, clear=False)
+    @patch("s3_file_manager.boto3")
+    def test_upload_returns_generated_files_prefix_key(self, mock_boto3):
+        """S3 key must be generated_files/{correlation_id}/{sanitized_file_name}."""
+        mock_s3 = MagicMock()
+        mock_boto3.client.return_value = mock_s3
+
+        from s3_file_manager import upload_generated_file_to_s3
+
+        key = upload_generated_file_to_s3(
+            file_bytes=b"large content",
+            correlation_id="corr-uuid-456",
+            file_name="report.pdf",
+            mime_type="application/pdf",
+        )
+
+        assert key.startswith("generated_files/")
+        assert "corr-uuid-456" in key
+        assert "report.pdf" in key
+        assert key == "generated_files/corr-uuid-456/report.pdf"
+
+        mock_s3.put_object.assert_called_once()
+        call_kw = mock_s3.put_object.call_args[1]
+        assert call_kw["Bucket"] == "test-bucket"
+        assert call_kw["Key"] == key
+        assert call_kw["Body"] == b"large content"
+        assert call_kw["ContentType"] == "application/pdf"
+
+    @patch.dict(os.environ, {"FILE_EXCHANGE_BUCKET": "test-bucket"}, clear=False)
+    @patch("s3_file_manager.boto3")
+    def test_upload_sanitizes_filename(self, mock_boto3):
+        """Filename with forbidden chars must be sanitized for S3 key."""
+        mock_s3 = MagicMock()
+        mock_boto3.client.return_value = mock_s3
+
+        from s3_file_manager import upload_generated_file_to_s3
+
+        key = upload_generated_file_to_s3(
+            file_bytes=b"x",
+            correlation_id="c1",
+            file_name="file:name<test>.xlsx",
+            mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+        assert "generated_files/" in key
+        assert "c1" in key
+        # Forbidden chars replaced with underscore
+        assert ":" not in key
+        assert "<" not in key
+        assert ">" not in key
+
+
+class TestGeneratePresignedUrlForGeneratedFile:
+    """Tests for generate_presigned_url_for_generated_file (028)."""
+
+    @patch.dict(os.environ, {"FILE_EXCHANGE_BUCKET": "presign-bucket"}, clear=False)
+    @patch("s3_file_manager.boto3")
+    def test_returns_https_url(self, mock_boto3):
+        """Presigned URL for generated file must be HTTPS."""
+        mock_s3 = MagicMock()
+        mock_s3.generate_presigned_url.return_value = "https://presign-bucket.s3.region.amazonaws.com/key?X-Amz-..."
+        mock_boto3.client.return_value = mock_s3
+
+        from s3_file_manager import generate_presigned_url_for_generated_file
+
+        url = generate_presigned_url_for_generated_file(
+            "generated_files/corr-1/report.pdf", expiry=900
+        )
+
+        assert url.startswith("https://")
+        mock_s3.generate_presigned_url.assert_called_once()
+        call_kw = mock_s3.generate_presigned_url.call_args[1]
+        assert call_kw["ExpiresIn"] == 900
+        assert call_kw["Params"].get("Key") == "generated_files/corr-1/report.pdf"

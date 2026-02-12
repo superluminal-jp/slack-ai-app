@@ -227,6 +227,7 @@ if (props.slackPostRequestQueue) {
       environmentVariables.PRESIGNED_URL_EXPIRY = "900";
       props.fileExchangeBucket.grantReadWrite(this.executionRole, "attachments/*");
       props.fileExchangeBucket.grantDelete(this.executionRole, "attachments/*");
+      props.fileExchangeBucket.grantReadWrite(this.executionRole, "generated_files/*");
     }
 
     // Create AgentCore Runtime using L1 CfnResource

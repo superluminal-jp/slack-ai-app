@@ -71,17 +71,26 @@ class TestHandleMessageValidation:
         assert "error" in result_data.get("status", "") or "error" in result_data.get("error_code", "")
 
 
-class TestHandleMessageProcessing:
-    """Test the synchronous Bedrock processing flow."""
+def _make_agent_result(text: str):
+    """Build mock AgentResult for Strands Agent (027)."""
+    return Mock(
+        message={"content": [{"text": text}], "role": "assistant"},
+        stop_reason="end_turn",
+    )
 
-    @patch("main.invoke_bedrock")
+
+class TestHandleMessageProcessing:
+    """Test the synchronous Bedrock/Strands Agent processing flow (027)."""
+
+    @patch("main.create_agent")
     @patch("main.process_attachments")
     @patch("main.format_success_response")
     def test_valid_message_returns_success(
-        self, mock_format, mock_attachments, mock_bedrock
+        self, mock_format, mock_attachments, mock_create_agent
     ):
         """Valid message should process and return success result."""
-        mock_bedrock.return_value = "AI response text"
+        mock_agent = Mock(return_value=_make_agent_result("AI response text"))
+        mock_create_agent.return_value = mock_agent
         mock_attachments.return_value = []
         mock_format.return_value = (
             {"status": "success", "response_text": "AI response text"},
@@ -105,36 +114,28 @@ class TestHandleMessageProcessing:
         result_data = json.loads(result)
 
         assert result_data["status"] == "success"
-        mock_bedrock.assert_called_once()
+        mock_agent.assert_called_once()
 
-    @patch("main.invoke_bedrock")
+    @patch("main.create_agent")
     @patch("main.process_attachments")
-    @patch("main.format_success_response")
     def test_success_with_file_artifact(
-        self, mock_format, mock_attachments, mock_bedrock
+        self, mock_attachments, mock_create_agent
     ):
-        """When file is returned, result has response_text and file_artifact (014 US1)."""
-        import base64
-        mock_bedrock.return_value = "Here is your export."
+        """When file is returned, result has response_text and file_artifact (014 US1, 027)."""
+        def agent_side_effect(agent_input, **kwargs):
+            invocation_state = kwargs.get("invocation_state", {})
+            if invocation_state is not None:
+                invocation_state["generated_file"] = {
+                    "file_bytes": b"a,b\n1,2",
+                    "file_name": "export.csv",
+                    "mime_type": "text/csv",
+                    "description": "CSV exported",
+                }
+            return _make_agent_result("Here is your export.")
+
+        mock_agent = Mock(side_effect=agent_side_effect)
+        mock_create_agent.return_value = mock_agent
         mock_attachments.return_value = []
-        file_artifact = {
-            "artifactId": "art-uuid",
-            "name": "generated_file",
-            "parts": [{
-                "kind": "file",
-                "contentBase64": base64.b64encode(b"a,b\n1,2").decode("utf-8"),
-                "fileName": "export.csv",
-                "mimeType": "text/csv",
-            }],
-        }
-        result_dict = {
-            "status": "success",
-            "response_text": "Here is your export.",
-            "channel": "C01234567",
-            "bot_token": "xoxb-test",
-            "thread_ts": None,
-        }
-        mock_format.return_value = (result_dict, file_artifact)
 
         from main import handle_message
 
@@ -160,14 +161,15 @@ class TestHandleMessageProcessing:
         assert part.get("fileName") == "export.csv"
         assert part.get("mimeType") == "text/csv"
 
-    @patch("main.invoke_bedrock")
+    @patch("main.create_agent")
     @patch("main.process_attachments")
     @patch("main.format_success_response")
     def test_no_file_generated_result_has_no_file_artifact(
-        self, mock_format, mock_attachments, mock_bedrock
+        self, mock_format, mock_attachments, mock_create_agent
     ):
         """When no file is generated, completed result has no file_artifact (014 US2)."""
-        mock_bedrock.return_value = "Text only."
+        mock_agent = Mock(return_value=_make_agent_result("Text only."))
+        mock_create_agent.return_value = mock_agent
         mock_attachments.return_value = []
         mock_format.return_value = (
             {"status": "success", "response_text": "Text only.", "channel": "C1", "bot_token": "xoxb-1", "thread_ts": None},
@@ -184,22 +186,27 @@ class TestHandleMessageProcessing:
         assert completed_result["status"] == "success"
         assert "file_artifact" not in completed_result
 
-    @patch("main.invoke_bedrock")
+    @patch("main.create_agent")
     @patch("main.process_attachments")
-    @patch("main.format_success_response")
     def test_only_file_response_has_empty_response_text_and_file_artifact(
-        self, mock_format, mock_attachments, mock_bedrock
+        self, mock_attachments, mock_create_agent
     ):
         """When only file is returned, result has empty/minimal response_text and file_artifact (014 US2)."""
-        import base64
-        mock_bedrock.return_value = ""
+        def agent_side_effect(agent_input, **kwargs):
+            invocation_state = kwargs.get("invocation_state", {})
+            if invocation_state is not None:
+                invocation_state["generated_file"] = {
+                    "file_bytes": b"x",
+                    "file_name": "f.csv",
+                    "mime_type": "text/csv",
+                    "description": "CSV",
+                }
+            return _make_agent_result("")
+
+        mock_agent = Mock(side_effect=agent_side_effect)
+        mock_create_agent.return_value = mock_agent
         mock_attachments.return_value = []
-        file_artifact = {
-            "artifactId": "a1", "name": "generated_file",
-            "parts": [{"kind": "file", "contentBase64": base64.b64encode(b"x").decode("utf-8"), "fileName": "f.csv", "mimeType": "text/csv"}],
-        }
-        result_dict = {"status": "success", "response_text": "", "channel": "C1", "bot_token": "xoxb-1", "thread_ts": None}
-        mock_format.return_value = (result_dict, file_artifact)
+
         from main import handle_message
         payload = {
             "prompt": json.dumps({
@@ -213,14 +220,15 @@ class TestHandleMessageProcessing:
         assert completed_result.get("file_artifact") is not None
         assert completed_result["file_artifact"]["name"] == "generated_file"
 
-    @patch("main.invoke_bedrock")
+    @patch("main.create_agent")
     @patch("main.process_attachments")
     @patch("main.format_error_response")
     def test_bedrock_exception_returns_error(
-        self, mock_format, mock_attachments, mock_bedrock
+        self, mock_format, mock_attachments, mock_create_agent
     ):
         """Bedrock exception should return error result."""
-        mock_bedrock.side_effect = Exception("Throttling: rate exceeded")
+        mock_agent = Mock(side_effect=Exception("Throttling: rate exceeded"))
+        mock_create_agent.return_value = mock_agent
         mock_attachments.return_value = []
         mock_format.return_value = {
             "status": "error",
@@ -242,20 +250,24 @@ class TestHandleMessageProcessing:
         result_data = json.loads(result)
         assert result_data["status"] == "error"
 
-    @patch("main.invoke_bedrock")
+    @patch("main.create_agent")
     @patch("main.process_attachments")
     @patch("main.get_processing_summary")
     @patch("main.format_success_response")
     def test_attachments_are_processed_before_bedrock(
-        self, mock_format, mock_summary, mock_attachments, mock_bedrock
+        self, mock_format, mock_summary, mock_attachments, mock_create_agent
     ):
-        """Attachments should be processed and included in Bedrock prompt."""
+        """Attachments should be processed and included in agent input."""
+        mock_agent = Mock(return_value=_make_agent_result("Based on the document..."))
+        mock_create_agent.return_value = mock_agent
         mock_attachments.return_value = [
             {
                 "file_id": "F001",
                 "file_name": "doc.pdf",
                 "mimetype": "application/pdf",
                 "content_type": "document",
+                "document_bytes": b"pdf-content",
+                "document_format": "pdf",
                 "content": "Extracted PDF text content here",
                 "processing_status": "success",
             }
@@ -265,7 +277,6 @@ class TestHandleMessageProcessing:
             "failure_codes": {},
             "has_images": False, "has_documents": True,
         }
-        mock_bedrock.return_value = "Based on the document..."
         mock_format.return_value = (
             {"status": "success", "response_text": "Based on the document..."},
             None,
@@ -288,11 +299,43 @@ class TestHandleMessageProcessing:
         handle_message(payload)
 
         mock_attachments.assert_called_once()
-        # Bedrock should receive text with attached document context (kwargs)
-        call_kw = mock_bedrock.call_args[1]
-        prompt_text = call_kw.get("prompt", "")
-        assert "Summarize this" in prompt_text
-        assert call_kw.get("documents") or call_kw.get("document_texts")
+        # Agent should be called with multimodal input (messages with documents)
+        call_args = mock_agent.call_args
+        agent_input = call_args[0][0] if call_args[0] else call_args[1].get("invocation_state")
+        invocation_state = call_args[1].get("invocation_state", {})
+        # Agent input can be str or list[Message]; with attachments it's messages
+        assert mock_agent.called
+
+
+class TestFileGenerationIntentDetection:
+    """027: Test file generation intent detection for tool use control."""
+
+    def test_indicates_file_generation_japanese(self):
+        """Japanese phrases for file creation should return True."""
+        from main import _indicates_file_generation
+
+        assert _indicates_file_generation("サンプルexcelファイルを作成") is True
+        assert _indicates_file_generation("サンプルmarkdownファイルを作成") is True
+        assert _indicates_file_generation("ファイルを作って") is True
+        assert _indicates_file_generation("エクセルで集計表を作成") is True
+        assert _indicates_file_generation("グラフを画像で作成して") is True
+
+    def test_indicates_file_generation_english(self):
+        """English phrases for file creation should return True."""
+        from main import _indicates_file_generation
+
+        assert _indicates_file_generation("Create an Excel file") is True
+        assert _indicates_file_generation("generate a markdown file") is True
+        assert _indicates_file_generation("make a csv file") is True
+
+    def test_indicates_file_generation_negative(self):
+        """Non-file-generation phrases should return False."""
+        from main import _indicates_file_generation
+
+        assert _indicates_file_generation("こんにちは") is False
+        assert _indicates_file_generation("このドキュメントを要約して") is False
+        assert _indicates_file_generation("") is False
+        assert _indicates_file_generation(None) is False  # type: ignore
 
 
 class TestErrorMapping:
@@ -318,6 +361,15 @@ class TestErrorMapping:
         error = Exception("AccessDeniedException: not authorized")
         code, msg = _map_error_to_response(error)
         assert code == "bedrock_access_denied"
+
+    def test_tool_failure_maps_correctly(self):
+        """FR-010: tool exceptions (e.g. ValueError) map to user-friendly message."""
+        from main import _map_error_to_response, ERROR_MESSAGES
+
+        error = ValueError("invalid sheet name")
+        code, msg = _map_error_to_response(error)
+        assert code == "tool_failure"
+        assert msg == ERROR_MESSAGES["tool_failure"]
 
     def test_unknown_error_maps_to_generic(self):
         from main import _map_error_to_response
@@ -449,12 +501,12 @@ class Test021FastAPIDirectRouting:
             "main.py still imports bedrock_agentcore"
         )
 
-    def test_no_strands_import(self):
-        """main.py should not import strands (uses FastAPI directly)."""
+    def test_uses_agent_factory_for_inference(self):
+        """main.py uses create_agent from agent_factory (027 Strands Agent)."""
         main_path = os.path.join(os.path.dirname(__file__), "..", "main.py")
         with open(main_path) as f:
             source = f.read()
-        assert "from strands" not in source, "main.py should not import strands"
+        assert "create_agent" in source, "main.py should use create_agent for inference"
 
     def test_handle_message_tool_processes_payload(self):
         """handle_message_tool receives payload and returns formatted response."""

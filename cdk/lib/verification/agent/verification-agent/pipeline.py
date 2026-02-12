@@ -18,12 +18,24 @@ from existence_check import check_entity_existence, ExistenceCheckError
 from authorization import authorize_request
 from rate_limiter import check_rate_limit, RateLimitExceededError
 from a2a_client import invoke_execution_agent
-from slack_post_request import send_slack_post_request, build_file_artifact
+from slack_post_request import send_slack_post_request, build_file_artifact, build_file_artifact_s3
 from error_debug import log_execution_error, log_execution_agent_error_response
-from s3_file_manager import upload_file_to_s3, generate_presigned_url, cleanup_request_files
+from logger_util import get_logger, log
+from s3_file_manager import (
+    upload_file_to_s3,
+    generate_presigned_url,
+    generate_presigned_url_for_generated_file,
+    upload_generated_file_to_s3,
+    cleanup_request_files,
+)
+
+# 028: Threshold for SQS message size; files > 200KB use S3-backed delivery
+SQS_FILE_ARTIFACT_SIZE_THRESHOLD = 200 * 1024
 
 # Used by main.py for /ping HealthyBusy
 is_processing = False
+
+_logger = get_logger()
 
 ERROR_MESSAGE_MAP = {
     "bedrock_timeout": ":hourglass: AI サービスが応答に時間がかかっています。しばらくしてからお試しください。",
@@ -48,14 +60,7 @@ DEFAULT_ERROR_MESSAGE = ":warning: エラーが発生しました。しばらく
 
 
 def _log(level: str, event_type: str, data: dict) -> None:
-    log_entry = {
-        "level": level,
-        "event_type": event_type,
-        "service": "verification-agent",
-        "timestamp": time.time(),
-        **data,
-    }
-    print(json.dumps(log_entry, default=str))
+    log(_logger, level, event_type, data, service="verification-agent")
 
 
 def _get_user_friendly_error(error_code: str, fallback_message: str = "") -> str:
@@ -124,7 +129,12 @@ def _get_slack_file_bytes(bot_token: str, file_id: str) -> Optional[bytes]:
         )
         down_resp.raise_for_status()
         return down_resp.content
-    except Exception:
+    except Exception as e:
+        _log("WARN", "slack_file_download_failed", {
+            "file_id": file_id,
+            "error": str(e),
+            "error_type": type(e).__name__,
+        })
         return None
 
 
@@ -346,9 +356,59 @@ def run(payload: dict) -> str:
             if result_data.get("status") == "success":
                 response_text = result_data.get("response_text", "")
                 file_tuple = parse_file_artifact(result_data)
-                file_artifact = (
-                    build_file_artifact(file_tuple[0], file_tuple[1], file_tuple[2]) if file_tuple else None
-                )
+                file_artifact = None
+                if file_tuple:
+                    file_bytes, file_name, mime_type = file_tuple
+                    size_bytes = len(file_bytes)
+                    if size_bytes > SQS_FILE_ARTIFACT_SIZE_THRESHOLD:
+                        try:
+                            s3_key = upload_generated_file_to_s3(
+                                file_bytes, correlation_id, file_name, mime_type
+                            )
+                            presigned_url = generate_presigned_url_for_generated_file(s3_key)
+                            file_artifact = build_file_artifact_s3(
+                                presigned_url, file_name, mime_type
+                            )
+                            _log("INFO", "file_artifact_s3_routed", {
+                                "correlation_id": correlation_id,
+                                "size_bytes": size_bytes,
+                                "artifact_type": "s3",
+                            })
+                        except Exception as e:
+                            _log("ERROR", "file_artifact_s3_upload_failed", {
+                                "correlation_id": correlation_id,
+                                "error": str(e),
+                            })
+                            send_slack_post_request(
+                                channel=channel,
+                                thread_ts=thread_ts,
+                                text=_get_user_friendly_error("generic"),
+                                bot_token=bot_token,
+                                correlation_id=correlation_id,
+                                message_ts=message_ts,
+                            )
+                            is_processing = False
+                            return json.dumps({
+                                "status": "error",
+                                "error_code": "file_upload_failed",
+                                "error_message": str(e),
+                                "correlation_id": correlation_id,
+                            })
+                    else:
+                        file_artifact = build_file_artifact(
+                            file_bytes, file_name, mime_type
+                        )
+                        _log("INFO", "file_artifact_inline_routed", {
+                            "correlation_id": correlation_id,
+                            "size_bytes": size_bytes,
+                            "artifact_type": "inline",
+                        })
+                if not file_tuple and result_data.get("file_artifact"):
+                    _log("WARN", "file_artifact_parse_failed", {
+                        "correlation_id": correlation_id,
+                        "channel": channel,
+                        "reason": "parse_file_artifact returned None despite file_artifact present",
+                    })
                 send_slack_post_request(
                     channel=channel,
                     thread_ts=thread_ts,

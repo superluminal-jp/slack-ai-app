@@ -15,6 +15,10 @@ from typing import Optional
 import boto3
 from botocore.exceptions import ClientError
 
+from logger_util import get_logger, log
+
+_logger = get_logger()
+
 # DynamoDB client (initialized on first use)
 _dynamodb_client = None
 _table_name = None
@@ -83,10 +87,10 @@ def is_duplicate_event(event_id: str) -> bool:
         error_code = e.response["Error"]["Code"]
         if error_code == "ResourceNotFoundException":
             # Table doesn't exist yet (shouldn't happen in production)
-            print(f"Warning: Dedupe table not found: {table_name}")
+            log(_logger, "WARN", "dedupe_table_not_found", {"table_name": table_name}, service="verification-agent")
             return False
         # Re-raise other errors
-        print(f"DynamoDB error checking duplicate: {error_code}")
+        log(_logger, "ERROR", "dedupe_check_error", {"error_code": error_code}, service="verification-agent")
         raise
 
 
@@ -147,11 +151,11 @@ def mark_event_processed(event_id: str) -> bool:
             return False
         elif error_code == "ResourceNotFoundException":
             # Table doesn't exist yet (shouldn't happen in production)
-            print(f"Warning: Dedupe table not found: {table_name}")
+            log(_logger, "WARN", "dedupe_table_not_found", {"table_name": table_name}, service="verification-agent")
             # Return True to allow processing (fail open)
             return True
         else:
             # Other DynamoDB errors
-            print(f"DynamoDB error marking event: {error_code}")
+            log(_logger, "ERROR", "dedupe_mark_error", {"error_code": error_code}, service="verification-agent")
             # Return True to allow processing (fail open - better than blocking)
             return True

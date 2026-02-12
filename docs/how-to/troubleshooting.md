@@ -230,10 +230,10 @@ print(json.dumps(log_entry, cls=_DecimalEncoder))
 
 InvokeAgentRuntime 利用時は以下の制限を遵守してください。
 
-| 項目 | 制限 | 本プロジェクトの実装 |
-|------|------|----------------------|
-| **runtimeSessionId** | 長さ 33–256 文字 | `str(uuid.uuid4())` を使用（36 文字）。API 要件を満たす |
-| **ペイロードサイズ** | 最大 100 MB | テキスト・添付ファイル（024）を含めても通常は遠く下回る。マルチモーダル拡張時は監視を推奨 |
+| 項目                 | 制限             | 本プロジェクトの実装                                                                      |
+| -------------------- | ---------------- | ----------------------------------------------------------------------------------------- |
+| **runtimeSessionId** | 長さ 33–256 文字 | `str(uuid.uuid4())` を使用（36 文字）。API 要件を満たす                                   |
+| **ペイロードサイズ** | 最大 100 MB      | テキスト・添付ファイル（024）を含めても通常は遠く下回る。マルチモーダル拡張時は監視を推奨 |
 
 スレッド単位でコンテキストを維持するユースケースでは、同一スレッドで同じ `runtimeSessionId` を再利用可能。本アプリはリクエスト毎に新しいセッション ID を使用（非同期 SQS 経由のため）。
 
@@ -300,8 +300,9 @@ aws bedrock-agentcore-control put-resource-policy \
 
 スタックの Output に `ExecutionRuntimeArn` / `ExecutionEndpointArn` が出ている場合はその ARN をそのまま `--resource-arn` に指定できます。詳細は [013 クイックスタート（クロスアカウント）](../../specs/013-agentcore-a2a-zones/quickstart.md) を参照してください。
 
-**参考**:  
-- [Resource-based policies for Amazon Bedrock AgentCore](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/resource-based-policies.html)  
+**参考**:
+
+- [Resource-based policies for Amazon Bedrock AgentCore](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/resource-based-policies.html)
 - [PutResourcePolicy - Control Plane API](https://docs.aws.amazon.com/bedrock-agentcore-control/latest/APIReference/API_PutResourcePolicy.html)
 
 ---
@@ -346,7 +347,7 @@ AI 生成ファイル（CSV/JSON 等）をスレッドに投稿する機能（01
 1. **Bot Token スコープ**  
    Slack App の **OAuth & Permissions** → **Bot Token Scopes** に **`files:read`** が含まれているか確認。含まれていない場合は追加し、ワークスペースに再インストールする。
 
-2. **サポート形式**  
+2. **サポート形式**
    - 画像: PNG, JPEG, GIF, WebP（最大 10 MB）
    - ドキュメント: PDF, DOCX, XLSX, CSV, TXT, PPTX（最大 5 MB）
    - 1 メッセージあたり最大 5 ファイル
@@ -392,13 +393,13 @@ AI 生成ファイル（CSV/JSON 等）をスレッドに投稿する機能（01
 
 「目のスタンプだけ付いて返信がこない」場合、次の順でログを確認すると、**どこで止まっているか**を特定できます。
 
-| 確認箇所 | ロググループ（例: dev） | 成功時に見えるログ | 止まっている場合の目安 |
-|----------|-------------------------|---------------------|-------------------------|
-| **1. Slack → Verification（Lambda）** | `/aws/lambda/SlackAI-Verification-Dev-SlackEventHandler898FE80E-*` | `reaction_added` → `sqs_enqueue_success` | `reaction_added` のあと `sqs_enqueue_success` が無い → 署名/認可/レート制限/SQS 送信失敗 |
-| **2. SQS → Agent Invoker** | `/aws/lambda/SlackAI-Verification-Dev-AgentInvokerHandler544912-*` | `agent_invocation_success` | `agent_invocation_failed` → **InvokeAgentRuntime 失敗**（下記 424 を参照） |
-| **3. Verification Agent（AgentCore）** | `/aws/bedrock-agentcore/runtimes/SlackAI_VerificationAgent-*-DEFAULT` | `delegating_to_execution_agent` → `execution_result_received` → `slack_response_posted` | ログが無い → Agent Invoker の呼び出しが届いていない（424 等） |
-| **4. Execution Agent（AgentCore）** | `/aws/bedrock-agentcore/runtimes/SlackAI_ExecutionAgent-*-DEFAULT` | 推論・応答のログ | Verification のログに `delegating_to_execution_agent` はあるが Execution にログが無い → A2A または Execution 側の不調 |
-| **5. Slack Poster → Slack** | `/aws/lambda/SlackAI-Verification-Dev-SlackPoster...` | `slack_post_success` → リアクション 👀→✅ 差し替え | 投稿成功時は元メッセージのリアクションが 👀 から ✅ に変わる。返信が来ない場合は Poster のログを確認 |
+| 確認箇所                               | ロググループ（例: dev）                                               | 成功時に見えるログ                                                                      | 止まっている場合の目安                                                                                                |
+| -------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **1. Slack → Verification（Lambda）**  | `/aws/lambda/SlackAI-Verification-Dev-SlackEventHandler898FE80E-*`    | `reaction_added` → `sqs_enqueue_success`                                                | `reaction_added` のあと `sqs_enqueue_success` が無い → 署名/認可/レート制限/SQS 送信失敗                              |
+| **2. SQS → Agent Invoker**             | `/aws/lambda/SlackAI-Verification-Dev-AgentInvokerHandler544912-*`    | `agent_invocation_success`                                                              | `agent_invocation_failed` → **InvokeAgentRuntime 失敗**（下記 424 を参照）                                            |
+| **3. Verification Agent（AgentCore）** | `/aws/bedrock-agentcore/runtimes/SlackAI_VerificationAgent-*-DEFAULT` | `delegating_to_execution_agent` → `execution_result_received` → `slack_response_posted` | ログが無い → Agent Invoker の呼び出しが届いていない（424 等）                                                         |
+| **4. Execution Agent（AgentCore）**    | `/aws/bedrock-agentcore/runtimes/SlackAI_ExecutionAgent-*-DEFAULT`    | 推論・応答のログ                                                                        | Verification のログに `delegating_to_execution_agent` はあるが Execution にログが無い → A2A または Execution 側の不調 |
+| **5. Slack Poster → Slack**            | `/aws/lambda/SlackAI-Verification-Dev-SlackPoster...`                 | `slack_post_success` → リアクション 👀→✅ 差し替え                                      | 投稿成功時は元メッセージのリアクションが 👀 から ✅ に変わる。返信が来ない場合は Poster のログを確認                  |
 
 **CLI で直近ログを確認する例**（リージョン・ロググループ名は環境に合わせて変更）:
 
@@ -439,10 +440,10 @@ aws logs filter-log-events --region ap-northeast-1 \
    呼び出しが 60 秒以上かかってから 424 になる場合、ランタイムのコールドスタートやコンテナの初期化タイムアウトの可能性。Lambda のタイムアウト（例: 2 分）を十分に取り、AgentCore ランタイムのヘルス・再デプロイを検討する。
 
 5. **再デプロイしても 424 が続き、ランタイムにログが 1 件も出ない場合**  
-   コンソールでは Runtime が Ready なのに InvokeAgentRuntime だけ 424 で、Verification Agent のロググループにアプリログが無い場合は、**コンテナにトラフィックが届いていない**か**コンテナ起動失敗**が疑われる。  
-   - **コンテナのローカル確認**: 同じ Docker イメージを `docker run -p 9000:9000 <image>` で起動し、`GET /ping` や `POST /` で応答するか確認。  
-   - **Execution Role**: Runtime の実行ロールが ECR の GetAuthorizationToken / BatchGetImage と CloudWatch Logs の PutLogEvents を持っているか確認。  
-   - **イメージ・プラットフォーム**: Dockerfile が `EXPOSE 9000` かつ ARM64（`--platform=linux/arm64`）でビルドされているか確認。  
+   コンソールでは Runtime が Ready なのに InvokeAgentRuntime だけ 424 で、Verification Agent のロググループにアプリログが無い場合は、**コンテナにトラフィックが届いていない**か**コンテナ起動失敗**が疑われる。
+   - **コンテナのローカル確認**: 同じ Docker イメージを `docker run -p 9000:9000 <image>` で起動し、`GET /ping` や `POST /` で応答するか確認。
+   - **Execution Role**: Runtime の実行ロールが ECR の GetAuthorizationToken / BatchGetImage と CloudWatch Logs の PutLogEvents を持っているか確認。
+   - **イメージ・プラットフォーム**: Dockerfile が `EXPOSE 9000` かつ ARM64（`--platform=linux/arm64`）でビルドされているか確認。
    - 上記で問題なさそうな場合は [Troubleshoot AgentCore Runtime](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-troubleshooting.html) の「missing or empty CloudWatch Logs」「debugging container issues」を参照するか、AWS サポート／サービスヘルスを確認する。
 
 **関連（公式）**: [Troubleshoot AgentCore Runtime](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-troubleshooting.html)（504 / 422 / 403 / 500 / 424 の説明）、[Invoke an AgentCore Runtime agent](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-invoke-agent.html)、[InvokeAgentRuntime API](https://docs.aws.amazon.com/bedrock-agentcore/latest/APIReference/API_InvokeAgentRuntime.html)。Agent Invoker は boto3 1.39.8+ を利用（bedrock-agentcore クライアントに必要）。
@@ -459,14 +460,14 @@ aws logs filter-log-events --region ap-northeast-1 \
 **対処（順に実施）**:
 
 1. **Agent Invoker Lambda のログを確認する**  
-   CloudWatch のロググループ `/aws/lambda/<StackName>-AgentInvokerHandler...`（例: `SlackAI-Verification-Dev-AgentInvokerHandler544912D9-...`）を開き、`agent_invocation_failed` を検索する。  
-   - **`error` に 424 が出ている** → 上記「[InvokeAgentRuntime が 424 で失敗する](#invokeagentruntime-が-424-で失敗するagent-invoker--verification-agent)」に従い、ランタイム状態・ペイロード・コールドスタートを確認する。  
-   - **500 / ThrottlingException / その他** → そのメッセージ内容で [Runtime トラブルシューティング](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-troubleshooting.html) や IAM 権限を確認する。  
+   CloudWatch のロググループ `/aws/lambda/<StackName>-AgentInvokerHandler...`（例: `SlackAI-Verification-Dev-AgentInvokerHandler544912D9-...`）を開き、`agent_invocation_failed` を検索する。
+   - **`error` に 424 が出ている** → 上記「[InvokeAgentRuntime が 424 で失敗する](#invokeagentruntime-が-424-で失敗するagent-invoker--verification-agent)」に従い、ランタイム状態・ペイロード・コールドスタートを確認する。
+   - **500 / ThrottlingException / その他** → そのメッセージ内容で [Runtime トラブルシューティング](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-troubleshooting.html) や IAM 権限を確認する。
    - **`agent_invocation_success` しか出ていない** → 呼び出しは API としては成功しているが、ランタイム内で処理が失敗している。次のステップへ。
 
-2. **Verification Agent のロググループ・ストリームを確認する**  
-   - ロググループ: `/aws/bedrock-agentcore/runtimes/<agent_id>-DEFAULT`（`<agent_id>` は Bedrock AgentCore コンソールの Runtime 詳細に表示される ID。例: `SlackAI_VerificationAgent-199F5923` のような形式）。  
-   - 標準ログは「ストリーム名 = UUID」のログストリームに出力される。ストリームが存在しない、またはあっても空の場合は、**リクエストがコンテナに届いていない**か、**コンテナが起動直後にクラッシュしている**可能性がある。  
+2. **Verification Agent のロググループ・ストリームを確認する**
+   - ロググループ: `/aws/bedrock-agentcore/runtimes/<agent_id>-DEFAULT`（`<agent_id>` は Bedrock AgentCore コンソールの Runtime 詳細に表示される ID。例: `SlackAI_VerificationAgent-199F5923` のような形式）。
+   - 標準ログは「ストリーム名 = UUID」のログストリームに出力される。ストリームが存在しない、またはあっても空の場合は、**リクエストがコンテナに届いていない**か、**コンテナが起動直後にクラッシュしている**可能性がある。
    - OTEL 構造化ログは同じロググループ内の `otel-rt-logs` ストリームに出る場合がある（[View observability data](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/observability-view.html) 参照）。
 
 3. **ランタイム状態と再デプロイ**  
@@ -500,10 +501,10 @@ aws logs filter-log-events --region ap-northeast-1 \
 3. **Verification Agent のログ確認**  
    CloudWatch の `/aws/bedrock-agentcore/runtimes/SlackAI_VerificationAgent-*-DEFAULT` に、`unhandled_exception` や `execution_agent_error`、`WHITELIST_TABLE_NAME environment variable not set` などのメッセージが出ていないか確認する。
 
-4. **再デプロイ後も error rate が 100% のとき**  
-   - **デプロイ済みテンプレートの確認**: AWS コンソールの **CloudFormation** → **SlackAI-Verification-Dev** → 「テンプレート」タブ → テンプレートを表示し、`VerificationAgentRuntime`（または `Runtime`）リソースの **Properties** に **EnvironmentVariables** があるか確認する。含まれていない場合は、CDK の `verification-agent-runtime.ts` で `addPropertyOverride("EnvironmentVariables", ...)` が効くように再デプロイする。  
-   - **環境変数の中身**: 同じテンプレート内で `EXECUTION_AGENT_ARN`、`DEDUPE_TABLE_NAME`、`WHITELIST_TABLE_NAME`、`AWS_REGION_NAME` などが正しく設定されているか確認する。  
-   - **コンテナの入れ替え**: 環境変数の変更は **新しいコンテナインスタンス** にのみ反映されます。数分待ってから再度メンションするか、必要に応じて Runtime を再デプロイし、新しいインスタンスが起動するのを待つ。  
+4. **再デプロイ後も error rate が 100% のとき**
+   - **デプロイ済みテンプレートの確認**: AWS コンソールの **CloudFormation** → **SlackAI-Verification-Dev** → 「テンプレート」タブ → テンプレートを表示し、`VerificationAgentRuntime`（または `Runtime`）リソースの **Properties** に **EnvironmentVariables** があるか確認する。含まれていない場合は、CDK の `verification-agent-runtime.ts` で `addPropertyOverride("EnvironmentVariables", ...)` が効くように再デプロイする。
+   - **環境変数の中身**: 同じテンプレート内で `EXECUTION_AGENT_ARN`、`DEDUPE_TABLE_NAME`、`WHITELIST_TABLE_NAME`、`AWS_REGION_NAME` などが正しく設定されているか確認する。
+   - **コンテナの入れ替え**: 環境変数の変更は **新しいコンテナインスタンス** にのみ反映されます。数分待ってから再度メンションするか、必要に応じて Runtime を再デプロイし、新しいインスタンスが起動するのを待つ。
    - **ログで原因を特定**: CloudWatch の `/aws/bedrock-agentcore/runtimes/SlackAI_VerificationAgent-*-DEFAULT` で `level: ERROR` や `event_type: unhandled_exception` を検索し、`error` フィールド（未設定の環境変数名・DynamoDB/Secrets Manager のエラー・Execution Agent 呼び出し失敗など）を確認する。
 
 **関連ドキュメント**: [ゾーン間通信 §6.6（016 非同期フロー）](../reference/architecture/zone-communication.md)、[016 spec](../../specs/016-async-agentcore-invocation/spec.md)。
@@ -511,6 +512,26 @@ aws logs filter-log-events --region ap-northeast-1 \
 ---
 
 ## ログの確認方法
+
+### 各段階のログを一括取得（trace-slack-request-logs.sh）
+
+Slack からのリクエストについて、**各段階（Slack Event Handler → Agent Invoker → Verification Agent → Execution Agent → Slack Poster）の AWS CloudWatch ログを取得し一覧**するスクリプトがあります。
+
+```bash
+# 最新のリクエストのログを取得（過去1時間以内）
+./scripts/trace-slack-request-logs.sh --latest
+
+# 特定の correlation_id でログを取得
+./scripts/trace-slack-request-logs.sh --correlation-id "abc-123-def"
+
+# 過去2時間の範囲で最新リクエストを取得
+./scripts/trace-slack-request-logs.sh --latest --since 2h
+
+# ロググループ一覧を表示（探索モード）
+./scripts/trace-slack-request-logs.sh --list-log-groups
+```
+
+**前提条件**: AWS CLI が設定済み、jq がインストール済み（`brew install jq`）。
 
 ### CloudWatch ログの確認
 
@@ -527,19 +548,19 @@ aws logs filter-log-events \
 
 ### 重要なログパターン
 
-| パターン                              | 意味                               |
-| ------------------------------------- | ---------------------------------- |
-| `signature_valid=false`               | 署名検証失敗                       |
-| `existence_check_failed`              | Slack API 実在性確認失敗           |
-| `bedrock_error`                       | Bedrock API エラー                 |
-| `timeout`                             | 処理タイムアウト                   |
-| `execution_api_invocation_failed`     | Execution API 呼び出し失敗         |
-| `rate_limit_unexpected_error`         | レート制限の予期しないエラー       |
-| `whitelist_authorization_failed`      | ホワイトリスト認可失敗             |
-| `a2a_invocation_failed`              | AgentCore A2A 呼び出し失敗        |
-| `slack_post_file_failed`             | 014: ファイルの Slack 投稿失敗   |
-| `agent_invocation_failed`            | 016: Agent Invoker の InvokeAgentRuntime 失敗 |
-| `agent_invocation_success`           | 016: Agent Invoker の InvokeAgentRuntime 成功 |
+| パターン                          | 意味                                          |
+| --------------------------------- | --------------------------------------------- |
+| `signature_valid=false`           | 署名検証失敗                                  |
+| `existence_check_failed`          | Slack API 実在性確認失敗                      |
+| `bedrock_error`                   | Bedrock API エラー                            |
+| `timeout`                         | 処理タイムアウト                              |
+| `execution_api_invocation_failed` | Execution API 呼び出し失敗                    |
+| `rate_limit_unexpected_error`     | レート制限の予期しないエラー                  |
+| `whitelist_authorization_failed`  | ホワイトリスト認可失敗                        |
+| `a2a_invocation_failed`           | AgentCore A2A 呼び出し失敗                    |
+| `slack_post_file_failed`          | 014: ファイルの Slack 投稿失敗                |
+| `agent_invocation_failed`         | 016: Agent Invoker の InvokeAgentRuntime 失敗 |
+| `agent_invocation_success`        | 016: Agent Invoker の InvokeAgentRuntime 成功 |
 
 ---
 

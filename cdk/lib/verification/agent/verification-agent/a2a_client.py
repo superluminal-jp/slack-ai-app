@@ -28,17 +28,14 @@ try:
 except ImportError:
     log_execution_error = None
 
+from logger_util import get_logger, log
+
+_logger = get_logger()
+
 
 def _log(level: str, event_type: str, data: dict) -> None:
     """Structured JSON logging for CloudWatch."""
-    log_entry = {
-        "level": level,
-        "event_type": event_type,
-        "service": "verification-agent-a2a-client",
-        "timestamp": time.time(),
-        **data,
-    }
-    print(json.dumps(log_entry, default=str))
+    log(_logger, level, event_type, data, service="verification-agent-a2a-client")
 
 
 # Singleton boto3 client

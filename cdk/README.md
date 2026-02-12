@@ -16,18 +16,21 @@ Communication between zones is exclusively via AgentCore A2A (no API Gateway or 
 Both stacks can be deployed independently using CDK CLI. This follows CDK best practices for modular infrastructure:
 
 **Deploy ExecutionStack only:**
+
 ```bash
 export DEPLOYMENT_ENV=dev
 npx cdk deploy SlackAI-Execution-Dev
 ```
 
 **Deploy VerificationStack only** (requires `executionAgentArn` from Execution Stack or config):
+
 ```bash
 export DEPLOYMENT_ENV=dev
 npx cdk deploy SlackAI-Verification-Dev
 ```
 
 **Key benefits of independent deployment:**
+
 - Deploy ExecutionStack without VerificationStack
 - Deploy VerificationStack after ExecutionStack is deployed (with `executionAgentArn` from output or config)
 - Update either stack independently without affecting the other
@@ -35,6 +38,7 @@ npx cdk deploy SlackAI-Verification-Dev
 - Better separation of concerns and lifecycle management
 
 **Stack dependencies:**
+
 - ExecutionStack: No dependencies (can be deployed standalone)
 - VerificationStack: Requires `executionAgentArn` from Execution Stack output (or set in `cdk.config.{env}.json`)
 
@@ -93,7 +97,7 @@ cp cdk.config.json.example cdk.config.prod.json
 ```json
 {
   "awsRegion": "ap-northeast-1",
-  "bedrockModelId": "jp.anthropic.claude-haiku-4-5-20251001-v1:0",
+  "bedrockModelId": "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
   "deploymentEnv": "dev",
   "verificationStackName": "SlackAI-Verification",
   "executionStackName": "SlackAI-Execution",
@@ -224,18 +228,18 @@ Then follow the same steps as above. The deployment script (`scripts/deploy-spli
 
 ### ExecutionStack
 
-| Output                    | Description                                              |
-| ------------------------- | -------------------------------------------------------- |
-| ExecutionAgentRuntimeArn  | AgentCore Runtime ARN (for Verification Stack config)   |
+| Output                   | Description                                           |
+| ------------------------ | ----------------------------------------------------- |
+| ExecutionAgentRuntimeArn | AgentCore Runtime ARN (for Verification Stack config) |
 
 ### VerificationStack
 
-| Output                      | Description                             |
-| --------------------------- | --------------------------------------- |
-| SlackEventHandlerUrl       | Function URL for Slack Event Subscriptions |
-| VerificationLambdaRoleArn   | Lambda role ARN                         |
-| SlackEventHandlerArn        | Lambda function ARN                     |
-| VerificationAgentRuntimeArn | AgentCore Runtime ARN                   |
+| Output                      | Description                                |
+| --------------------------- | ------------------------------------------ |
+| SlackEventHandlerUrl        | Function URL for Slack Event Subscriptions |
+| VerificationLambdaRoleArn   | Lambda role ARN                            |
+| SlackEventHandlerArn        | Lambda function ARN                        |
+| VerificationAgentRuntimeArn | AgentCore Runtime ARN                      |
 
 ## Useful Commands
 
@@ -311,20 +315,20 @@ cdk/
 
 ### Configuration Fields
 
-| Field                       | Required | Type   | Description                                                                             |
-| --------------------------- | -------- | ------ | --------------------------------------------------------------------------------------- |
-| `awsRegion`                 | Yes      | string | AWS region for deployment (e.g., `ap-northeast-1`)                                      |
-| `bedrockModelId`            | Yes      | string | Bedrock model ID (e.g., `jp.anthropic.claude-haiku-4-5-20251001-v1:0`)                  |
-| `deploymentEnv`             | Yes      | enum   | Deployment environment: `"dev"` or `"prod"`                                             |
-| `verificationStackName`     | Yes      | string | Base name for Verification Stack (without environment suffix)                           |
-| `executionStackName`        | Yes      | string | Base name for Execution Stack (without environment suffix)                              |
-| `verificationAccountId`     | Yes      | string | 12-digit AWS account ID for Verification Stack                                          |
-| `executionAccountId`        | Yes      | string | 12-digit AWS account ID for Execution Stack                                             |
-| `slackBotToken`             | No       | string | Slack Bot OAuth Token (can be set via environment variable `SLACK_BOT_TOKEN`)           |
-| `slackSigningSecret`        | No       | string | Slack Signing Secret (can be set via environment variable `SLACK_SIGNING_SECRET`)       |
-| `executionAgentName`        | No       | string | AgentCore Execution Agent name (e.g., `SlackAI-ExecutionAgent`)                        |
-| `verificationAgentName`     | No       | string | AgentCore Verification Agent name (e.g., `SlackAI-VerificationAgent`)                  |
-| `executionAgentArn`         | No       | string | Execution Agent Runtime ARN (populated after Execution Stack deployment)               |
+| Field                   | Required | Type   | Description                                                                       |
+| ----------------------- | -------- | ------ | --------------------------------------------------------------------------------- |
+| `awsRegion`             | Yes      | string | AWS region for deployment (e.g., `ap-northeast-1`)                                |
+| `bedrockModelId`        | Yes      | string | Bedrock model ID (e.g., `jp.anthropic.claude-sonnet-4-5-20250929-v1:0`)           |
+| `deploymentEnv`         | Yes      | enum   | Deployment environment: `"dev"` or `"prod"`                                       |
+| `verificationStackName` | Yes      | string | Base name for Verification Stack (without environment suffix)                     |
+| `executionStackName`    | Yes      | string | Base name for Execution Stack (without environment suffix)                        |
+| `verificationAccountId` | Yes      | string | 12-digit AWS account ID for Verification Stack                                    |
+| `executionAccountId`    | Yes      | string | 12-digit AWS account ID for Execution Stack                                       |
+| `slackBotToken`         | No       | string | Slack Bot OAuth Token (can be set via environment variable `SLACK_BOT_TOKEN`)     |
+| `slackSigningSecret`    | No       | string | Slack Signing Secret (can be set via environment variable `SLACK_SIGNING_SECRET`) |
+| `executionAgentName`    | No       | string | AgentCore Execution Agent name (e.g., `SlackAI-ExecutionAgent`)                   |
+| `verificationAgentName` | No       | string | AgentCore Verification Agent name (e.g., `SlackAI-VerificationAgent`)             |
+| `executionAgentArn`     | No       | string | Execution Agent Runtime ARN (populated after Execution Stack deployment)          |
 
 ### Configuration Validation
 
@@ -339,17 +343,17 @@ Validation errors provide clear, actionable error messages indicating which fiel
 
 ## Environment Variables
 
-| Variable                      | Required | Description                                                                                   |
-| ----------------------------- | -------- | --------------------------------------------------------------------------------------------- |
-| DEPLOYMENT_ENV                | No       | Deployment environment (`dev` or `prod`). Defaults to `dev`                                   |
-| AWS_REGION                    | No       | AWS region (overrides config file)                                                            |
-| BEDROCK_MODEL_ID              | No       | Bedrock model ID (overrides config file)                                                      |
-| VERIFICATION_ACCOUNT_ID       | No       | Verification account ID (overrides config file)                                               |
-| EXECUTION_ACCOUNT_ID          | No       | Execution account ID (overrides config file)                                                  |
-| SLACK_BOT_TOKEN               | No\*     | Slack Bot OAuth Token (required if not set in config file. Takes precedence over config file) |
-| SLACK_SIGNING_SECRET          | No\*     | Slack Signing Secret (required if not set in config file. Takes precedence over config file)  |
-| EXECUTION_AGENT_ARN           | No       | Execution Agent Runtime ARN (overrides config file)                                            |
-| ALARM_EMAIL                   | No       | Email for alarm notifications                                                                 |
+| Variable                | Required | Description                                                                                   |
+| ----------------------- | -------- | --------------------------------------------------------------------------------------------- |
+| DEPLOYMENT_ENV          | No       | Deployment environment (`dev` or `prod`). Defaults to `dev`                                   |
+| AWS_REGION              | No       | AWS region (overrides config file)                                                            |
+| BEDROCK_MODEL_ID        | No       | Bedrock model ID (overrides config file)                                                      |
+| VERIFICATION_ACCOUNT_ID | No       | Verification account ID (overrides config file)                                               |
+| EXECUTION_ACCOUNT_ID    | No       | Execution account ID (overrides config file)                                                  |
+| SLACK_BOT_TOKEN         | No\*     | Slack Bot OAuth Token (required if not set in config file. Takes precedence over config file) |
+| SLACK_SIGNING_SECRET    | No\*     | Slack Signing Secret (required if not set in config file. Takes precedence over config file)  |
+| EXECUTION_AGENT_ARN     | No       | Execution Agent Runtime ARN (overrides config file)                                           |
+| ALARM_EMAIL             | No       | Email for alarm notifications                                                                 |
 
 **Note**: `*` indicates that the variable is required if not provided via config file. Either environment variable or config file value must be set.
 
@@ -404,6 +408,7 @@ cdk/
 ```
 
 **Key Benefits of This Structure**:
+
 - **Complete Stack Isolation**: Each stack contains CDK code and AgentCore agent code; Verification also has SlackEventHandler Lambda
 - **A2A-Only Communication**: Inter-zone communication is exclusively via AgentCore A2A
 - **Comprehensive Testing**: 167+ tests (Execution 79 + Verification 63 + CDK/Jest 25+)
@@ -430,9 +435,9 @@ cd lib/verification/agent/verification-agent && python -m pytest tests/ -v  # 93
 
 ### Test Coverage
 
-| Test Suite | Framework | Tests | Description |
-|------------|-----------|-------|-------------|
-| AgentCore Constructs | Jest | 25 | Runtime, IAM, cross-account policies, echo mode config |
-| Execution Agent | pytest | 110 | FastAPI server, Bedrock, Agent Card, metrics, file artifacts, attachment processing |
-| Verification Agent | pytest | 93 | Security pipeline, A2A client, Slack posting, Agent Card, file posting, S3 file transfer |
-| **Total** | | **228** | **All passing** |
+| Test Suite           | Framework | Tests   | Description                                                                              |
+| -------------------- | --------- | ------- | ---------------------------------------------------------------------------------------- |
+| AgentCore Constructs | Jest      | 25      | Runtime, IAM, cross-account policies, echo mode config                                   |
+| Execution Agent      | pytest    | 110     | FastAPI server, Bedrock, Agent Card, metrics, file artifacts, attachment processing      |
+| Verification Agent   | pytest    | 93      | Security pipeline, A2A client, Slack posting, Agent Card, file posting, S3 file transfer |
+| **Total**            |           | **228** | **All passing**                                                                          |

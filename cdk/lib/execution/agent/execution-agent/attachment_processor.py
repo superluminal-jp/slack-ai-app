@@ -16,21 +16,17 @@ Reference:
 """
 
 import json
-import time
-from typing import List, Dict, Optional, Any
+from typing import Any, Dict, List, Optional
+
 from file_downloader import download_file, get_file_download_url, download_from_presigned_url
+from logger_util import get_logger, log
+
+_logger = get_logger()
 
 
 def _log(level: str, event_type: str, data: dict) -> None:
     """Structured JSON logging for CloudWatch."""
-    log_entry = {
-        "level": level,
-        "event_type": event_type,
-        "service": "execution-agent-attachment",
-        "timestamp": time.time(),
-        **data,
-    }
-    print(json.dumps(log_entry, default=str))
+    log(_logger, level, event_type, data, service="execution-agent-attachment")
 
 
 # Supported image MIME types (Bedrock Converse API supported formats)

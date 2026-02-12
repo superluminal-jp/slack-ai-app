@@ -1,6 +1,8 @@
-"""Tests for Slack Poster Lambda (019)."""
+"""Tests for Slack Poster Lambda (019, 028)."""
 
+import base64
 import json
+from io import BytesIO
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -83,3 +85,82 @@ def test_lambda_handler_missing_channel_returns_failure(mock_webclient):
     result = lambda_handler(event, None)
     assert result["batchItemFailures"] == [{"itemIdentifier": "msg-1"}]
     mock_webclient.return_value.chat_postMessage.assert_not_called()
+
+
+@patch("handler.urllib.request.urlopen")
+@patch("handler.WebClient")
+def test_lambda_handler_post_file_via_s3_presigned_url(mock_webclient, mock_urlopen):
+    """Post request with s3PresignedUrl fetches file from URL and uploads to Slack (028)."""
+    from handler import lambda_handler
+
+    file_content = b"large file content from s3"
+    mock_resp = MagicMock()
+    mock_resp.read.side_effect = lambda n=-1: file_content
+    mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+    mock_resp.__exit__ = MagicMock(return_value=False)
+    mock_urlopen.return_value = mock_resp
+
+    event = {
+        "Records": [
+            {
+                "messageId": "msg-1",
+                "body": json.dumps({
+                    "channel": "C01",
+                    "thread_ts": "123.456",
+                    "file_artifact": {
+                        "fileName": "report.xlsx",
+                        "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        "s3PresignedUrl": "https://my-bucket.s3.ap-northeast-1.amazonaws.com/generated_files/corr-1/report.xlsx?X-Amz-Signature=abc",
+                    },
+                    "bot_token": "xoxb-test-token",
+                    "correlation_id": "corr-1",
+                }),
+            },
+        ],
+    }
+    result = lambda_handler(event, None)
+    assert result["batchItemFailures"] == []
+    mock_urlopen.assert_called_once()
+    call_args = mock_urlopen.call_args[0]
+    assert "amazonaws.com" in call_args[0]
+    mock_webclient.return_value.files_upload_v2.assert_called_once()
+    upload_call = mock_webclient.return_value.files_upload_v2.call_args[1]
+    assert upload_call["content"] == file_content
+    assert upload_call["filename"] == "report.xlsx"
+    assert upload_call["channel"] == "C01"
+    assert upload_call["thread_ts"] == "123.456"
+
+
+@patch("handler.WebClient")
+def test_lambda_handler_post_file_via_content_base64(mock_webclient):
+    """Post request with contentBase64 decodes and uploads to Slack (028)."""
+    from handler import lambda_handler
+
+    file_content = b"small inline file content"
+    b64_content = base64.b64encode(file_content).decode("ascii")
+
+    event = {
+        "Records": [
+            {
+                "messageId": "msg-1",
+                "body": json.dumps({
+                    "channel": "C01",
+                    "thread_ts": "123.456",
+                    "file_artifact": {
+                        "fileName": "notes.txt",
+                        "mimeType": "text/plain",
+                        "contentBase64": b64_content,
+                    },
+                    "bot_token": "xoxb-test-token",
+                    "correlation_id": "corr-1",
+                }),
+            },
+        ],
+    }
+    result = lambda_handler(event, None)
+    assert result["batchItemFailures"] == []
+    mock_webclient.return_value.files_upload_v2.assert_called_once()
+    upload_call = mock_webclient.return_value.files_upload_v2.call_args[1]
+    assert upload_call["content"] == file_content
+    assert upload_call["filename"] == "notes.txt"
+    assert upload_call["channel"] == "C01"

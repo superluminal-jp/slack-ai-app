@@ -7,14 +7,16 @@ custom metrics from inside the AgentCore container.
 
 import json
 import os
-import time
-from typing import Dict, List, Optional, Any
-import boto3
-from botocore.exceptions import ClientError, BotoCoreError
+from typing import Any, Dict, List, Optional
 
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
+
+from logger_util import get_logger, log
 
 # Singleton CloudWatch client
 _cloudwatch_client: Optional[Any] = None
+_logger = get_logger()
 
 
 def _get_cloudwatch_client():
@@ -40,15 +42,7 @@ def _log(level: str, event_type: str, data: Dict[str, Any]) -> None:
         event_type: Event type identifier
         data: Additional log data
     """
-    log_entry = {
-        "level": level,
-        "event_type": event_type,
-        "service": "execution-agent",
-        "component": "cloudwatch_metrics",
-        "timestamp": time.time(),
-        **data,
-    }
-    print(json.dumps(log_entry, default=str))
+    log(_logger, level, event_type, {**data, "component": "cloudwatch_metrics"}, service="execution-agent")
 
 
 def emit_metric(

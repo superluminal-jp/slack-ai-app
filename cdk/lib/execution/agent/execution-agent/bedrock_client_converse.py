@@ -16,24 +16,19 @@ Note: Migrated from InvokeModel API to Converse API for better image handling.
 
 import json
 import os
-import time
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 import boto3
 from botocore.exceptions import ClientError
 
+from logger_util import get_logger, log
+
+_logger = get_logger()
+
 
 def _log(level: str, event_type: str, data: dict) -> None:
     """Structured JSON logging for CloudWatch (searchable, parseable)."""
-    log_entry = {
-        "level": level,
-        "event_type": event_type,
-        "service": "execution-agent",
-        "component": "bedrock_client",
-        "timestamp": time.time(),
-        **data,
-    }
-    print(json.dumps(log_entry, default=str, ensure_ascii=False))
+    log(_logger, level, event_type, {**data, "component": "bedrock_client"}, service="execution-agent")
 
 
 # Model configuration
@@ -142,6 +137,64 @@ def prepare_document_content_converse(
             "source": {"bytes": raw_bytes},
         },
     }
+
+
+def build_content_blocks(
+    prompt: str,
+    documents: Optional[List[Dict[str, Any]]] = None,
+    document_texts: Optional[List[str]] = None,
+    images: Optional[List[bytes]] = None,
+    image_formats: Optional[List[str]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Build content blocks for Bedrock Converse / Strands Agent multimodal input.
+
+    Args:
+        prompt: User message text
+        documents: Native document blocks [{bytes, format, name}]
+        document_texts: Fallback text from documents (e.g. PPTX)
+        images: Image bytes list
+        image_formats: Format per image (png, jpeg, gif, webp)
+
+    Returns:
+        List of content blocks (text, document, image)
+    """
+    content_parts: List[Dict[str, Any]] = []
+    if prompt and prompt.strip():
+        content_parts.append({"text": prompt.strip()})
+    elif documents:
+        content_parts.append({"text": "Please summarize or analyze the attached document(s)."})
+
+    if document_texts:
+        for doc_text in document_texts:
+            if doc_text:
+                content_parts.append({"text": f"\n\n[Document content]\n{doc_text}"})
+
+    if documents:
+        for doc in documents:
+            raw_bytes = doc.get("bytes")
+            format_val = doc.get("format")
+            name = doc.get("name", "document")
+            if raw_bytes and format_val:
+                safe_name = _sanitize_document_name(name)
+                content_parts.append({
+                    "document": {
+                        "name": safe_name,
+                        "format": format_val,
+                        "source": {"bytes": raw_bytes},
+                    },
+                })
+
+    if images:
+        formats = image_formats if image_formats else ["png"] * len(images)
+        for image_bytes, image_format in zip(images, formats):
+            content_parts.append({
+                "image": {
+                    "format": image_format,
+                    "source": {"bytes": image_bytes},
+                },
+            })
+    return content_parts
 
 
 def prepare_image_content_converse(image_bytes: bytes, mime_type: str = "image/png") -> Dict[str, Any]:
@@ -300,49 +353,14 @@ def invoke_bedrock(
         service_name="bedrock-runtime", region_name=aws_region
     )
     
-    # Build content array: text first (required alongside documents), then document blocks, then images
-    content_parts = []
-
-    # Text block first (required when documents are present per Bedrock API)
-    if prompt and prompt.strip():
-        content_parts.append({"text": prompt.strip()})
-    elif documents:
-        content_parts.append({"text": "Please summarize or analyze the attached document(s)."})
-
-    # Add document texts if present (fallback path, e.g. PPTX)
-    if document_texts:
-        for doc_text in document_texts:
-            if doc_text:
-                content_parts.append({"text": f"\n\n[Document content]\n{doc_text}"})
-
-    # Add native document blocks if present
-    if documents:
-        for doc in documents:
-            raw_bytes = doc.get("bytes")
-            format_val = doc.get("format")
-            name = doc.get("name", "document")
-            if raw_bytes and format_val:
-                safe_name = _sanitize_document_name(name)
-                content_parts.append({
-                    "document": {
-                        "name": safe_name,
-                        "format": format_val,
-                        "source": {"bytes": raw_bytes},
-                    },
-                })
-
-    # Add images if present (binary data, no Base64 encoding)
-    if images:
-        formats = image_formats if image_formats else ["png"] * len(images)
-        for image_bytes, image_format in zip(images, formats):
-            content_parts.append({
-                "image": {
-                    "format": image_format,
-                    "source": {
-                        "bytes": image_bytes  # Binary data directly
-                    }
-                }
-            })
+    # Build content array: text first, then document blocks, then images
+    content_parts = build_content_blocks(
+        prompt=prompt,
+        documents=documents,
+        document_texts=document_texts,
+        images=images,
+        image_formats=image_formats,
+    )
     
     # Build messages array with conversation history
     messages = []

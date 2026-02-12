@@ -18,11 +18,16 @@ Verification Agent は Slack に直接投稿せず、この形式のメッセー
 
 ### file_artifact
 
+028 より、インライン（`contentBase64`）と S3 経由（`s3PresignedUrl`）の二形式をサポート。詳細は [specs/028-s3-large-file-transfer/contracts/slack-post-request-file-artifact.md](../../028-s3-large-file-transfer/contracts/slack-post-request-file-artifact.md) を参照。
+
 | フィールド | 型 | 説明 |
 |-----------|-----|------|
-| `contentBase64` | string | ファイル内容の Base64 |
+| `contentBase64` | string | ファイル内容の Base64（サイズ ≤ 200 KB 時） |
+| `s3PresignedUrl` | string | 署名付き GET URL（サイズ > 200 KB 時）。有効期限 15 分 |
 | `fileName` | string | ファイル名 |
 | `mimeType` | string | MIME タイプ |
+
+`contentBase64` と `s3PresignedUrl` は排他。どちらか一方が必須。
 
 ## フロー
 

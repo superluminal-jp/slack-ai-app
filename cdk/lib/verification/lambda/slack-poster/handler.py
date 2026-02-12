@@ -1,11 +1,12 @@
 """
-Slack Poster Lambda (019): consumes SQS messages from Verification Agent and posts to Slack.
+Slack Poster Lambda (019, 028): consumes SQS messages from Verification Agent and posts to Slack.
 
 Verification Agent no longer calls Slack API; it sends a structured "post request" to this
 queue. This Lambda performs the actual chat.postMessage and files.upload.
 
 Message body (JSON): channel, thread_ts?, text?, file_artifact?, bot_token, correlation_id?
 See specs/019-slack-poster-separation/contracts/slack-post-request.md.
+028: file_artifact supports s3PresignedUrl (fetch) or contentBase64 (inline).
 """
 
 import base64
@@ -13,7 +14,9 @@ import json
 import re
 import time
 import traceback
+import urllib.request
 from typing import Any, List, Optional
+from urllib.parse import urlparse
 
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
@@ -23,7 +26,7 @@ def _log(level: str, event: str, data: Optional[dict] = None) -> None:
     entry = {"level": level, "event": event, "service": "slack-poster"}
     if data:
         entry.update(data)
-    print(json.dumps(entry, default=str))
+    print(json.dumps(entry, default=str, ensure_ascii=False))
 
 
 def _is_valid_timestamp(ts: Optional[str]) -> bool:
@@ -66,18 +69,21 @@ def _post_text(
         client.chat_postMessage(**params)
 
 
+# Max file size for S3-fetched artifacts (Lambda memory guard: 10 MB matches Slack workspace limit)
+_MAX_S3_FILE_FETCH_BYTES = 10 * 1024 * 1024
+
 FILE_POST_ERROR_MESSAGE = "ファイルの投稿に失敗しました。しばらくしてからお試しください。"
 
 
 def _post_file(
     client: WebClient,
     channel: str,
-    content_base64: str,
+    file_bytes: bytes,
     file_name: str,
     mime_type: str,
     thread_ts: Optional[str],
 ) -> None:
-    file_bytes = base64.b64decode(content_base64)
+    """Post file bytes to Slack via files.upload_v2."""
     params: dict = {
         "channel": channel,
         "filename": file_name,
@@ -152,11 +158,58 @@ def _process_one(body: dict) -> None:
     if text and isinstance(text, str) and text.strip():
         _post_text(client, channel, text.strip(), thread_ts)
     if file_artifact and isinstance(file_artifact, dict):
-        b64 = file_artifact.get("contentBase64")
         name = file_artifact.get("fileName")
         mime = file_artifact.get("mimeType")
-        if b64 and name and mime:
-            _post_file(client, channel, b64, name, mime, thread_ts)
+        if not name or not mime:
+            raise ValueError("file_artifact must have fileName and mimeType")
+        s3_url = file_artifact.get("s3PresignedUrl")
+        b64 = file_artifact.get("contentBase64")
+        correlation_id = body.get("correlation_id", "")
+        if s3_url:
+            # Validate URL scheme and host to prevent SSRF
+            parsed = urlparse(s3_url)
+            if parsed.scheme != "https" or not parsed.hostname or not parsed.hostname.endswith(".amazonaws.com"):
+                raise ValueError(f"s3PresignedUrl must be an HTTPS URL on amazonaws.com, got: {parsed.scheme}://{parsed.hostname}")
+            try:
+                with urllib.request.urlopen(s3_url, timeout=60) as resp:
+                    file_bytes = resp.read(_MAX_S3_FILE_FETCH_BYTES + 1)
+                if len(file_bytes) > _MAX_S3_FILE_FETCH_BYTES:
+                    raise ValueError(
+                        f"S3 file exceeds max size ({_MAX_S3_FILE_FETCH_BYTES} bytes)"
+                    )
+                _log("INFO", "file_artifact_fetched_from_s3", {
+                    "artifact_type": "s3",
+                    "correlation_id": correlation_id,
+                    "size_bytes": len(file_bytes),
+                })
+                _post_file(client, channel, file_bytes, name, mime, thread_ts)
+            except Exception as e:
+                _log("ERROR", "file_artifact_s3_fetch_failed", {
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "artifact_type": "s3",
+                    "correlation_id": correlation_id,
+                })
+                _post_text(client, channel, FILE_POST_ERROR_MESSAGE, thread_ts)
+                raise
+        elif b64:
+            try:
+                file_bytes = base64.b64decode(b64)
+            except Exception as decode_err:
+                _log("ERROR", "file_artifact_inline_decode_failed", {
+                    "error": str(decode_err),
+                    "correlation_id": correlation_id,
+                })
+                _post_text(client, channel, FILE_POST_ERROR_MESSAGE, thread_ts)
+                raise ValueError(f"Failed to decode contentBase64: {decode_err}") from decode_err
+            _log("INFO", "file_artifact_inline_used", {
+                "artifact_type": "inline",
+                "correlation_id": correlation_id,
+                "size_bytes": len(file_bytes),
+            })
+            _post_file(client, channel, file_bytes, name, mime, thread_ts)
+        else:
+            raise ValueError("file_artifact must have s3PresignedUrl or contentBase64")
 
     # Swap eyes -> checkmark on the original message (done after successful post)
     if reaction_ts:

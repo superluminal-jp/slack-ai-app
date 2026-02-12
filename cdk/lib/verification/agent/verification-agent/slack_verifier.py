@@ -112,5 +112,6 @@ def verify_signature(
     except Exception as e:
         # Log error in production (but don't expose details to caller)
         # For MVP, we silently return False
-        print(f"Signature verification error: {str(e)}")
+        from logger_util import get_logger, log
+        log(get_logger(), "WARN", "signature_verification_error", {"error": str(e)}, service="verification-agent")
         return False

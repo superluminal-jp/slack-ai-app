@@ -1,0 +1,156 @@
+# Strands Agent Tool Definitions Contract
+# Used by Execution Agent — Bedrock Converse API toolConfig
+# Feature: 027-slack-file-generation-best-practices
+# Inherits from: 025-slack-file-generation (docstrings must be explicit per 026 Strands BP)
+
+tools:
+  - name: generate_text_file
+    description: |
+      テキストベースのファイルを生成します。Markdown (.md)、CSV (.csv)、プレーンテキスト (.txt) に対応。
+      ファイルの全内容をcontentパラメータにそのまま渡してください。
+      CSV の場合はカンマ区切り、Markdown の場合は Markdown 記法で記述してください。
+    inputSchema:
+      type: object
+      required: [content, filename]
+      properties:
+        content:
+          type: string
+          description: ファイルの完全な内容テキスト
+        filename:
+          type: string
+          description: 拡張子付きファイル名 (例: report.md, data.csv, notes.txt)
+
+  - name: generate_excel
+    description: |
+      Excelスプレッドシート (.xlsx) を生成します。
+      複数シート対応。各シートにヘッダーとデータ行を指定できます。
+    inputSchema:
+      type: object
+      required: [filename, sheets]
+      properties:
+        filename:
+          type: string
+          description: ファイル名（拡張子不要、自動付加）
+        sheets:
+          type: array
+          items:
+            type: object
+            required: [name, headers, rows]
+            properties:
+              name:
+                type: string
+                description: シート名
+              headers:
+                type: array
+                items:
+                  type: string
+                description: 列ヘッダーの配列
+              rows:
+                type: array
+                items:
+                  type: array
+                  items: {}
+                description: データ行の二次元配列
+
+  - name: generate_word
+    description: |
+      Word文書 (.docx) を生成します。
+      タイトルとセクション（見出し + 本文）で構成されたドキュメントを作成します。
+    inputSchema:
+      type: object
+      required: [filename, title, sections]
+      properties:
+        filename:
+          type: string
+          description: ファイル名（拡張子不要、自動付加）
+        title:
+          type: string
+          description: ドキュメントタイトル
+        sections:
+          type: array
+          items:
+            type: object
+            required: [heading, content]
+            properties:
+              heading:
+                type: string
+                description: セクション見出し
+              content:
+                type: string
+                description: セクション本文（段落テキスト）
+
+  - name: generate_powerpoint
+    description: |
+      PowerPointプレゼンテーション (.pptx) を生成します。
+      スライドごとにタイトルと本文を指定できます。
+    inputSchema:
+      type: object
+      required: [filename, slides]
+      properties:
+        filename:
+          type: string
+          description: ファイル名（拡張子不要、自動付加）
+        slides:
+          type: array
+          items:
+            type: object
+            required: [title, body]
+            properties:
+              title:
+                type: string
+                description: スライドタイトル
+              body:
+                type: string
+                description: スライド本文
+              layout:
+                type: string
+                enum: [title_slide, title_and_content, blank]
+                description: スライドレイアウト（デフォルト: title_and_content）
+
+  - name: generate_chart_image
+    description: |
+      チャート画像 (.png) を生成します。
+      棒グラフ、折れ線グラフ、円グラフ、散布図に対応。
+    inputSchema:
+      type: object
+      required: [filename, chart_type, title, data]
+      properties:
+        filename:
+          type: string
+          description: ファイル名（拡張子不要、自動付加）
+        chart_type:
+          type: string
+          enum: [bar, line, pie, scatter]
+          description: チャートの種類
+        title:
+          type: string
+          description: チャートタイトル
+        data:
+          type: object
+          required: [labels, datasets]
+          properties:
+            labels:
+              type: array
+              items:
+                type: string
+              description: ラベル配列（X軸または円グラフのセグメント名）
+            datasets:
+              type: array
+              items:
+                type: object
+                required: [label, values]
+                properties:
+                  label:
+                    type: string
+                    description: データセット名
+                  values:
+                    type: array
+                    items:
+                      type: number
+                    description: データ値の配列
+        x_label:
+          type: string
+          description: X軸ラベル（オプション）
+        y_label:
+          type: string
+          description: Y軸ラベル（オプション）

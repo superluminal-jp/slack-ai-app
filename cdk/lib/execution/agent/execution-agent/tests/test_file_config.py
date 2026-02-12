@@ -25,7 +25,7 @@ class TestDefaultValues:
         with patch.dict(os.environ, {}, clear=False):
             if "MAX_FILE_SIZE_BYTES" in os.environ:
                 del os.environ["MAX_FILE_SIZE_BYTES"]
-            assert fc.get_max_file_size_bytes() == 5 * 1024 * 1024
+            assert fc.get_max_file_size_bytes() == 10 * 1024 * 1024  # 027: 10 MB default
 
     def test_get_allowed_mime_types_default(self):
         with patch.dict(os.environ, {}, clear=False):
@@ -35,6 +35,11 @@ class TestDefaultValues:
                 "text/csv",
                 "application/json",
                 "text/plain",
+                "text/markdown",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "image/png",
             ]
 
 
@@ -47,7 +52,7 @@ class TestEnvOverride:
 
     def test_max_file_size_bytes_invalid_fallback(self):
         with patch.dict(os.environ, {"MAX_FILE_SIZE_BYTES": "invalid"}):
-            assert fc.get_max_file_size_bytes() == 5 * 1024 * 1024
+            assert fc.get_max_file_size_bytes() == 10 * 1024 * 1024  # 027: 10 MB fallback
 
     def test_allowed_mime_types_from_env(self):
         with patch.dict(os.environ, {"ALLOWED_MIME_TYPES": "text/plain,application/pdf"}):
@@ -59,6 +64,11 @@ class TestEnvOverride:
                 "text/csv",
                 "application/json",
                 "text/plain",
+                "text/markdown",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "image/png",
             ]
 
 
@@ -92,6 +102,8 @@ class TestIsAllowedMime:
             assert fc.is_allowed_mime("text/csv") is True
             assert fc.is_allowed_mime("application/json") is True
             assert fc.is_allowed_mime("text/plain") is True
+            assert fc.is_allowed_mime("text/markdown") is True
+            assert fc.is_allowed_mime("image/png") is True
 
     def test_case_insensitive(self):
         with patch.dict(os.environ, {}, clear=False):
@@ -110,3 +122,30 @@ class TestIsAllowedMime:
     def test_empty_or_none(self):
         assert fc.is_allowed_mime("") is False
         assert fc.is_allowed_mime(None) is False  # type: ignore[arg-type]
+
+
+class TestSanitizeFilename:
+    """sanitize_filename helper (027)."""
+
+    def test_forbidden_chars_replaced(self):
+        assert fc.sanitize_filename("report:test.csv") == "report_test.csv"
+        assert fc.sanitize_filename("file<name>.txt") == "file_name_.txt"
+
+    def test_backslash_and_slash_replaced(self):
+        """Windows path separators and slashes are replaced with underscore."""
+        assert fc.sanitize_filename("path\\to\\file.csv") == "path_to_file.csv"
+        assert fc.sanitize_filename("folder/file.xlsx") == "folder_file.xlsx"
+
+    def test_leading_trailing_stripped(self):
+        assert fc.sanitize_filename("  report.csv  ") == "report.csv"
+        assert fc.sanitize_filename("..name..") == "name"
+
+    def test_empty_fallback(self):
+        result = fc.sanitize_filename("", "csv")
+        assert result.startswith("generated_file_")
+        assert result.endswith(".csv")
+
+    def test_none_fallback(self):
+        result = fc.sanitize_filename(None, "md")  # type: ignore[arg-type]
+        assert result.startswith("generated_file_")
+        assert result.endswith(".md")

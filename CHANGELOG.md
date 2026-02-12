@@ -12,9 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Verification Agent missing `import time`**: Restored `import time` in `authorization.py`, `rate_limiter.py`, `slack_poster.py` — dropped during logging refactor, causing `NameError` on every request and silent failure (no Slack response)
 - **Deploy script PutResourcePolicy**: Fixed `Resource: "*"` (must match specific ARN); removed unsupported endpoint policy; fixed empty `AWS_PROFILE` causing `ProfileNotFound`
 - **AgentCore Runtime CloudWatch logs**: Replaced `print()` with Python `logging` module. Structured JSON logs are output via `logging.StreamHandler(sys.stdout)` with `%(message)s` formatter for CloudWatch compatibility. Added `logger_util` in both agents for centralized configuration.
+- **Best-practices optimization**: Added `correlation_id` to all log entries; fixed silent exception in `_get_slack_file_bytes`; added SSRF prevention and memory guard in Slack Poster S3 fetch; input validation in `build_file_artifact`/`build_file_artifact_s3`; `ensure_ascii=False` for Japanese log output; corrected stale docstrings
 
 ### Added
 
+- **S3-backed Large File Transfer** (028-s3-large-file-transfer)
+  - Large file artifacts (> 200 KB) uploaded to S3 `generated_files/` prefix, delivered to Slack Poster via pre-signed URL in SQS message — bypasses SQS 256 KB limit
+  - Files <= 200 KB continue inline (contentBase64) for backward compatibility
+  - Slack Poster Lambda: dual-mode processing — fetches from S3 presigned URL or decodes inline base64
+  - S3 lifecycle: 1-day expiration on `generated_files/` prefix for automatic cleanup
+  - CDK: `grantReadWrite` for `generated_files/*` on Verification Agent role; lifecycle rule on FileExchangeBucket
+  - SSRF prevention: validates S3 URL scheme (HTTPS) and host (`*.amazonaws.com`) before fetch
+  - Memory guard: Lambda limits S3 fetch to 10 MB max
+  - Tests: pipeline large/small file routing, S3 upload/presigned URL, Slack Poster S3 fetch
 - **Slack File Generation (Best Practices)** (027-slack-file-generation-best-practices)
   - Execution Agent file generation tools: Markdown, CSV, TXT (generate_text_file); Excel, Word, PowerPoint (generate_excel, generate_word, generate_powerpoint); chart images (generate_chart_image)
   - Strands Agent with Bedrock Converse; tools invoked via @tool with Japanese docstrings and inputSchema descriptions

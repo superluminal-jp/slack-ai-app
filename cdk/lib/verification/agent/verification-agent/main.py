@@ -13,7 +13,6 @@ FastAPI で直接ルーティングする。
 """
 
 import json
-import os
 import time
 import traceback
 
@@ -22,14 +21,15 @@ from fastapi.responses import JSONResponse
 import uvicorn
 
 from agent_card import get_agent_card, get_health_status
+from logger_util import get_logger, log
 from pipeline import run as run_pipeline, is_processing
+
+_logger = get_logger()
 
 
 def _log(level: str, event_type: str, data: dict) -> None:
     """Structured JSON logging for CloudWatch."""
-    entry = {"level": level, "event_type": event_type, "service": "verification-agent-main", "timestamp": time.time()}
-    entry.update(data)
-    print(json.dumps(entry, default=str))
+    log(_logger, level, event_type, data, service="verification-agent-main")
 
 
 app = FastAPI()

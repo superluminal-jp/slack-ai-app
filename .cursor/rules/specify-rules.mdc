@@ -14,6 +14,10 @@ Auto-generated from all feature plans. Last updated: 2026-02-07
 - なし（エコー内容はリクエストからその場で生成） (017-validation-zone-echo)
 - Python 3.11 (Verification Agent, SlackEventHandler Lambda), TypeScript (CDK, Node 18+) + 既存 aws-cdk-lib, bedrock_agentcore.runtime, slack_sdk, boto3 — 追加依存なし (018-echo-at-agentcore-runtime)
 - なし（エコーはリクエストコンテキストからその場で生成） (018-echo-at-agentcore-runtime)
+- Python 3.11 (agents), TypeScript 5.x (CDK) + strands-agents[a2a]~=1.25.0, bedrock-agentcore, boto3, openpyxl, python-docx, python-pptx, matplotlib, aws-cdk-lib (027-slack-file-generation-best-practices)
+- DynamoDB, S3（既存）、変更なし (027-slack-file-generation-best-practices)
+- Python 3.11 (Verification Agent, Slack Poster Lambda), TypeScript 5.x (CDK) + boto3, FastAPI, uvicorn, slack-sdk, aws-cdk-lib (028-s3-large-file-transfer)
+- S3 (file-exchange バケット), 既存 `attachments/` に加え `generated_files/` プレフィックス追加 (028-s3-large-file-transfer)
 
 - Python 3.11（エージェントコード）、TypeScript 5.x（CDK インフラ） (013-agentcore-a2a-zones)
 
@@ -33,9 +37,9 @@ cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLO
 Python 3.11（エージェントコード）、TypeScript 5.x（CDK インフラ）: Follow standard conventions
 
 ## Recent Changes
+- 028-s3-large-file-transfer: Added Python 3.11 (Verification Agent, Slack Poster Lambda), TypeScript 5.x (CDK) + boto3, FastAPI, uvicorn, slack-sdk, aws-cdk-lib
+- 027-slack-file-generation-best-practices: Added Python 3.11 (agents), TypeScript 5.x (CDK) + strands-agents[a2a]~=1.25.0, bedrock-agentcore, boto3, openpyxl, python-docx, python-pptx, matplotlib, aws-cdk-lib
 - 018-echo-at-agentcore-runtime: Added Python 3.11 (Verification Agent, SlackEventHandler Lambda), TypeScript (CDK, Node 18+) + 既存 aws-cdk-lib, bedrock_agentcore.runtime, slack_sdk, boto3 — 追加依存なし
-- 017-validation-zone-echo: Added TypeScript (CDK, Node 18+), Python 3.11 (Lambda) + 既存 aws-cdk-lib, slack_sdk (WebClient), boto3 — 追加依存なし
-- 016-async-agentcore-invocation: Added TypeScript (CDK, Node 18+), Python 3.11+ (Lambda) + aws-cdk-lib, boto3 (SQS, bedrock-agentcore), 既存 Verification Agent Runtime
 
 
 <!-- MANUAL ADDITIONS START -->

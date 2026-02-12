@@ -15,17 +15,14 @@ import os
 import time
 from typing import Any, Dict
 
+from logger_util import get_logger, log
+
+_logger = get_logger()
+
 
 def _log(level: str, event_type: str, data: dict) -> None:
     """Structured JSON logging for CloudWatch."""
-    log_entry = {
-        "level": level,
-        "event_type": event_type,
-        "service": "verification-agent-card",
-        "timestamp": time.time(),
-        **data,
-    }
-    print(json.dumps(log_entry, default=str))
+    log(_logger, level, event_type, data, service="verification-agent-card")
 
 
 def get_agent_card() -> Dict[str, Any]:

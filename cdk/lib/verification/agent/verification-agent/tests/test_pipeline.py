@@ -1,13 +1,15 @@
 """
-Unit tests for pipeline S3 integration (US4 Secure Cross-Zone File Transfer).
+Unit tests for pipeline S3 integration (US4 Secure Cross-Zone File Transfer, 028).
 
 Tests:
 - Slack file download + S3 upload flow (mocked)
 - Pre-signed URL generation and inclusion in execution payload
 - S3 cleanup after successful response and on error (try/finally)
 - Payload does not contain bot_token for file operations; contains presigned_url per contract
+- 028: Large file artifact (> 200KB) routed via S3 (upload_generated_file_to_s3, build_file_artifact_s3)
 """
 
+import base64
 import json
 import os
 import sys
@@ -306,3 +308,148 @@ class TestPipelineMultipleAttachmentsUs3:
                                 invoke_payload = mock_invoke.call_args[0][0]
                                 assert len(invoke_payload["attachments"]) == 5
                                 assert mock_upload.call_count == 5
+
+
+class TestPipelineLargeFileArtifactS3:
+    """Tests for 028: large file artifact (> 200KB) routed via S3."""
+
+    def _make_file_artifact_parts(self, size_bytes: int) -> list:
+        """Returns file_artifact parts with contentBase64 of given size."""
+        content = b"x" * size_bytes
+        b64 = base64.b64encode(content).decode("utf-8")
+        return [{"contentBase64": b64, "fileName": "large.pdf", "mimeType": "application/pdf"}]
+
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_large_file_uses_s3_artifact(
+        self, mock_existence, mock_auth, mock_invoke, mock_slack_post
+    ):
+        """When file_artifact > 200KB, pipeline must use S3-backed delivery (s3PresignedUrl)."""
+        mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
+        large_size = 250 * 1024  # 250 KB
+        file_artifact = {"parts": self._make_file_artifact_parts(large_size)}
+        mock_invoke.return_value = json.dumps({
+            "status": "success",
+            "response_text": "Done",
+            "file_artifact": file_artifact,
+        })
+        mock_slack_post.return_value = None
+
+        with patch("pipeline.check_rate_limit") as mock_rate:
+            mock_rate.return_value = (True, None)
+            with patch.dict(os.environ, {"FILE_EXCHANGE_BUCKET": "test-bucket"}, clear=False):
+                with patch("pipeline.upload_generated_file_to_s3") as mock_upload_gen:
+                    mock_upload_gen.return_value = "generated_files/corr-1/large.pdf"
+                    with patch("pipeline.generate_presigned_url_for_generated_file") as mock_presign:
+                        mock_presign.return_value = "https://bucket.s3.amazonaws.com/gen?X-Amz-..."
+
+                        from pipeline import run
+
+                        run({"prompt": json.dumps(_payload())})
+
+                        mock_upload_gen.assert_called_once()
+                        call_args = mock_upload_gen.call_args[0]
+                        assert call_args[1] == "corr-001"
+                        assert call_args[2] == "large.pdf"
+                        assert call_args[3] == "application/pdf"
+                        assert len(call_args[0]) == large_size
+
+                        mock_presign.assert_called_once_with(
+                            "generated_files/corr-1/large.pdf"
+                        )
+
+                        mock_slack_post.assert_called_once()
+                        slack_call = mock_slack_post.call_args[1]
+                        fa = slack_call.get("file_artifact")
+                        assert fa is not None
+                        assert "s3PresignedUrl" in fa
+                        assert fa["s3PresignedUrl"] == "https://bucket.s3.amazonaws.com/gen?X-Amz-..."
+                        assert "contentBase64" not in fa
+                        assert fa["fileName"] == "large.pdf"
+                        assert fa["mimeType"] == "application/pdf"
+
+
+class TestPipelineSmallFileArtifactInline:
+    """Tests for 028: small file artifact (≤ 200KB) uses inline path (contentBase64)."""
+
+    def _make_file_artifact_parts(self, size_bytes: int) -> list:
+        """Returns file_artifact parts with contentBase64 of given size."""
+        content = b"x" * size_bytes
+        b64 = base64.b64encode(content).decode("utf-8")
+        return [{"contentBase64": b64, "fileName": "small.pdf", "mimeType": "application/pdf"}]
+
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_small_file_uses_inline_artifact(
+        self, mock_existence, mock_auth, mock_invoke, mock_slack_post
+    ):
+        """When file_artifact ≤ 200KB, pipeline must use inline delivery (contentBase64)."""
+        mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
+        small_size = 100 * 1024  # 100 KB
+        file_artifact = {"parts": self._make_file_artifact_parts(small_size)}
+        mock_invoke.return_value = json.dumps({
+            "status": "success",
+            "response_text": "Done",
+            "file_artifact": file_artifact,
+        })
+        mock_slack_post.return_value = None
+
+        with patch("pipeline.check_rate_limit") as mock_rate:
+            mock_rate.return_value = (True, None)
+            with patch.dict(os.environ, {"FILE_EXCHANGE_BUCKET": "test-bucket"}, clear=False):
+                with patch("pipeline.upload_generated_file_to_s3") as mock_upload_gen:
+                    from pipeline import run
+
+                    run({"prompt": json.dumps(_payload())})
+
+                    # upload_generated_file_to_s3 must NOT be called for small files
+                    mock_upload_gen.assert_not_called()
+
+                    mock_slack_post.assert_called_once()
+                    slack_call = mock_slack_post.call_args[1]
+                    fa = slack_call.get("file_artifact")
+                    assert fa is not None
+                    assert "contentBase64" in fa
+                    assert "s3PresignedUrl" not in fa
+                    assert fa["fileName"] == "small.pdf"
+                    assert fa["mimeType"] == "application/pdf"
+
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_boundary_200kb_uses_inline(
+        self, mock_existence, mock_auth, mock_invoke, mock_slack_post
+    ):
+        """When file_artifact equals exactly 200KB (≤ threshold), use inline path."""
+        mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
+        boundary_size = 200 * 1024  # Exactly 200 KB
+        file_artifact = {"parts": self._make_file_artifact_parts(boundary_size)}
+        mock_invoke.return_value = json.dumps({
+            "status": "success",
+            "response_text": "Done",
+            "file_artifact": file_artifact,
+        })
+        mock_slack_post.return_value = None
+
+        with patch("pipeline.check_rate_limit") as mock_rate:
+            mock_rate.return_value = (True, None)
+            with patch.dict(os.environ, {"FILE_EXCHANGE_BUCKET": "test-bucket"}, clear=False):
+                with patch("pipeline.upload_generated_file_to_s3") as mock_upload_gen:
+                    from pipeline import run
+
+                    run({"prompt": json.dumps(_payload())})
+
+                    # At boundary (≤ 200KB), use inline
+                    mock_upload_gen.assert_not_called()
+
+                    mock_slack_post.assert_called_once()
+                    slack_call = mock_slack_post.call_args[1]
+                    fa = slack_call.get("file_artifact")
+                    assert fa is not None
+                    assert "contentBase64" in fa
+                    assert "s3PresignedUrl" not in fa

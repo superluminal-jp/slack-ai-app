@@ -14,7 +14,7 @@ import { Construct } from "constructs";
  * - SSE-S3 encryption at rest
  * - Block all public access (BlockPublicAcls, BlockPublicPolicy, IgnorePublicAcls, RestrictPublicBuckets)
  * - Enforce SSL (deny non-HTTPS requests)
- * - Lifecycle rule on attachments/ prefix for automatic cleanup of orphans
+ * - Lifecycle rules on attachments/ and generated_files/ for automatic cleanup of orphans
  * - Auto-delete objects on stack removal (dev)
  */
 export class FileExchangeBucket extends Construct {
@@ -44,6 +44,13 @@ export class FileExchangeBucket extends Construct {
         {
           id: "delete-temp-attachments",
           prefix: "attachments/",
+          expiration: cdk.Duration.days(1),
+          abortIncompleteMultipartUploadAfter: cdk.Duration.days(1),
+          enabled: true,
+        },
+        {
+          id: "delete-generated-files",
+          prefix: "generated_files/",
           expiration: cdk.Duration.days(1),
           abortIncompleteMultipartUploadAfter: cdk.Duration.days(1),
           enabled: true,
