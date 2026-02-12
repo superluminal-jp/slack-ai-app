@@ -4,8 +4,8 @@
 
 **ドキュメントタイプ**: セットアップガイド  
 **ステータス**: 推奨  
-**バージョン**: 1.1  
-**最終更新日**: 2026-02-11  
+**バージョン**: 1.0  
+**最終更新日**: 2025-12-28  
 **対象読者**: 開発者、DevOps エンジニア、システム管理者
 
 ---
@@ -36,48 +36,18 @@
 - ✅ **Python 3.11 以上**（Lambda 関数用）
 - ✅ **AWS CLI**（設定済み、認証情報設定済み）
 - ✅ **AWS CDK CLI**（`npm install -g aws-cdk`）
-- ✅ **Docker**（ARM64 対応、AgentCore コンテナビルド用。macOS の場合は Colima 推奨）
-
-#### Colima で Docker を使う（macOS）
-
-macOS では Docker Desktop の代わりに [Colima](https://github.com/abiosoft/colima) を使うと、CDK の Lambda バンドル・ECR イメージビルドや `npx jest` の Verification Stack テストが安定して動作します。
-
-1. **Colima と Docker CLI のインストール**
-
-   ```bash
-   # Homebrew で Colima と Docker CLI をインストール
-   brew install colima docker
-   ```
-
-2. **Colima の起動**
-
-   ```bash
-   colima start
-   ```
-
-   起動後、`docker` コマンドは Colima のコンテキストを自動的に使います（`docker context` で `colima` が選択されます）。
-
-3. **デプロイ・テスト前の確認**
-
-   ```bash
-   docker context ls   # current が colima であること
-   docker info         # Server が表示されれば OK
-   ```
-
-   CDK デプロイ（`./scripts/deploy-split-stacks.sh`）や CDK Jest テスト（`cd cdk && npx jest`）実行時は、先に `colima start` しておいてください。Lambda のローカル pip バンドルが失敗した場合に Docker にフォールバックするため、Colima が動いている必要があります。
 
 ### AWS サービス要件
 
 以下の AWS サービスへのアクセス権限が必要です：
 
 - Lambda
+- API Gateway
 - DynamoDB
 - Secrets Manager
 - CloudWatch
 - IAM
 - Bedrock（使用するモデルへのアクセス権限）
-- ECR（AgentCore コンテナイメージ保管）
-- Amazon Bedrock AgentCore（A2A 通信）
 
 ---
 
@@ -102,12 +72,13 @@ npm install
 #### Python 依存関係のインストール（開発用）
 
 ```bash
-# SlackEventHandler Lambda の依存関係
+# Lambda 関数の依存関係
 cd cdk/lib/verification/lambda/slack-event-handler
 pip install -r requirements.txt
-```
 
-（Execution / Verification Agent はコンテナベースのため、CDK デプロイ時に ECR からビルド・プッシュされます。）
+cd ../../execution-stack/bedrock-processor
+pip install -r requirements.txt
+```
 
 ### ステップ 3: 設定ファイルの作成
 
@@ -244,11 +215,13 @@ chmod +x scripts/deploy-split-stacks.sh
 
 **注意**: デプロイスクリプトは`cdk.config.{env}.json`ファイルから設定を自動的に読み込みます。環境変数（`SLACK_BOT_TOKEN`、`SLACK_SIGNING_SECRET`）もサポートされていますが、設定ファイルの方が推奨されます。
 
-**注意**: デプロイスクリプトは自動的に以下を実行します（A2A のみ）：
+**注意**: デプロイスクリプトは自動的に以下を実行します：
 
 1. Execution Stack をデプロイ
-2. ExecutionAgentRuntimeArn を取得し、`cdk.config.{env}.json` の `executionAgentArn` に設定
-3. Verification Stack をデプロイ（executionAgentArn を使用して A2A で Execution Agent を呼び出し）
+2. ExecutionApiUrl を取得して `cdk.config.{env}.json` を更新
+3. Verification Stack をデプロイ
+4. VerificationLambdaRoleArn と ExecutionResponseQueueUrl を取得して `cdk.config.{env}.json` を更新
+5. Execution Stack を更新（リソースポリシーと SQS キュー URL 設定）
 
 #### 方法 2: 手動デプロイ
 
@@ -267,12 +240,23 @@ npx cdk deploy SlackAI-Execution-Dev \
   --profile YOUR_PROFILE \
   --require-approval never
 
-# 出力から ExecutionAgentRuntimeArn を取得し、cdk.config.dev.json の executionAgentArn に設定
+# 出力から ExecutionApiUrl を取得
 
-# 2. Verification Stack をデプロイ（executionAgentArn を設定済みの状態で）
+# 2. Verification Stack をデプロイ
 npx cdk deploy SlackAI-Verification-Dev \
   --context deploymentEnv=dev \
-  --context executionAgentArn=<ExecutionAgentRuntimeArn from step 1> \
+  --context executionApiUrl=<ExecutionApiUrl from step 1> \
+  --profile YOUR_PROFILE \
+  --require-approval never
+
+# 出力から VerificationLambdaRoleArn と ExecutionResponseQueueUrl を取得
+
+# 3. Execution Stack を更新（リソースポリシーとSQSキューURL設定）
+npx cdk deploy SlackAI-Execution-Dev \
+  --context deploymentEnv=dev \
+  --context verificationLambdaRoleArn=<VerificationLambdaRoleArn from step 2> \
+  --context executionResponseQueueUrl=<ExecutionResponseQueueUrl from step 2> \
+  --context verificationAccountId=YOUR_AWS_ACCOUNT_ID \
   --profile YOUR_PROFILE \
   --require-approval never
 ```
@@ -285,16 +269,18 @@ npx cdk deploy SlackAI-Verification-Dev \
 
 デプロイ中に以下のリソースが作成されます：
 
-**ExecutionStack**（A2A のみ）:
+**ExecutionStack**:
 
-- Execution Agent（AgentCore Runtime + ECR）
-- CloudWatch ログ・メトリクス
+- Lambda 関数（BedrockProcessor）
+- API Gateway（Execution API、デュアル認証: IAM 認証と API キー認証）
+- API Gateway API キーと使用量プラン（API キー認証が有効な場合）
+- CloudWatch アラームとメトリクス
 
 **VerificationStack**:
 
-- Lambda 関数（SlackEventHandler）
+- Lambda 関数（SlackEventHandler, SlackResponseHandler）
 - DynamoDB テーブル（Token Storage, Event Dedupe, Existence Check Cache, Whitelist Config, Rate Limit）
-- Verification Agent（AgentCore Runtime + ECR）
+- SQS キュー（ExecutionResponseQueue, ExecutionResponseDlq）
 - Secrets Manager シークレット（Slack Signing Secret, Bot Token）
 - CloudWatch アラームとメトリクス
 - IAM ロールとポリシー
@@ -307,19 +293,105 @@ npx cdk deploy SlackAI-Verification-Dev \
 
 ```
 SlackAI-Verification-Dev.SlackEventHandlerUrl = https://xxxxxxxxxx.lambda-url.ap-northeast-1.on.aws/
-SlackAI-Verification-Dev.VerificationAgentRuntimeArn = arn:aws:bedrock-agentcore:...
 SlackAI-Verification-Dev.VerificationLambdaRoleArn = arn:aws:iam::123456789012:role/...
+SlackAI-Verification-Dev.ExecutionResponseQueueUrl = https://sqs.ap-northeast-1.amazonaws.com/123456789012/slackai-verification-dev-execution-response-queue
+SlackAI-Verification-Dev.ExecutionResponseQueueArn = arn:aws:sqs:ap-northeast-1:123456789012:slackai-verification-dev-execution-response-queue
 ```
 
 **ExecutionStack の出力**:
 
 ```
-SlackAI-Execution-Dev.ExecutionAgentRuntimeArn = arn:aws:bedrock-agentcore:...
+SlackAI-Execution-Dev.ExecutionApiUrl = https://xxxxxxxxxx.execute-api.ap-northeast-1.amazonaws.com/prod/
+SlackAI-Execution-Dev.ExecutionApiArn = arn:aws:execute-api:ap-northeast-1:123456789012:xxx/*/*/*
+SlackAI-Execution-Dev.BedrockProcessorArn = arn:aws:lambda:ap-northeast-1:123456789012:function:...
+SlackAI-Execution-Dev.ExecutionApiKeyId = xxxxxx  # APIキー認証が有効な場合のみ
 ```
 
-（クロスアカウント時は `ExecutionEndpointArn` も出力されます。Runtime と Endpoint の両方にリソースポリシー設定が必要です。詳細は [VALIDATION.md §5.1](../specs/015-agentcore-a2a-migration/VALIDATION.md#51-agentcore-とアカウント間通信のベストプラクティスaws-mcp-準拠) を参照。）
-
 **重要**: `SlackEventHandlerUrl` をコピーして、Slack App の Event Subscriptions に設定してください。
+
+### ステップ 2.5: API キー認証の設定（デフォルトで有効）
+
+API キー認証はデフォルトで有効になっています。API キーを Secrets Manager に保存する必要があります。
+
+#### API キー認証を使用する場合（デフォルト）
+
+1. **API キー値を取得**（デプロイ後）:
+
+   ```bash
+   # 開発環境の場合
+   API_KEY_ID=$(aws cloudformation describe-stacks \
+     --stack-name SlackAI-Execution-Dev \
+     --region ap-northeast-1 \
+     --query 'Stacks[0].Outputs[?OutputKey==`ExecutionApiKeyId`].OutputValue' \
+     --output text)
+
+   # 本番環境の場合
+   API_KEY_ID=$(aws cloudformation describe-stacks \
+     --stack-name SlackAI-Execution-Prod \
+     --region ap-northeast-1 \
+     --query 'Stacks[0].Outputs[?OutputKey==`ExecutionApiKeyId`].OutputValue' \
+     --output text)
+
+   # APIキー値を取得（作成時のみ可能）
+   aws apigateway get-api-key \
+     --api-key $API_KEY_ID \
+     --include-value \
+     --profile YOUR_PROFILE \
+     --query 'value' \
+     --output text
+   ```
+
+2. **Secrets Manager に API キーを保存**:
+
+   ```bash
+   # 開発環境の場合
+   aws secretsmanager create-secret \
+     --name execution-api-key-dev \
+     --description "API key for Execution Layer API Gateway authentication (dev)" \
+     --secret-string "{\"api_key\":\"YOUR_API_KEY_VALUE_HERE\"}" \
+     --region ap-northeast-1 \
+     --profile YOUR_PROFILE
+
+   # 本番環境の場合
+   aws secretsmanager create-secret \
+     --name execution-api-key-prod \
+     --description "API key for Execution Layer API Gateway authentication (prod)" \
+     --secret-string "{\"api_key\":\"YOUR_API_KEY_VALUE_HERE\"}" \
+     --region ap-northeast-1 \
+     --profile YOUR_PROFILE
+   ```
+
+   **注意**:
+
+   - `YOUR_API_KEY_VALUE_HERE` を実際の API キー値に置き換えてください
+   - シークレット名は環境ごとに異なります（`execution-api-key-dev` / `execution-api-key-prod`）
+   - API キー名と Usage Plan 名も環境ごとに自動的に分離されます
+
+3. **認証方法の確認**:
+   - デフォルト: API キー認証（`EXECUTION_API_AUTH_METHOD=api_key`）
+   - シークレット名は環境ごとに自動設定されます（`execution-api-key-dev` / `execution-api-key-prod`）
+   - IAM 認証に切り替える場合: Lambda 関数の環境変数 `EXECUTION_API_AUTH_METHOD=iam` を設定
+
+**環境ごとのリソース名**:
+
+- API Gateway API キー名: `execution-api-key-{env}` (例: `execution-api-key-dev`, `execution-api-key-prod`)
+- API Gateway Usage Plan 名: `execution-api-usage-plan-{env}` (例: `execution-api-usage-plan-dev`, `execution-api-usage-plan-prod`)
+- Secrets Manager シークレット名: `execution-api-key-{env}` (例: `execution-api-key-dev`, `execution-api-key-prod`)
+
+これらのリソース名は環境名で自動的にサフィックスが付与され、dev 環境と prod 環境が完全に分離されます。
+
+#### API キー認証を無効化する場合（IAM 認証のみを使用）
+
+API キー認証を無効化して IAM 認証のみを使用する場合：
+
+```bash
+export ENABLE_API_KEY_AUTH=false
+./scripts/deploy-split-stacks.sh
+```
+
+**注意**: IAM 認証のみを使用する場合、Lambda 関数の環境変数 `EXECUTION_API_AUTH_METHOD=iam` も設定する必要があります。
+
+詳細は [アーキテクチャ概要](./reference/architecture/overview.md) の認証セクションを参照してください。
 
 ### ステップ 3: ホワイトリストの設定（必須）
 
@@ -425,7 +497,8 @@ CDK スタックの環境変数として設定（再デプロイが必要）。
 # SlackEventHandler のログを確認
 aws logs tail /aws/lambda/SlackAI-Verification-SlackEventHandler-XXXXX --follow
 
-# Verification Agent / Execution Agent は AgentCore のロググループ（/aws/bedrock-agentcore/...）で確認
+# BedrockProcessor のログを確認
+aws logs tail /aws/lambda/SlackAI-Execution-BedrockProcessor-XXXXX --follow
 ```
 
 ### ステップ 3: メトリクスの確認
@@ -436,8 +509,9 @@ AWS コンソールで CloudWatch メトリクスを確認：
   - `SignatureVerificationSuccess` / `SignatureVerificationFailed`
   - `ExistenceCheckSuccess` / `ExistenceCheckFailed`
   - `WhitelistAuthorizationSuccess` / `WhitelistAuthorizationFailed`
-- `bedrock-agentcore` 名前空間（Execution Agent 等）
-  - AgentCore ランタイムのメトリクス
+- `BedrockProcessor` 名前空間
+  - `BedrockInvocationSuccess` / `BedrockInvocationFailed`
+  - `BedrockInvocationLatency`
 
 ---
 
@@ -487,11 +561,14 @@ aws logs filter-log-events \
 
 1. Bedrock モデルへのアクセス権限を確認
 2. モデル ID が正しいか確認（`amazon.nova-pro-v1:0` など）
-3. Execution Agent（AgentCore）のログを確認（`/aws/bedrock-agentcore/` のロググループ）
+3. BedrockProcessor のログを確認
 
 ```bash
 # Bedrock モデルリストを確認
 aws bedrock list-foundation-models --region ap-northeast-1
+
+# BedrockProcessor のログを確認
+aws logs tail /aws/lambda/SlackAI-Execution-BedrockProcessor-XXXXX --follow
 ```
 
 ### 問題 4: すべてのリクエストが 403 で拒否される（ホワイトリスト関連）
@@ -545,21 +622,83 @@ aws bedrock list-foundation-models --region ap-northeast-1
      --filter-pattern "whitelist"
    ```
 
+```bash
+# DynamoDB テーブルの内容を確認
+aws dynamodb scan --table-name slack-whitelist-config
+
+# Lambda ロールの権限を確認
+aws iam get-role-policy \
+  --role-name SlackBedrockStack-SlackEventHandler-XXXXX \
+  --policy-name <policy-name>
+```
+
 ### 問題 5: タイムアウトエラー
 
-**原因**: Lambda 関数のタイムアウト設定が短すぎる、または Bedrock / AgentCore の処理が遅い
+**原因**: Lambda 関数のタイムアウト設定が短すぎる、または Bedrock の処理が遅い
 
 **解決策**:
 
-1. Lambda 関数のタイムアウト設定を確認（SlackEventHandler: 10 秒）
+1. Lambda 関数のタイムアウト設定を確認（SlackEventHandler: 10 秒、BedrockProcessor: 30 秒）
 2. Bedrock モデルのレイテンシを確認
 3. CloudWatch メトリクスでパフォーマンスを確認
 
 ---
 
-## レスポンス配信（A2A）
+## SQS キュー設定
 
-このシステムは、実行ゾーン（Execution Zone）から検証ゾーン（Verification Zone）へのレスポンスを **AgentCore A2A** で配信します（非同期タスクのポーリング）。SQS は使用しません。クロスアカウントの場合は Execution Agent の Runtime と Endpoint の両方にリソースポリシーを設定してください。詳細は [クロスアカウント](./reference/architecture/cross-account.md) と [VALIDATION.md §5.1](../specs/015-agentcore-a2a-migration/VALIDATION.md#51-agentcore-とアカウント間通信のベストプラクティスaws-mcp-準拠) を参照してください。
+このシステムは、実行ゾーン（Execution Zone）から検証ゾーン（Verification Zone）へのレスポンス送信に SQS キューを使用します。
+
+### ExecutionResponseQueue の設定
+
+**Verification Stack** に含まれる SQS キュー:
+
+- **キュー名**: `slackai-verification-execution-response-queue`
+- **Dead Letter Queue**: `slackai-verification-execution-response-dlq`
+- **可視性タイムアウト**: 30 秒（Bedrock API 呼び出し時間を考慮）
+- **メッセージ保持期間**: 14 日
+- **最大受信回数**: 3 回（DLQ に送信）
+
+### SQS キュー URL の設定
+
+**重要**: `ExecutionStack` が `VerificationStack` の SQS キューにメッセージを送信できるように、`executionResponseQueueUrl` を設定する必要があります。
+
+#### 自動設定（推奨）
+
+デプロイスクリプト（`scripts/deploy-split-stacks.sh`）を使用する場合、`executionResponseQueueUrl` は自動的に取得され、`cdk.config.{env}.json` に設定されます。
+
+#### 手動設定
+
+1. **Verification Stack デプロイ後**:
+
+   ```bash
+   # ExecutionResponseQueueUrl を取得
+   aws cloudformation describe-stacks \
+     --stack-name SlackAI-Verification-Dev \
+     --region ap-northeast-1 \
+     --query 'Stacks[0].Outputs[?OutputKey==`ExecutionResponseQueueUrl`].OutputValue' \
+     --output text
+   ```
+
+2. **`cdk.config.{env}.json` を更新**:
+
+   ```json
+   {
+     "executionResponseQueueUrl": "https://sqs.ap-northeast-1.amazonaws.com/123456789012/slackai-verification-dev-execution-response-queue"
+   }
+   ```
+
+3. **Execution Stack を再デプロイ**:
+   ```bash
+   npx cdk deploy SlackAI-Execution-Dev --profile YOUR_PROFILE
+   ```
+
+**注意**: `ExecutionStack` は `executionResponseQueueUrl` が設定されている場合、自動的に SQS 送信権限を追加します。手動で IAM 権限を設定する必要はありません。
+
+### クロスアカウント設定
+
+実行ゾーンと検証ゾーンを異なる AWS アカウントにデプロイする場合も、上記の手順に従って `executionResponseQueueUrl` を設定してください。`ExecutionStack` が自動的に適切な IAM 権限を設定します。
+
+詳細は [CDK README](../cdk/README.md) のクロスアカウントデプロイセクションを参照してください。
 
 ## 次のステップ
 
@@ -593,7 +732,7 @@ aws bedrock list-foundation-models --region ap-northeast-1
 
 ### Q: どの Bedrock モデルを使用できますか？
 
-A: AWS Bedrock で利用可能なすべての Foundation Model を使用できます。デフォルトは `jp.anthropic.claude-haiku-4-5-20251001-v1:0` です。環境変数 `BEDROCK_MODEL_ID` で変更可能です。
+A: AWS Bedrock で利用可能なすべての Foundation Model を使用できます。デフォルトは `amazon.nova-pro-v1:0` です。環境変数 `BEDROCK_MODEL_ID` で変更可能です。
 
 ### Q: ホワイトリスト認可は必須ですか？
 
@@ -608,7 +747,7 @@ A: 主なコスト要因：
 - Lambda 実行時間（従量課金）
 - Bedrock モデル使用量（モデルごとに異なる）
 - DynamoDB 読み書き（従量課金）
-- AgentCore ランタイム（コンテナ実行）
+- API Gateway リクエスト（従量課金）
 
 詳細は AWS の料金ページを参照してください。
 
@@ -633,5 +772,5 @@ A: すべてのエラーは CloudWatch Logs に記録され、ユーザーには
 
 ---
 
-**最終更新**: 2026-02-07  
-**バージョン**: 1.1
+**最終更新**: 2025-12-27  
+**バージョン**: 1.0
