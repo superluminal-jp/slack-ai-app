@@ -3,10 +3,9 @@
 # deploy-split-stacks.sh
 #
 # Deploys the Slack AI application using two independent stacks.
-# This script handles the 3-phase deployment process:
-#   1. Deploy ExecutionStack (get API URL)
-#   2. Deploy VerificationStack (get Lambda Role ARN)
-#   3. Update ExecutionStack with resource policy
+# This script handles the A2A-only deployment process:
+#   1. Deploy ExecutionStack (get ExecutionAgentRuntimeArn)
+#   2. Deploy VerificationStack with executionAgentArn (A2A)
 #
 # Usage:
 #   export DEPLOYMENT_ENV=dev  # or 'prod'
@@ -28,6 +27,20 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+# Logging functions (defined early so config block can use them)
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
 
 # Configuration
 # Get script directory and project root
@@ -72,23 +85,7 @@ BASE_VERIFICATION_STACK_NAME="${VERIFICATION_STACK_NAME:-SlackAI-Verification}"
 EXECUTION_STACK_NAME="${BASE_EXECUTION_STACK_NAME}-${ENVIRONMENT_SUFFIX}"
 VERIFICATION_STACK_NAME="${BASE_VERIFICATION_STACK_NAME}-${ENVIRONMENT_SUFFIX}"
 
-# Functions
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
+# Helper functions
 get_config_value() {
     local key=$1
     local config_file="${CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
@@ -241,22 +238,22 @@ deploy_execution_stack() {
     log_info "Waiting for stack outputs to be available..."
     sleep 5
 
-    # Get API URL from stack outputs
-    local api_url=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionApiUrl")
+    # Get Execution Agent Runtime ARN from stack outputs (A2A)
+    local exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn")
 
-    if [[ -z "${api_url}" ]]; then
-        log_error "Failed to get ExecutionApiUrl from stack outputs"
+    if [[ -z "${exec_agent_arn}" ]]; then
+        log_error "Failed to get ExecutionAgentRuntimeArn from stack outputs"
         log_info "Stack may still be updating. Please check CloudFormation console."
         exit 1
     fi
 
     log_success "Execution Stack deployed successfully"
-    log_info "Execution API URL: ${api_url}"
+    log_info "Execution Agent Runtime ARN: ${exec_agent_arn}"
 
-    # Update cdk.json with API URL
-    update_cdk_context "executionApiUrl" "${api_url}"
+    # Update config with executionAgentArn for Verification Stack deployment
+    update_cdk_context "executionAgentArn" "${exec_agent_arn}"
 
-    echo "${api_url}"
+    echo "${exec_agent_arn}"
 }
 
 deploy_verification_stack() {
@@ -273,8 +270,10 @@ deploy_verification_stack() {
         profile_args="--profile ${AWS_PROFILE}"
     fi
     
+    local context_args="--context deploymentEnv=${DEPLOYMENT_ENV}"
+
     log_info "Deploying ${VERIFICATION_STACK_NAME}..."
-    if ! npx cdk deploy "${VERIFICATION_STACK_NAME}" ${profile_args} --require-approval never --context deploymentEnv="${DEPLOYMENT_ENV}"; then
+    if ! npx cdk deploy "${VERIFICATION_STACK_NAME}" ${profile_args} --require-approval never ${context_args}; then
         log_error "Failed to deploy ${VERIFICATION_STACK_NAME}"
         exit 1
     fi
@@ -285,49 +284,150 @@ deploy_verification_stack() {
     log_info "Waiting for stack outputs to be available..."
     sleep 5
 
-    # Get Lambda Role ARN from stack outputs
-    local role_arn=$(get_stack_output "${VERIFICATION_STACK_NAME}" "VerificationLambdaRoleArn")
     local function_url=$(get_stack_output "${VERIFICATION_STACK_NAME}" "SlackEventHandlerUrl")
 
-    if [[ -z "${role_arn}" ]]; then
-        log_error "Failed to get VerificationLambdaRoleArn from stack outputs"
-        log_info "Stack may still be updating. Please check CloudFormation console."
-        exit 1
-    fi
-
     log_success "Verification Stack deployed successfully"
-    log_info "Verification Lambda Role ARN: ${role_arn}"
     log_info "Slack Event Handler URL: ${function_url}"
 
-    # Update cdk.json with role ARN
-    update_cdk_context "verificationLambdaRoleArn" "${role_arn}"
-
-    echo "${role_arn}"
+    echo "${function_url}"
 }
 
-update_execution_stack() {
-    log_info "=========================================="
-    log_info "Phase 3: Updating Execution Stack Resource Policy"
-    log_info "=========================================="
+# Apply resource policy on Execution Agent (Runtime + Endpoint) so Verification Agent can invoke it.
+# Per AWS docs: both Runtime and Endpoint need explicit allow for the Verification Agent role.
+# CloudFormation does not support RuntimeResourcePolicy; use Control Plane API.
+apply_execution_agent_resource_policy() {
+    local exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn" 2>/dev/null || echo "")
+    [[ -z "${exec_agent_arn}" ]] && return 0
 
-    cd "${PROJECT_ROOT}"
-    cd "${CDK_DIR}"
-
-    # Re-deploy Execution Stack with resource policy
     local profile_args=""
     if [[ -n "${AWS_PROFILE}" ]]; then
         profile_args="--profile ${AWS_PROFILE}"
     fi
-    npx cdk deploy "${EXECUTION_STACK_NAME}" ${profile_args} --require-approval never --context deploymentEnv="${DEPLOYMENT_ENV}"
+    local account_id=$(aws sts get-caller-identity ${profile_args} --query Account --output text 2>/dev/null || echo "")
+    [[ -z "${account_id}" ]] && return 0
 
-    cd "${PROJECT_ROOT}"
+    local verify_role_arn="arn:aws:iam::${account_id}:role/SlackAI_VerificationAgent-ExecutionRole"
+    local endpoint_arn="${exec_agent_arn}/runtime-endpoint/DEFAULT"
 
-    log_success "Execution Stack updated with resource policy"
+    log_info "Applying resource policy: Execution Agent allows Verification Agent role"
+    AWS_REGION="${AWS_REGION}" AWS_PROFILE="${AWS_PROFILE}" python3 -c "
+import boto3
+import json
+import os
+
+region = os.environ.get('AWS_REGION', 'ap-northeast-1')
+session = boto3.Session(profile_name=os.environ.get('AWS_PROFILE')) if os.environ.get('AWS_PROFILE') else boto3.Session()
+client = session.client('bedrock-agentcore-control', region_name=region)
+
+runtime_arn = '${exec_agent_arn}'
+endpoint_arn = '${endpoint_arn}'
+principal = '${verify_role_arn}'
+
+for res_arn, label in [(runtime_arn, 'Runtime'), (endpoint_arn, 'Endpoint')]:
+    policy = {'Version': '2012-10-17', 'Statement': [{'Effect': 'Allow', 'Principal': {'AWS': principal}, 'Action': 'bedrock-agentcore:InvokeAgentRuntime', 'Resource': res_arn}]}
+    client.put_resource_policy(resourceArn=res_arn, policy=json.dumps(policy))
+    print('  ' + label + ' policy OK')
+" 2>/dev/null && log_success "Execution Agent resource policy applied" || log_warning "Could not apply resource policy (check bedrock-agentcore-control PutResourcePolicy permissions)"
+}
+
+# Extract AgentCore Runtime ID from ARN (arn:...:runtime/Name-xxxxx -> Name-xxxxx)
+# Control Plane API uses agent-runtime-id, not ARN; status is READY (not ACTIVE).
+get_agent_runtime_id_from_arn() {
+    local arn="$1"
+    [[ -n "${arn}" ]] && echo "${arn##*/}" || echo ""
+}
+
+validate_agentcore() {
+    log_info "=========================================="
+    log_info "AgentCore Validation"
+    log_info "=========================================="
+
+    local profile_args=""
+    if [[ -n "${AWS_PROFILE}" ]]; then
+        profile_args="--profile ${AWS_PROFILE}"
+    fi
+
+    # Control Plane: bedrock-agentcore-control get-agent-runtime --agent-runtime-id <id>
+    # Status values: CREATING, CREATE_FAILED, UPDATING, UPDATE_FAILED, READY, DELETING (console "Ready" = READY)
+    local target_status="READY"
+
+    # Check Execution Agent Runtime status
+    local exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn" 2>/dev/null || echo "")
+    if [[ -n "${exec_agent_arn}" ]]; then
+        local exec_id=$(get_agent_runtime_id_from_arn "${exec_agent_arn}")
+        if [[ -n "${exec_id}" ]]; then
+            log_info "Checking Execution Agent Runtime status (id: ${exec_id})..."
+            local max_wait=120
+            local elapsed=0
+            local interval=10
+
+            while [[ ${elapsed} -lt ${max_wait} ]]; do
+                local status=$(aws bedrock-agentcore-control get-agent-runtime \
+                    --agent-runtime-id "${exec_id}" \
+                    --region "${AWS_REGION}" \
+                    ${profile_args} \
+                    --query 'status' --output text 2>/dev/null || echo "UNKNOWN")
+
+                if [[ "${status}" == "${target_status}" ]]; then
+                    log_success "Execution Agent Runtime is ${target_status}"
+                    break
+                fi
+
+                log_info "Execution Agent status: ${status}. Waiting ${interval}s... (${elapsed}/${max_wait}s)"
+                sleep ${interval}
+                elapsed=$((elapsed + interval))
+            done
+
+            if [[ ${elapsed} -ge ${max_wait} ]]; then
+                log_warning "Execution Agent did not reach ${target_status} within ${max_wait}s. Current: ${status}"
+            fi
+        else
+            log_warning "Could not extract Execution Agent runtime ID from ARN"
+        fi
+    fi
+
+    # Check Verification Agent Runtime status
+    local verify_agent_arn=$(get_stack_output "${VERIFICATION_STACK_NAME}" "VerificationAgentRuntimeArn" 2>/dev/null || echo "")
+    if [[ -n "${verify_agent_arn}" ]]; then
+        local verify_id=$(get_agent_runtime_id_from_arn "${verify_agent_arn}")
+        if [[ -n "${verify_id}" ]]; then
+            log_info "Checking Verification Agent Runtime status (id: ${verify_id})..."
+            local max_wait=120
+            local elapsed=0
+            local interval=10
+
+            while [[ ${elapsed} -lt ${max_wait} ]]; do
+                local status=$(aws bedrock-agentcore-control get-agent-runtime \
+                    --agent-runtime-id "${verify_id}" \
+                    --region "${AWS_REGION}" \
+                    ${profile_args} \
+                    --query 'status' --output text 2>/dev/null || echo "UNKNOWN")
+
+                if [[ "${status}" == "${target_status}" ]]; then
+                    log_success "Verification Agent Runtime is ${target_status}"
+                    break
+                fi
+
+                log_info "Verification Agent status: ${status}. Waiting ${interval}s... (${elapsed}/${max_wait}s)"
+                sleep ${interval}
+                elapsed=$((elapsed + interval))
+            done
+
+            if [[ ${elapsed} -ge ${max_wait} ]]; then
+                log_warning "Verification Agent did not reach ${target_status} within ${max_wait}s. Current: ${status}"
+            fi
+        else
+            log_warning "Could not extract Verification Agent runtime ID from ARN"
+        fi
+    fi
+
+    log_success "AgentCore validation complete."
 }
 
 print_summary() {
     local function_url=$(get_stack_output "${VERIFICATION_STACK_NAME}" "SlackEventHandlerUrl")
-    local api_url=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionApiUrl")
+    local exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn" 2>/dev/null || echo "N/A")
+    local verify_agent_arn=$(get_stack_output "${VERIFICATION_STACK_NAME}" "VerificationAgentRuntimeArn" 2>/dev/null || echo "N/A")
 
     echo ""
     log_info "=========================================="
@@ -337,12 +437,14 @@ print_summary() {
     echo "Slack Event Handler URL (for Slack Event Subscriptions):"
     echo "  ${function_url}"
     echo ""
-    echo "Execution API URL (internal):"
-    echo "  ${api_url}"
+    echo "AgentCore (A2A):"
+    echo "  Execution Agent ARN:     ${exec_agent_arn}"
+    echo "  Verification Agent ARN:  ${verify_agent_arn}"
     echo ""
     echo "Next steps:"
     echo "  1. Configure Slack app Event Subscriptions with the Function URL above"
     echo "  2. Test by sending a message to your Slack bot"
+    echo "  3. Verify AgentCore Agent Cards at /.well-known/agent-card.json"
     echo ""
 }
 
@@ -353,14 +455,17 @@ main() {
 
     check_prerequisites
 
-    # Phase 1: Deploy Execution Stack
+    # Phase 1: Deploy Execution Stack (get ExecutionAgentRuntimeArn)
     deploy_execution_stack
 
-    # Phase 2: Deploy Verification Stack
+    # Phase 2: Deploy Verification Stack (uses executionAgentArn from config)
     deploy_verification_stack
 
-    # Phase 3: Update Execution Stack with resource policy
-    update_execution_stack
+    # Phase 2.5: Apply Execution Agent resource policy (allows Verification Agent to invoke)
+    apply_execution_agent_resource_policy
+
+    # Phase 3: Validate AgentCore runtimes
+    validate_agentcore
 
     # Print summary
     print_summary

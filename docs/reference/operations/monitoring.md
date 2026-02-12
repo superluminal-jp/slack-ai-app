@@ -143,10 +143,36 @@
 
 ---
 
+## 10.5 AgentCore A2A メトリクス
+
+AgentCore A2A パスが有効な場合、以下の追加メトリクスが監視対象となります：
+
+| メトリクス | 名前空間 | 説明 |
+|-----------|---------|------|
+| `A2AInvocationSuccess` | VerificationAgent | A2A 通信成功回数 |
+| `A2AInvocationFailed` | VerificationAgent | A2A 通信失敗回数 |
+| `A2AInvocationLatency` | VerificationAgent | A2A 通信レイテンシ（ミリ秒） |
+| `AsyncTaskCompleted` | ExecutionAgent | 非同期タスク完了回数 |
+| `AsyncTaskFailed` | ExecutionAgent | 非同期タスク失敗回数 |
+| `BedrockInvocationLatency` | ExecutionAgent | Bedrock 呼び出しレイテンシ（ミリ秒） |
+
+### AgentCore Runtime ログ
+
+AgentCore Runtime のログは CloudWatch Logs に出力されます：
+
+```bash
+# Verification Agent ログ
+aws logs tail /aws/agentcore/verification-agent --follow
+
+# Execution Agent ログ
+aws logs tail /aws/agentcore/execution-agent --follow
+```
+
 ---
 
 ## 関連ドキュメント
 
 - [テストと検証](./testing.md) - テスト戦略と検証手順
 - [セキュリティ実装](../security/implementation.md) - セキュリティ実装詳細
-- [実装ロードマップ](../implementation/roadmap.md) - 実装計画とフェーズ
+- [実装ロードマップ](../../implementation/roadmap.md) - 実装計画とフェーズ
+- [ゾーン間通信](../architecture/zone-communication.md) - 通信パスの詳細

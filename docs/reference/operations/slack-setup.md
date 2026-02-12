@@ -71,6 +71,7 @@ oauth_config:
       - team:read # Existence Check: team_id 検証
       - users:read # Existence Check: user_id 検証
       - channels:read # Existence Check: channel_id 検証
+      - files:write # 014: AI 生成ファイルをスレッドに投稿
 
 event_subscriptions:
   bot_events:
@@ -109,7 +110,8 @@ settings:
 | `channels:history`  | チャンネルの履歴を読み取り   | スレッド履歴取得（conversations.replies） |
 | `channels:read`     | チャンネル情報を読み取り     | Existence Check で channel_id 検証        |
 | `chat:write`        | メッセージを送信             | Slack に AI レスポンスを投稿              |
-| `files:read`        | ファイルを読み取り           | 添付ファイル（画像・ドキュメント）処理    |
+| `files:read`        | ファイルを読み取り           | 024: 添付ファイル（画像・ドキュメント）のダウンロード・S3 転送 |
+| `files:write`       | ファイルをアップロード       | 014: AI 生成ファイルをスレッドに投稿      |
 | `reactions:write`   | リアクションを追加/削除      | リクエスト受付時👀、成功時✅、失敗時❌の表示 |
 | `team:read`         | ワークスペース情報を読み取り | Existence Check で team_id 検証           |
 | `users:read`        | ユーザー情報を読み取り       | Existence Check で user_id 検証           |

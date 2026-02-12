@@ -14,9 +14,19 @@ import traceback
 import sys
 import hashlib
 import os
+from decimal import Decimal
 from typing import Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
+
+
+class _DecimalEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles DynamoDB Decimal types."""
+
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return int(obj) if obj == int(obj) else float(obj)
+        return super().default(obj)
 
 
 class LogLevel(Enum):
@@ -163,7 +173,7 @@ def _build_log_entry(
     log_entry = {
         "level": level,
         "event": event_type,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         **sanitized_data,
     }
     
@@ -216,7 +226,7 @@ def log(
         include_stack_trace = error is not None
     
     log_entry = _build_log_entry(level, event_type, data, error, include_stack_trace)
-    print(json.dumps(log_entry))
+    print(json.dumps(log_entry, cls=_DecimalEncoder))
 
 
 def log_debug(event_type: str, data: Dict[str, Any]) -> None:

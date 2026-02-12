@@ -2,6 +2,7 @@ import * as cdk from "aws-cdk-lib";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
+import * as sqs from "aws-cdk-lib/aws-sqs";
 import { Construct } from "constructs";
 import * as path from "path";
 import { execSync } from "child_process";
@@ -17,7 +18,10 @@ export interface SlackEventHandlerProps {
   rateLimitTableName: string; // DynamoDB table name for rate limiting
   awsRegion: string; // AWS region (e.g., ap-northeast-1)
   bedrockModelId: string; // Bedrock model ID (e.g., amazon.nova-pro-v1:0)
-  executionApiUrl: string; // API Gateway URL for Execution Layer (required)
+  /** ARN of Verification Agent Runtime (A2A path). Required. */
+  verificationAgentArn: string;
+  /** SQS queue for async agent invocation (016). When set, handler sends requests here instead of invoking AgentCore directly. */
+  agentInvocationQueue?: sqs.IQueue;
 }
 
 export class SlackEventHandler extends Construct {
@@ -27,11 +31,7 @@ export class SlackEventHandler extends Construct {
   constructor(scope: Construct, id: string, props: SlackEventHandlerProps) {
     super(scope, id);
 
-    // Get deployment environment from stack name or context
     const stack = cdk.Stack.of(this);
-    const stackName = stack.stackName;
-    const deploymentEnv = stackName.includes("-Prod") ? "prod" : "dev";
-
     const lambdaPath = path.join(__dirname, "../lambda/slack-event-handler");
     
     // Create Lambda function for Slack event handling
@@ -44,7 +44,7 @@ export class SlackEventHandler extends Construct {
           command: [
             "bash",
             "-c",
-            "pip install --no-cache-dir -r requirements.txt -t /asset-output && cp -au . /asset-output",
+            "pip install --no-cache-dir -r requirements.txt -t /asset-output && cp -r . /asset-output",
           ],
           // Local bundling for faster builds and Colima compatibility
           local: {
@@ -78,7 +78,8 @@ export class SlackEventHandler extends Construct {
           },
         },
       }),
-      timeout: cdk.Duration.seconds(10),
+      // A2A / Execution 応答待ち（Bedrock 推論含む）。60s でタイムアウトするため 120s に延長
+      timeout: cdk.Duration.seconds(120),
       environment: {
         TOKEN_TABLE_NAME: props.tokenTableName,
         DEDUPE_TABLE_NAME: props.dedupeTableName,
@@ -94,19 +95,19 @@ export class SlackEventHandler extends Construct {
         // Optional: Whitelist secret name (can be set via environment variable or Secrets Manager)
         // Format: {stackName}/slack/whitelist-config
         WHITELIST_SECRET_NAME: `${cdk.Stack.of(this).stackName}/slack/whitelist-config`,
-        // Optional: Whitelist environment variables (comma-separated values)
-        // These are optional fallbacks if DynamoDB and Secrets Manager are not used
-        // WHITELIST_TEAM_IDS, WHITELIST_USER_IDS, WHITELIST_CHANNEL_IDS can be set via CDK context or environment
-        // API Gateway URL for Execution Layer (required)
-        EXECUTION_API_URL: props.executionApiUrl,
-        // Authentication method for Execution API (default: 'api_key')
-        // Set to 'iam' to use IAM authentication
-        EXECUTION_API_AUTH_METHOD: process.env.EXECUTION_API_AUTH_METHOD || "api_key",
-        // API key secret name in Secrets Manager (required if EXECUTION_API_AUTH_METHOD is 'api_key')
-        // Default: 'execution-api-key-{env}' (environment-specific)
-        EXECUTION_API_KEY_SECRET_NAME: process.env.EXECUTION_API_KEY_SECRET_NAME || `execution-api-key-${deploymentEnv}`,
+        // A2A: Verification Agent Runtime ARN (required)
+        VERIFICATION_AGENT_ARN: props.verificationAgentArn,
+        // 016: when set, handler sends to SQS instead of invoking AgentCore directly
+        ...(props.agentInvocationQueue && {
+          AGENT_INVOCATION_QUEUE_URL: props.agentInvocationQueue.queueUrl,
+        }),
       },
     });
+
+    // 016: Grant SQS SendMessage when async invocation queue is provided
+    if (props.agentInvocationQueue) {
+      props.agentInvocationQueue.grantSendMessages(this.function);
+    }
 
     // Grant Lambda function permission to read secrets
     props.slackSigningSecret.grantRead(this.function);
@@ -125,36 +126,15 @@ export class SlackEventHandler extends Construct {
       })
     );
 
-    // Grant Lambda function permission to read API key from Secrets Manager (for API key authentication)
-    // The secret name follows the pattern: execution-api-key (or can be customized)
-    // This permission allows reading the API key secret for Execution API Gateway authentication
+    // Grant AgentCore Runtime invocation permission (A2A path).
+    // Per AWS: both runtime and endpoint may be evaluated for InvokeAgentRuntime.
+    // https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/resource-based-policies.html
+    const runtimeEndpointArn = `${props.verificationAgentArn}/runtime-endpoint/DEFAULT`;
     this.function.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
-        actions: ["secretsmanager:GetSecretValue"],
-        resources: [
-          `arn:aws:secretsmanager:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:secret:execution-api-key-${deploymentEnv}*`,
-        ],
-      })
-    );
-
-    // Grant Bedrock permissions to Lambda function
-    // Per AWS official documentation, use wildcard resource with optional conditions
-    // Reference: https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_service-with-iam.html
-    this.function.addToRolePolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: [
-          "bedrock:InvokeModel",
-          "bedrock:InvokeModelWithResponseStream",
-        ],
-        resources: ["*"], // AWS recommended approach
-        // Optional: Add condition to restrict to specific model
-        // conditions: {
-        //   StringEquals: {
-        //     "bedrock:ModelId": "amazon.nova-pro-v1:0"
-        //   }
-        // }
+        actions: ["bedrock-agentcore:InvokeAgentRuntime"],
+        resources: [props.verificationAgentArn, runtimeEndpointArn],
       })
     );
 

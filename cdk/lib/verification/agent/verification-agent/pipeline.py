@@ -1,0 +1,448 @@
+"""
+Verification pipeline: security checks, delegation to Execution Agent, Slack post request enqueue.
+
+This module contains all business logic that runs on AgentCore Runtime.
+Invoked by main.py entrypoint only; main.py is the minimal A2A contract shell.
+"""
+
+import base64
+import json
+import time
+import traceback
+import uuid
+from typing import Optional, Tuple
+
+import requests
+
+from existence_check import check_entity_existence, ExistenceCheckError
+from authorization import authorize_request
+from rate_limiter import check_rate_limit, RateLimitExceededError
+from a2a_client import invoke_execution_agent
+from slack_post_request import send_slack_post_request, build_file_artifact
+from error_debug import log_execution_error, log_execution_agent_error_response
+from s3_file_manager import upload_file_to_s3, generate_presigned_url, cleanup_request_files
+
+# Used by main.py for /ping HealthyBusy
+is_processing = False
+
+ERROR_MESSAGE_MAP = {
+    "bedrock_timeout": ":hourglass: AI サービスが応答に時間がかかっています。しばらくしてからお試しください。",
+    "bedrock_throttling": ":warning: AI サービスが混雑しています。1分後にお試しください。",
+    "bedrock_access_denied": ":lock: AI サービスへの接続に問題があります。管理者にお問い合わせください。",
+    "invalid_response": ":x: AI サービスから予期しない応答を受信しました。再度お試しください。",
+    "attachment_download_failed": ":paperclip: 添付ファイルのダウンロードに失敗しました。ファイルを再アップロードしてお試しください。",
+    "download_failed": ":paperclip: 添付ファイルのダウンロードに失敗しました。ファイルを再アップロードしてお試しください。",
+    "url_not_available": ":paperclip: 添付ファイルのダウンロードに失敗しました。ファイルを再アップロードしてお試しください。",
+    "file_too_large": ":floppy_disk: ファイルサイズが上限を超えています。画像は10MB、ドキュメントは5MBまでです。",
+    "unsupported_file_type": ":page_facing_up: サポートされていないファイル形式です。画像: PNG, JPEG, GIF, WebP。ドキュメント: PDF, DOCX, XLSX, CSV, TXT, PPTX。",
+    "unsupported_image_type": ":page_facing_up: サポートされていない画像形式です。PNG, JPEG, GIF, WebP をご利用ください。",
+    "unsupported_type": ":page_facing_up: サポートされていないファイル形式です。",
+    "extraction_failed": ":lock: ファイルの内容を読み取れませんでした。破損しているか、パスワード保護されている可能性があります。",
+    "async_timeout": ":hourglass: AI サービスの処理がタイムアウトしました。しばらくしてからお試しください。",
+    "async_task_failed": ":x: バックグラウンド処理が失敗しました。再度お試しください。",
+    "throttling": ":warning: AI サービスが混雑しています。しばらくしてからお試しください。",
+    "access_denied": ":lock: AI サービスへのアクセスが拒否されました。管理者にお問い合わせください。",
+    "generic": ":warning: エラーが発生しました。しばらくしてからお試しください。",
+}
+DEFAULT_ERROR_MESSAGE = ":warning: エラーが発生しました。しばらくしてからお試しください。"
+
+
+def _log(level: str, event_type: str, data: dict) -> None:
+    log_entry = {
+        "level": level,
+        "event_type": event_type,
+        "service": "verification-agent",
+        "timestamp": time.time(),
+        **data,
+    }
+    print(json.dumps(log_entry, default=str))
+
+
+def _get_user_friendly_error(error_code: str, fallback_message: str = "") -> str:
+    if error_code in ERROR_MESSAGE_MAP:
+        return ERROR_MESSAGE_MAP[error_code]
+    if fallback_message:
+        return fallback_message
+    return DEFAULT_ERROR_MESSAGE
+
+
+def parse_file_artifact(result_data: dict) -> Optional[Tuple[bytes, str, str]]:
+    artifact = result_data.get("file_artifact")
+    if not artifact or not isinstance(artifact, dict):
+        return None
+    parts = artifact.get("parts")
+    if not parts or not isinstance(parts, list) or len(parts) < 1:
+        return None
+    part = parts[0]
+    if not isinstance(part, dict):
+        return None
+    b64 = part.get("contentBase64")
+    name = part.get("fileName")
+    mime = part.get("mimeType")
+    if not b64 or not name or not mime:
+        return None
+    try:
+        file_bytes = base64.b64decode(b64)
+    except Exception as e:
+        _log("WARN", "file_artifact_decode_error", {
+            "error": str(e),
+            "fileName": name,
+            "mimeType": mime,
+        })
+        return None
+    return (file_bytes, name, mime)
+
+
+def _get_slack_file_bytes(bot_token: str, file_id: str) -> Optional[bytes]:
+    """
+    Get file bytes from Slack: files.info for fresh download URL, then GET with bot token.
+
+    Per Slack best practice: event payload URLs may be stale; use files.info for fresh URL.
+    """
+    if not bot_token or not file_id:
+        return None
+    try:
+        info_resp = requests.get(
+            "https://slack.com/api/files.info",
+            headers={"Authorization": f"Bearer {bot_token}"},
+            params={"file": file_id},
+            timeout=10,
+        )
+        info_resp.raise_for_status()
+        data = info_resp.json()
+        if not data.get("ok"):
+            return None
+        file_info = data.get("file", {})
+        download_url = file_info.get("url_private_download") or file_info.get("url_private")
+        if not download_url:
+            return None
+        down_resp = requests.get(
+            download_url,
+            headers={"Authorization": f"Bearer {bot_token}"},
+            timeout=30,
+            stream=True,
+        )
+        down_resp.raise_for_status()
+        return down_resp.content
+    except Exception:
+        return None
+
+
+def run(payload: dict) -> str:
+    """
+    Run the full verification pipeline. Called from main.py entrypoint only.
+
+    Args:
+        payload: A2A payload with "prompt" key (JSON string or dict of task_payload).
+
+    Returns:
+        JSON string: {"status": "completed"|"error", "correlation_id": ..., ...}
+    """
+    global is_processing
+    correlation_id = str(uuid.uuid4())
+    start_time = time.time()
+
+    try:
+        raw_prompt = payload.get("prompt", "{}")
+        task_payload = json.loads(raw_prompt) if isinstance(raw_prompt, str) else raw_prompt
+
+        correlation_id = task_payload.get("correlation_id", correlation_id)
+        channel = task_payload.get("channel", "")
+        text = task_payload.get("text", "")
+        bot_token = task_payload.get("bot_token", "")
+        thread_ts = task_payload.get("thread_ts")
+        message_ts = task_payload.get("message_ts")  # For reaction swap (eyes -> checkmark)
+        team_id = task_payload.get("team_id", "")
+        user_id = task_payload.get("user_id", "")
+        attachments = task_payload.get("attachments", [])
+
+        _log("INFO", "a2a_task_received", {
+            "correlation_id": correlation_id,
+            "channel": channel,
+            "text_length": len(text) if text else 0,
+            "attachment_count": len(attachments),
+            "has_thread_ts": bool(thread_ts),
+        })
+        _log("INFO", "a2a_auth_event", {
+            "correlation_id": correlation_id,
+            "action": "ReceiveTask",
+            "result": "allowed",
+            "source_team_id": team_id[:4] + "***" if team_id else "",
+            "source_user_id": user_id[:4] + "***" if user_id else "",
+            "channel": channel,
+            "auth_method": "SigV4",
+        })
+
+        # 1. Existence Check
+        if bot_token and (team_id or user_id or channel):
+            try:
+                check_entity_existence(
+                    bot_token=bot_token,
+                    team_id=team_id,
+                    user_id=user_id,
+                    channel_id=channel,
+                )
+                _log("INFO", "existence_check_passed", {"correlation_id": correlation_id, "team_id": team_id})
+            except ExistenceCheckError as e:
+                _log("ERROR", "existence_check_failed", {"correlation_id": correlation_id, "team_id": team_id, "error": str(e)})
+                return json.dumps({
+                    "status": "error",
+                    "error_code": "existence_check_failed",
+                    "error_message": "Entity verification failed",
+                    "correlation_id": correlation_id,
+                })
+
+        # 2. Whitelist Authorization
+        try:
+            auth_result = authorize_request(team_id=team_id, user_id=user_id, channel_id=channel)
+            if not auth_result.authorized:
+                _log("ERROR", "authorization_failed", {
+                    "correlation_id": correlation_id,
+                    "team_id": team_id,
+                    "unauthorized_entities": auth_result.unauthorized_entities,
+                })
+                return json.dumps({
+                    "status": "error",
+                    "error_code": "authorization_failed",
+                    "error_message": "Authorization failed",
+                    "correlation_id": correlation_id,
+                })
+        except Exception as e:
+            _log("ERROR", "authorization_error", {
+                "correlation_id": correlation_id,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "traceback": traceback.format_exc(),
+            })
+            return json.dumps({
+                "status": "error",
+                "error_code": "authorization_error",
+                "error_message": "Authorization check failed",
+                "correlation_id": correlation_id,
+            })
+
+        # 3. Rate Limiting
+        try:
+            if team_id or user_id:
+                is_allowed, _ = check_rate_limit(team_id=team_id, user_id=user_id)
+                if not is_allowed:
+                    _log("ERROR", "rate_limit_exceeded", {"correlation_id": correlation_id, "team_id": team_id, "user_id": user_id})
+                    return json.dumps({
+                        "status": "error",
+                        "error_code": "rate_limit_exceeded",
+                        "error_message": "Rate limit exceeded. Please try again in a moment.",
+                        "correlation_id": correlation_id,
+                    })
+        except RateLimitExceededError:
+            return json.dumps({
+                "status": "error",
+                "error_code": "rate_limit_exceeded",
+                "error_message": "Rate limit exceeded. Please try again in a moment.",
+                "correlation_id": correlation_id,
+            })
+        except Exception as e:
+            _log("WARN", "rate_limit_check_error", {
+                "correlation_id": correlation_id,
+                "error": str(e),
+                "error_type": type(e).__name__,
+            })
+
+        # Enrich attachments with S3 pre-signed URLs (US4): download from Slack, upload to S3
+        # US3 (FR-012): max 5 files per request; excess are skipped with warning
+        MAX_FILES_PER_REQUEST = 5
+        execution_attachments = attachments
+        did_s3_upload = False
+        if attachments and bot_token:
+            if len(attachments) > MAX_FILES_PER_REQUEST:
+                _log("WARN", "attachments_exceed_limit", {
+                    "correlation_id": correlation_id,
+                    "attachment_count": len(attachments),
+                    "max_allowed": MAX_FILES_PER_REQUEST,
+                    "message": f"Only first {MAX_FILES_PER_REQUEST} files will be processed",
+                })
+                attachments = attachments[:MAX_FILES_PER_REQUEST]
+            enriched = []
+            for att in attachments:
+                file_id = att.get("id")
+                file_name = att.get("name", "unknown")
+                mimetype = att.get("mimetype", "application/octet-stream")
+                size = att.get("size", 0)
+                file_bytes = _get_slack_file_bytes(bot_token, file_id)
+                if not file_bytes:
+                    _log("WARN", "attachment_slack_download_failed", {
+                        "correlation_id": correlation_id,
+                        "file_id": file_id,
+                    })
+                    continue
+                try:
+                    s3_key = upload_file_to_s3(
+                        file_bytes, correlation_id, file_id, file_name, mimetype
+                    )
+                    presigned_url = generate_presigned_url(s3_key)
+                    enriched.append({
+                        "id": file_id,
+                        "name": file_name,
+                        "mimetype": mimetype,
+                        "size": size,
+                        "presigned_url": presigned_url,
+                    })
+                except Exception as e:
+                    _log("ERROR", "attachment_s3_upload_failed", {
+                        "correlation_id": correlation_id,
+                        "file_id": file_id,
+                        "error": str(e),
+                    })
+            if enriched:
+                execution_attachments = enriched
+                did_s3_upload = True
+
+        # Delegate to Execution Agent (bot_token required for response formatting; attachments use presigned_url)
+        is_processing = True
+        _log("INFO", "delegating_to_execution_agent", {"correlation_id": correlation_id, "channel": channel})
+
+        execution_payload = {
+            "channel": channel,
+            "text": text,
+            "thread_ts": thread_ts,
+            "attachments": execution_attachments,
+            "correlation_id": correlation_id,
+            "team_id": team_id,
+            "user_id": user_id,
+            "bot_token": bot_token,
+        }
+
+        try:
+            execution_result = invoke_execution_agent(execution_payload)
+            try:
+                result_data = json.loads(execution_result) if isinstance(execution_result, str) else execution_result
+            except (json.JSONDecodeError, TypeError) as e:
+                _log("ERROR", "execution_result_parse_error", {
+                    "correlation_id": correlation_id,
+                    "error": str(e),
+                    "raw_result_preview": str(execution_result)[:200] if execution_result else "",
+                })
+                is_processing = False
+                send_slack_post_request(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    text=DEFAULT_ERROR_MESSAGE,
+                    bot_token=bot_token,
+                    correlation_id=correlation_id,
+                    message_ts=message_ts,
+                )
+                return json.dumps({
+                    "status": "error",
+                    "error_code": "invalid_response",
+                    "error_message": "Failed to parse execution result",
+                    "correlation_id": correlation_id,
+                })
+
+            _log("INFO", "execution_result_received", {
+                "correlation_id": correlation_id,
+                "status": result_data.get("status"),
+                "channel": channel,
+            })
+
+            if result_data.get("status") == "success":
+                response_text = result_data.get("response_text", "")
+                file_tuple = parse_file_artifact(result_data)
+                file_artifact = (
+                    build_file_artifact(file_tuple[0], file_tuple[1], file_tuple[2]) if file_tuple else None
+                )
+                send_slack_post_request(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    text=response_text if response_text else None,
+                    file_artifact=file_artifact,
+                    bot_token=bot_token,
+                    correlation_id=correlation_id,
+                    message_ts=message_ts,
+                )
+                _log("INFO", "slack_post_request_sent", {
+                    "correlation_id": correlation_id,
+                    "channel": channel,
+                    "has_text": bool(response_text),
+                    "has_file": file_artifact is not None,
+                })
+            elif result_data.get("status") == "error":
+                error_code = result_data.get("error_code", "generic")
+                raw_error_message = result_data.get("error_message", "")
+                user_friendly_message = _get_user_friendly_error(error_code, raw_error_message)
+                log_execution_agent_error_response(
+                    correlation_id=correlation_id,
+                    error_code=error_code,
+                    error_message=raw_error_message,
+                    raw_response=result_data,
+                )
+                send_slack_post_request(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    text=user_friendly_message,
+                    bot_token=bot_token,
+                    correlation_id=correlation_id,
+                    message_ts=message_ts,
+                )
+                _log("INFO", "slack_error_post_request_sent", {
+                    "correlation_id": correlation_id,
+                    "channel": channel,
+                    "error_code": error_code,
+                })
+
+            duration_ms = (time.time() - start_time) * 1000
+            is_processing = False
+            _log("INFO", "a2a_task_completed", {
+                "correlation_id": correlation_id,
+                "duration_ms": round(duration_ms, 2),
+                "status": result_data.get("status"),
+            })
+            return json.dumps({"status": "completed", "correlation_id": correlation_id})
+
+        except Exception as e:
+            is_processing = False
+            tb_str = traceback.format_exc()
+            _log("ERROR", "execution_agent_error", {
+                "correlation_id": correlation_id,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "traceback": tb_str,
+            })
+            log_execution_error(correlation_id, e, tb_str)
+            send_slack_post_request(
+                channel=channel,
+                thread_ts=thread_ts,
+                text="エラーが発生しました。しばらくしてからお試しください。",
+                bot_token=bot_token,
+                correlation_id=correlation_id,
+                message_ts=message_ts,
+            )
+            return json.dumps({
+                "status": "error",
+                "error_code": "execution_error",
+                "error_message": str(e),
+                "correlation_id": correlation_id,
+            })
+        finally:
+            if did_s3_upload:
+                try:
+                    cleanup_request_files(correlation_id)
+                except Exception as cleanup_err:
+                    _log("WARN", "s3_cleanup_failed", {
+                        "correlation_id": correlation_id,
+                        "error": str(cleanup_err),
+                    })
+
+    except Exception as e:
+        tb_str = traceback.format_exc()
+        _log("ERROR", "unhandled_exception", {
+            "correlation_id": correlation_id,
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "stack_trace": tb_str,
+        })
+        log_execution_error(correlation_id, e, tb_str)
+        return json.dumps({
+            "status": "error",
+            "error_code": "internal_error",
+            "error_message": "Internal server error",
+            "correlation_id": correlation_id,
+        })

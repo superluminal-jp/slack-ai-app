@@ -1,18 +1,18 @@
 import * as cdk from "aws-cdk-lib";
-import { Template } from "aws-cdk-lib/assertions";
+import { Template, Match } from "aws-cdk-lib/assertions";
 import { ExecutionStack } from "../lib/execution/execution-stack";
 import { VerificationStack } from "../lib/verification/verification-stack";
 
 /**
- * Tests for independent lifecycle management of stacks.
+ * Tests for independent lifecycle management of stacks (A2A only).
  *
- * These tests verify that:
+ * Verifies that:
  * 1. Each stack can be created independently
  * 2. No CloudFormation cross-stack references exist
  * 3. Stacks can be updated without affecting each other
- * 4. Stack outputs are self-contained
+ * 4. Stack outputs are self-contained (ExecutionAgentRuntimeArn, etc.)
  */
-describe("Independent Lifecycle Management", () => {
+describe("Independent Lifecycle Management (A2A)", () => {
   beforeAll(() => {
     process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
     process.env.SLACK_SIGNING_SECRET = "test-signing-secret";
@@ -33,7 +33,6 @@ describe("Independent Lifecycle Management", () => {
       const template = Template.fromStack(stack);
       const templateJson = JSON.stringify(template.toJSON());
 
-      // Should not contain any ImportValue references
       expect(templateJson).not.toContain("Fn::ImportValue");
     });
 
@@ -41,23 +40,19 @@ describe("Independent Lifecycle Management", () => {
       const app = new cdk.App();
       const stack = new VerificationStack(app, "TestVerification", {
         env: { account: "123456789012", region: "ap-northeast-1" },
-        executionApiUrl:
-          "https://abc123.execute-api.ap-northeast-1.amazonaws.com/prod/",
-        executionApiArn:
-          "arn:aws:execute-api:ap-northeast-1:123456789012:abc123/*",
+        executionAgentArn:
+          "arn:aws:bedrock-agentcore:ap-northeast-1:123456789012:runtime/exec",
       });
 
       const template = Template.fromStack(stack);
       const templateJson = JSON.stringify(template.toJSON());
 
-      // Should not contain any ImportValue references
       expect(templateJson).not.toContain("Fn::ImportValue");
     });
 
     it("ExecutionStack should be creatable without VerificationStack existing", () => {
       const app = new cdk.App();
 
-      // Should not throw when created standalone
       expect(() => {
         new ExecutionStack(app, "StandaloneExecution", {
           env: { account: "123456789012", region: "ap-northeast-1" },
@@ -74,69 +69,58 @@ describe("Independent Lifecycle Management", () => {
 
       const verificationStack = new VerificationStack(app, "VerifStack", {
         env: { account: "123456789012", region: "ap-northeast-1" },
-        executionApiUrl:
-          "https://abc123.execute-api.ap-northeast-1.amazonaws.com/prod/",
-        executionApiArn:
-          "arn:aws:execute-api:ap-northeast-1:123456789012:abc123/*",
+        executionAgentArn:
+          "arn:aws:bedrock-agentcore:ap-northeast-1:123456789012:runtime/exec",
       });
 
       const execTemplate = Template.fromStack(executionStack);
       const verifTemplate = Template.fromStack(verificationStack);
 
-      // Get all resource logical IDs
       const execResources = Object.keys(execTemplate.toJSON().Resources || {});
       const verifResources = Object.keys(verifTemplate.toJSON().Resources || {});
 
-      // Resources should not overlap (unique logical IDs per stack)
       const overlap = execResources.filter((r) => verifResources.includes(r));
       expect(overlap).toHaveLength(0);
     });
   });
 
   describe("Configuration via Parameters", () => {
-    it("ExecutionStack should accept verificationLambdaRoleArn as parameter", () => {
+    it("ExecutionStack should accept verificationAccountId as parameter", () => {
       const app = new cdk.App();
 
-      // First deployment without role ARN
       const stack1 = new ExecutionStack(app, "Exec1", {
         env: { account: "123456789012", region: "ap-northeast-1" },
       });
 
-      // Second deployment with role ARN (simulating update)
       const stack2 = new ExecutionStack(app, "Exec2", {
         env: { account: "123456789012", region: "ap-northeast-1" },
-        verificationLambdaRoleArn:
-          "arn:aws:iam::123456789012:role/TestRole",
+        verificationAccountId: "111111111111",
       });
 
       const template1 = Template.fromStack(stack1);
       const template2 = Template.fromStack(stack2);
 
-      // Both should synthesize successfully
       expect(template1.toJSON()).toBeDefined();
       expect(template2.toJSON()).toBeDefined();
     });
 
-    it("VerificationStack should use executionApiUrl from parameters", () => {
+    it("VerificationStack should use executionAgentArn from parameters", () => {
       const app = new cdk.App();
 
       const stack = new VerificationStack(app, "VerifParam", {
         env: { account: "123456789012", region: "ap-northeast-1" },
-        executionApiUrl:
-          "https://custom-api.execute-api.ap-northeast-1.amazonaws.com/prod/",
-        executionApiArn:
-          "arn:aws:execute-api:ap-northeast-1:123456789012:custom-api/*",
+        executionAgentArn:
+          "arn:aws:bedrock-agentcore:ap-northeast-1:123456789012:runtime/custom-exec",
       });
 
       const template = Template.fromStack(stack);
 
-      // Lambda should have the custom API URL in environment
+      // Lambda should have VERIFICATION_AGENT_ARN (A2A path); execution agent is invoked by Verification Agent
       template.hasResourceProperties("AWS::Lambda::Function", {
         Environment: {
-          Variables: {
-            EXECUTION_API_URL:
-              "https://custom-api.execute-api.ap-northeast-1.amazonaws.com/prod/",
-          },
+          Variables: Match.objectLike({
+            VERIFICATION_AGENT_ARN: Match.anyValue(),
+          }),
         },
       });
     });
@@ -150,31 +134,20 @@ describe("Independent Lifecycle Management", () => {
         env: { account: "123456789012", region: "ap-northeast-1" },
       });
 
-      // Verify outputs exist
-      expect(executionStack.apiUrl).toBeDefined();
-      expect(executionStack.apiArn).toBeDefined();
-
-      // These outputs would be used to configure VerificationStack
-      // (In practice, this happens via CLI or cdk.json)
+      expect(executionStack.executionAgentArn).toBeDefined();
     });
 
-    it("VerificationStack outputs should be usable by ExecutionStack", () => {
+    it("VerificationStack outputs should be usable by ExecutionStack operators", () => {
       const app = new cdk.App();
 
       const verificationStack = new VerificationStack(app, "VerifOutputs", {
         env: { account: "123456789012", region: "ap-northeast-1" },
-        executionApiUrl:
-          "https://abc123.execute-api.ap-northeast-1.amazonaws.com/prod/",
-        executionApiArn:
-          "arn:aws:execute-api:ap-northeast-1:123456789012:abc123/*",
+        executionAgentArn:
+          "arn:aws:bedrock-agentcore:ap-northeast-1:123456789012:runtime/exec",
       });
 
-      // Verify outputs exist
       expect(verificationStack.lambdaRoleArn).toBeDefined();
       expect(verificationStack.functionUrl).toBeDefined();
-
-      // This output would be used to update ExecutionStack resource policy
-      // (In practice, this happens via CLI or cdk.json)
     });
   });
 
@@ -182,20 +155,16 @@ describe("Independent Lifecycle Management", () => {
     it("Updating ExecutionStack should not require VerificationStack changes", () => {
       const app = new cdk.App();
 
-      // Initial deployment
       const stack = new ExecutionStack(app, "UpdateExec", {
         env: { account: "123456789012", region: "ap-northeast-1" },
-        bedrockModelId: "amazon.nova-pro-v1:0",
       });
 
-      // Simulated update with different model
       const updatedApp = new cdk.App();
       const updatedStack = new ExecutionStack(updatedApp, "UpdateExec", {
         env: { account: "123456789012", region: "ap-northeast-1" },
-        bedrockModelId: "anthropic.claude-v2",
+        executionAgentName: "SlackAI_ExecutionAgent_V2",
       });
 
-      // Both should synthesize without issues
       const template = Template.fromStack(stack);
       const updatedTemplate = Template.fromStack(updatedStack);
 
@@ -203,30 +172,25 @@ describe("Independent Lifecycle Management", () => {
       expect(updatedTemplate.toJSON()).toBeDefined();
     });
 
-    it("Adding resource policy to ExecutionStack should not affect existing resources", () => {
+    it("Adding verificationAccountId to ExecutionStack should not affect existing resources", () => {
       const app = new cdk.App();
 
-      // Before adding resource policy
       const stack1 = new ExecutionStack(app, "BeforePolicy", {
         env: { account: "123456789012", region: "ap-northeast-1" },
       });
 
-      // After adding resource policy
       const stack2 = new ExecutionStack(app, "AfterPolicy", {
         env: { account: "123456789012", region: "ap-northeast-1" },
-        verificationLambdaRoleArn:
-          "arn:aws:iam::123456789012:role/VerifRole",
+        verificationAccountId: "111111111111",
       });
 
       const template1 = Template.fromStack(stack1);
       const template2 = Template.fromStack(stack2);
 
-      // Lambda should be the same in both
-      const lambdas1 = template1.findResources("AWS::Lambda::Function");
-      const lambdas2 = template2.findResources("AWS::Lambda::Function");
+      const runtimes1 = template1.findResources("AWS::BedrockAgentCore::Runtime");
+      const runtimes2 = template2.findResources("AWS::BedrockAgentCore::Runtime");
 
-      expect(Object.keys(lambdas1).length).toBe(Object.keys(lambdas2).length);
+      expect(Object.keys(runtimes1).length).toBe(Object.keys(runtimes2).length);
     });
   });
 });
-
