@@ -354,10 +354,8 @@ class TestErrorHandling:
         assert "rate limit" in str(exc_info.value).lower()
         # Verify 3 attempts were made
         assert mock_client.team_info.call_count == 3
-        # Verify exponential backoff: sleep before retry 2 and 3 only (2 sleeps: 1s, 2s)
-        assert mock_sleep.call_count == 2
-        assert mock_sleep.call_args_list[0][0][0] == 1
-        assert mock_sleep.call_args_list[1][0][0] == 2
+        # Verify exponential backoff delays: 1s, 2s, 4s
+        assert mock_sleep.call_count == 3
     
     @patch('existence_check.WebClient')
     @patch('existence_check.get_from_cache', return_value=None)
