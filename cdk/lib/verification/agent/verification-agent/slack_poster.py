@@ -9,35 +9,40 @@ import json
 import re
 import time
 from typing import Optional, List
+
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
+from logger_util import get_logger, log
 
-# ---------------------------------------------------------------------------
-# Structured logging helpers (replaces Lambda logger module)
-# ---------------------------------------------------------------------------
-def _log(level, event_type, data=None, exc=None):
-    entry = {"level": level, "event_type": event_type, "service": "verification-agent", "timestamp": time.time()}
-    if data:
-        entry.update(data)
+_logger = get_logger()
+
+
+def _log(level: str, event_type: str, data: Optional[dict] = None, exc: Optional[Exception] = None) -> None:
+    d = dict(data) if data else {}
     if exc:
-        entry["exception"] = str(exc)
-    print(json.dumps(entry, default=str))
+        d["exception"] = str(exc)
+    log(_logger, level, event_type, d, service="verification-agent")
 
 
-def log_info(event_type, data):
+def log_info(event_type: str, data: Optional[dict] = None) -> None:
     _log("INFO", event_type, data)
 
 
-def log_warn(event_type, data, exc=None):
+def log_warn(event_type: str, data: Optional[dict] = None, exc: Optional[Exception] = None) -> None:
     _log("WARN", event_type, data, exc)
 
 
-def log_error(event_type, data, exc=None, include_stack_trace=True):
+def log_error(
+    event_type: str,
+    data: Optional[dict] = None,
+    exc: Optional[Exception] = None,
+    include_stack_trace: bool = True,
+) -> None:
     _log("ERROR", event_type, data, exc)
 
 
-def log_exception(event_type, data, exc):
+def log_exception(event_type: str, data: Optional[dict], exc: Exception) -> None:
     _log("ERROR", event_type, data, exc)
 
 

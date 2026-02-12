@@ -292,9 +292,10 @@ deploy_verification_stack() {
     echo "${function_url}"
 }
 
-# Apply resource policy on Execution Agent (Runtime + Endpoint) so Verification Agent can invoke it.
-# Per AWS docs: both Runtime and Endpoint need explicit allow for the Verification Agent role.
+# Apply resource policy on Execution Agent Runtime so Verification Agent can invoke it.
 # CloudFormation does not support RuntimeResourcePolicy; use Control Plane API.
+# Deploy IAM needs bedrock-agentcore-control:PutResourcePolicy.
+# Note: PutResourcePolicy is only supported on Runtime resources, not Endpoint resources.
 apply_execution_agent_resource_policy() {
     local exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn" 2>/dev/null || echo "")
     [[ -z "${exec_agent_arn}" ]] && return 0
@@ -306,28 +307,49 @@ apply_execution_agent_resource_policy() {
     local account_id=$(aws sts get-caller-identity ${profile_args} --query Account --output text 2>/dev/null || echo "")
     [[ -z "${account_id}" ]] && return 0
 
-    local verify_role_arn="arn:aws:iam::${account_id}:role/SlackAI_VerificationAgent-ExecutionRole"
-    local endpoint_arn="${exec_agent_arn}/runtime-endpoint/DEFAULT"
+    # Principal: Verification Agent role (verification account for cross-account; caller account for same-account)
+    local verification_account=$(get_config_value "verificationAccountId" || echo "")
+    [[ -z "${verification_account}" ]] && verification_account="${account_id}"
+    local verify_role_arn="arn:aws:iam::${verification_account}:role/SlackAI_VerificationAgent-ExecutionRole"
 
     log_info "Applying resource policy: Execution Agent allows Verification Agent role"
-    AWS_REGION="${AWS_REGION}" AWS_PROFILE="${AWS_PROFILE}" python3 -c "
+    # Only pass AWS_PROFILE to subprocess when non-empty (empty string causes ProfileNotFound)
+    local env_prefix="AWS_REGION=${AWS_REGION} VERIFICATION_ACCOUNT=${verification_account}"
+    if [[ -n "${AWS_PROFILE}" ]]; then
+        env_prefix="${env_prefix} AWS_PROFILE=${AWS_PROFILE}"
+    fi
+    env ${env_prefix} python3 -c "
 import boto3
 import json
 import os
 
 region = os.environ.get('AWS_REGION', 'ap-northeast-1')
-session = boto3.Session(profile_name=os.environ.get('AWS_PROFILE')) if os.environ.get('AWS_PROFILE') else boto3.Session()
+verification_account = os.environ.get('VERIFICATION_ACCOUNT', '')
+profile = os.environ.get('AWS_PROFILE')
+session = boto3.Session(profile_name=profile, region_name=region) if profile else boto3.Session(region_name=region)
 client = session.client('bedrock-agentcore-control', region_name=region)
 
 runtime_arn = '${exec_agent_arn}'
-endpoint_arn = '${endpoint_arn}'
 principal = '${verify_role_arn}'
 
-for res_arn, label in [(runtime_arn, 'Runtime'), (endpoint_arn, 'Endpoint')]:
-    policy = {'Version': '2012-10-17', 'Statement': [{'Effect': 'Allow', 'Principal': {'AWS': principal}, 'Action': 'bedrock-agentcore:InvokeAgentRuntime', 'Resource': res_arn}]}
-    client.put_resource_policy(resourceArn=res_arn, policy=json.dumps(policy))
-    print('  ' + label + ' policy OK')
-" 2>/dev/null && log_success "Execution Agent resource policy applied" || log_warning "Could not apply resource policy (check bedrock-agentcore-control PutResourcePolicy permissions)"
+# Per AWS best practices: Sid, Condition aws:SourceAccount for confused deputy prevention.
+# Resource must match the resourceArn parameter exactly (wildcard '*' is rejected).
+policy = {
+    'Version': '2012-10-17',
+    'Statement': [{
+        'Sid': 'AllowVerificationAgentInvoke',
+        'Effect': 'Allow',
+        'Principal': {'AWS': principal},
+        'Action': 'bedrock-agentcore:InvokeAgentRuntime',
+        'Resource': runtime_arn,
+        'Condition': {'StringEquals': {'aws:SourceAccount': verification_account}}
+    }]
+}
+policy_json = json.dumps(policy)
+
+client.put_resource_policy(resourceArn=runtime_arn, policy=policy_json)
+print('  Runtime policy applied')
+" 2>&1 && log_success "Execution Agent resource policy applied" || log_warning "Could not apply resource policy (check bedrock-agentcore-control PutResourcePolicy permissions)"
 }
 
 # Extract AgentCore Runtime ID from ARN (arn:...:runtime/Name-xxxxx -> Name-xxxxx)

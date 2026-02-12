@@ -5,12 +5,16 @@
  * ARM64 container configuration, SigV4 authentication, and IAM
  * execution role with Bedrock, ECR, CloudWatch, and X-Ray permissions.
  *
+ * Resource-based policy (PutResourcePolicy) for Verification Agent invocation
+ * is applied by deploy-split-stacks.sh post-deploy (Runtime only; Endpoint does
+ * not support PutResourcePolicy). Deploy IAM needs
+ * bedrock-agentcore-control:PutResourcePolicy.
+ *
  * @module cdk/lib/execution/constructs/execution-agent-runtime
  */
 
 import * as cdk from "aws-cdk-lib";
 import * as iam from "aws-cdk-lib/aws-iam";
-import * as cr from "aws-cdk-lib/custom-resources";
 import { Construct } from "constructs";
 
 /** Lifecycle configuration for AgentCore Runtime (optional). See specs/026 research.md §2. */
@@ -203,124 +207,20 @@ export class ExecutionAgentRuntime extends Construct {
     // Do NOT create RuntimeEndpoint in CFn: Bedrock AgentCore auto-creates DEFAULT when Runtime is created.
     // Creating it here causes "An endpoint with the specified name already exists" (409).
 
-    // ─── Cross-Account Resource-Based Policy (AWS best practice) ───
-    // Per AWS docs: cross-account access requires resource-based policies on BOTH
-    // the Agent Runtime and the Agent Endpoint; if either lacks an allow, the request is denied.
-    // CloudFormation does not yet support RuntimeResourcePolicy as a native resource, so we
-    // apply policy using bedrock-agentcore-control PutResourcePolicy via AwsCustomResource.
-    // See specs/015-agentcore-a2a-migration/VALIDATION.md §5.1 for policy guidance.
+    // Resource-based policy: apply_execution_agent_resource_policy in deploy-split-stacks.sh
+    // applies PutResourcePolicy to Runtime only (Endpoint does not support PutResourcePolicy).
+
+    // CfnOutput for cross-account (when verificationAccountId is set)
     if (props.verificationAccountId) {
-      const endpointArn = `arn:aws:bedrock-agentcore:${stack.region}:${stack.account}:runtime-endpoint/${props.agentRuntimeName}/DEFAULT`;
-
-      const resourcePolicy = JSON.stringify({
-        Version: "2012-10-17",
-        Statement: [
-          {
-            Sid: "AllowVerificationAccountInvoke",
-            Effect: "Allow",
-            Principal: {
-              AWS: `arn:aws:iam::${props.verificationAccountId}:root`,
-            },
-            Action: "bedrock-agentcore:InvokeAgentRuntime",
-            Resource: "*",
-            Condition: {
-              StringEquals: {
-                "aws:SourceAccount": props.verificationAccountId,
-              },
-            },
-          },
-        ],
-      });
-
-      const putPolicyPermissions = cr.AwsCustomResourcePolicy.fromStatements([
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: [
-            "bedrock-agentcore-control:PutResourcePolicy",
-            "bedrock-agentcore-control:DeleteResourcePolicy",
-          ],
-          resources: [this.runtimeArn, endpointArn],
-        }),
-      ]);
-
-      const runtimePolicy = new cr.AwsCustomResource(this, "ExecutionRuntimePolicy", {
-        policy: putPolicyPermissions,
-        onCreate: {
-          service: "BedrockAgentCoreControl",
-          action: "putResourcePolicy",
-          parameters: {
-            resourceArn: this.runtimeArn,
-            policy: resourcePolicy,
-          },
-          physicalResourceId: cr.PhysicalResourceId.of(
-            `${props.agentRuntimeName}-runtime-policy`
-          ),
-        },
-        onUpdate: {
-          service: "BedrockAgentCoreControl",
-          action: "putResourcePolicy",
-          parameters: {
-            resourceArn: this.runtimeArn,
-            policy: resourcePolicy,
-          },
-          physicalResourceId: cr.PhysicalResourceId.of(
-            `${props.agentRuntimeName}-runtime-policy`
-          ),
-        },
-        onDelete: {
-          service: "BedrockAgentCoreControl",
-          action: "deleteResourcePolicy",
-          parameters: {
-            resourceArn: this.runtimeArn,
-          },
-          ignoreErrorCodesMatching: "ResourceNotFoundException",
-        },
-      });
-      runtimePolicy.node.addDependency(this.runtime);
-
-      const endpointPolicy = new cr.AwsCustomResource(this, "ExecutionEndpointPolicy", {
-        policy: putPolicyPermissions,
-        onCreate: {
-          service: "BedrockAgentCoreControl",
-          action: "putResourcePolicy",
-          parameters: {
-            resourceArn: endpointArn,
-            policy: resourcePolicy,
-          },
-          physicalResourceId: cr.PhysicalResourceId.of(
-            `${props.agentRuntimeName}-endpoint-policy`
-          ),
-        },
-        onUpdate: {
-          service: "BedrockAgentCoreControl",
-          action: "putResourcePolicy",
-          parameters: {
-            resourceArn: endpointArn,
-            policy: resourcePolicy,
-          },
-          physicalResourceId: cr.PhysicalResourceId.of(
-            `${props.agentRuntimeName}-endpoint-policy`
-          ),
-        },
-        onDelete: {
-          service: "BedrockAgentCoreControl",
-          action: "deleteResourcePolicy",
-          parameters: {
-            resourceArn: endpointArn,
-          },
-          ignoreErrorCodesMatching: "ResourceNotFoundException",
-        },
-      });
-      endpointPolicy.node.addDependency(this.runtime);
-
+      const endpointArnStatic = `arn:aws:bedrock-agentcore:${stack.region}:${stack.account}:runtime-endpoint/${props.agentRuntimeName}/DEFAULT`;
       new cdk.CfnOutput(this, "ExecutionRuntimeArn", {
-        description: "AgentCore Runtime ARN with cross-account resource policy",
+        description: "AgentCore Runtime ARN; resource policy applied via deploy script",
         value: this.runtimeArn,
         exportName: `${stack.stackName}-ExecutionRuntimeArn`,
       });
       new cdk.CfnOutput(this, "ExecutionEndpointArn", {
-        description: "AgentCore Runtime Endpoint ARN with cross-account resource policy",
-        value: endpointArn,
+        description: "AgentCore Runtime Endpoint ARN; resource policy applied via deploy script",
+        value: endpointArnStatic,
         exportName: `${stack.stackName}-ExecutionEndpointArn`,
       });
     }

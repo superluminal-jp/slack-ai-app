@@ -7,8 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Verification Agent missing `import time`**: Restored `import time` in `authorization.py`, `rate_limiter.py`, `slack_poster.py` — dropped during logging refactor, causing `NameError` on every request and silent failure (no Slack response)
+- **Deploy script PutResourcePolicy**: Fixed `Resource: "*"` (must match specific ARN); removed unsupported endpoint policy; fixed empty `AWS_PROFILE` causing `ProfileNotFound`
+- **AgentCore Runtime CloudWatch logs**: Replaced `print()` with Python `logging` module. Structured JSON logs are output via `logging.StreamHandler(sys.stdout)` with `%(message)s` formatter for CloudWatch compatibility. Added `logger_util` in both agents for centralized configuration.
+
 ### Added
 
+- **Slack File Generation (Best Practices)** (027-slack-file-generation-best-practices)
+  - Execution Agent file generation tools: Markdown, CSV, TXT (generate_text_file); Excel, Word, PowerPoint (generate_excel, generate_word, generate_powerpoint); chart images (generate_chart_image)
+  - Strands Agent with Bedrock Converse; tools invoked via @tool with Japanese docstrings and inputSchema descriptions
+  - File size limits: text 1 MB, Office 10 MB, image 5 MB; sanitize_filename for cross-platform names; size-exceed Japanese user notification
+  - Attachment-based conversion: documents and images from 024 flow passed to agent; tools receive context for "CSV → Excel"–style requests
+  - Error handling: tool_failure mapped to Japanese message (FR-010); max 1 file per request (FR-008)
+  - Best practices verified: HTTPS (boto3 default), minimal IAM (InvokeModel only), BP-FG-001/002/003, BP-S-001/002; checklists/best-practices-verification.md
+  - Dependencies: openpyxl, python-docx, python-pptx, matplotlib, Pillow
 - **Reaction swap on Slack reply**: When posting AI response to Slack, the system now removes the 👀 (eyes) reaction and adds ✅ (white_check_mark) on the original message, providing clear visual feedback that processing completed successfully
 - **Slack File Attachment Support** (024-slack-file-attachment)
   - S3-based secure file transfer: Verification Agent downloads from Slack, uploads to S3, generates pre-signed URLs; Execution Agent downloads via pre-signed URL (no bot token in execution zone)
