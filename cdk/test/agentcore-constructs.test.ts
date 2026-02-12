@@ -182,6 +182,25 @@ describe("ExecutionAgentRuntime", () => {
       expect(Object.keys(resources).length).toBe(0);
     });
 
+    it("should create custom resources to apply policy on both runtime and endpoint", () => {
+      new ExecutionAgentRuntime(stack, "ExecAgentWithCustomPolicy", {
+        agentRuntimeName: "test-with-custom-policy",
+        containerImageUri: "111111111111.dkr.ecr.ap-northeast-1.amazonaws.com/agent:latest",
+        verificationAccountId: "222222222222",
+      });
+      template = Template.fromStack(stack);
+
+      template.resourceCountIs("Custom::AWS", 2);
+      template.hasResourceProperties("Custom::AWS", {
+        Create: Match.serializedJson(
+          Match.objectLike({
+            service: "BedrockAgentCoreControl",
+            action: "putResourcePolicy",
+          })
+        ),
+      });
+    });
+
     it("should output ExecutionRuntimeArn and ExecutionEndpointArn when verificationAccountId is set", () => {
       new ExecutionAgentRuntime(stack, "ExecAgentPolicy", {
         agentRuntimeName: "test-policy",
@@ -193,7 +212,7 @@ describe("ExecutionAgentRuntime", () => {
       const outputs = template.findOutputs("*");
       const descs = Object.values(outputs).map((o: any) => o.Description || "");
       expect(Object.keys(outputs).length).toBe(2);
-      expect(descs.some((d) => d.includes("put-resource-policy"))).toBe(true);
+      expect(descs.some((d) => d.includes("cross-account resource policy"))).toBe(true);
       expect(descs.some((d) => d.includes("Endpoint") && d.includes("ARN"))).toBe(true);
     });
   });

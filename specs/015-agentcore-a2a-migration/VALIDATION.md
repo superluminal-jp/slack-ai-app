@@ -130,15 +130,15 @@ AWS 公式ドキュメント（[Resource-based policies](https://docs.aws.amazon
 
 | 項目 | ベストプラクティス | 本実装 |
 |------|-------------------|--------|
-| **両方にポリシー** | **Runtime と Endpoint の両方**にリソースベースポリシーが必要。どちらかだけでは拒否される | `execution-agent-runtime.ts` でコメントおよび Output で明示；デプロイ後に `put-resource-policy` を Runtime と Endpoint の両方に実行する必要あり |
+| **両方にポリシー** | **Runtime と Endpoint の両方**にリソースベースポリシーが必要。どちらかだけでは拒否される | `ExecutionAgentRuntime` が `AwsCustomResource` で Runtime + Endpoint の `PutResourcePolicy` を自動実行 |
 | **Principal** | 信頼する IAM ロールの ARN を指定（最小権限） | クロスアカウント時は Verification 側の Agent 実行ロール ARN または `AWS`: アカウント ID を指定するポリシーを推奨 |
 | **Confused Deputy 防止** | `aws:SourceAccount` と `aws:SourceArn` で呼び出し元を制限 | リソースポリシー例では `Principal` にロール ARN、必要に応じて `Condition` で `aws:SourceAccount` / `aws:SourceArn` を指定 |
 | **評価順** | 明示的 Deny が最優先；いずれかのポリシーで Allow かつ Deny がなければ許可 | IAM とリソースポリシー両方を考慮済み |
 
 ### クロスアカウント設定手順（Execution Stack が別アカウントの場合）
 
-1. **Execution Stack デプロイ後**、出力の `ExecutionAgentRuntimeArn` と `ExecutionEndpointArn`（DEFAULT）を取得。
-2. **Runtime にリソースポリシーを設定**（Verification アカウントのロールまたはアカウントを許可）:
+1. **Execution Stack デプロイ時**、`verificationAccountId` を指定すると Runtime と Endpoint のリソースポリシーが自動適用される。
+2. （参考）CLI で手動設定する場合は、**Runtime にリソースポリシーを設定**（Verification アカウントのロールまたはアカウントを許可）:
 
    ```bash
    aws bedrock-agentcore-control put-resource-policy \
@@ -164,7 +164,7 @@ AWS 公式ドキュメント（[Resource-based policies](https://docs.aws.amazon
    }
    ```
 
-3. **Endpoint にも同じ Principal でリソースポリシーを設定**（必須）:
+3. （参考）**Endpoint にも同じ Principal でリソースポリシーを設定**（必須）:
 
    ```bash
    aws bedrock-agentcore-control put-resource-policy \
