@@ -1,14 +1,16 @@
 /**
- * CDK Construct for Execution Agent AgentCore Runtime.
+ * Execution Agent AgentCore Runtime construct.
  *
- * Creates an Amazon Bedrock AgentCore Runtime with A2A protocol,
- * ARM64 container configuration, SigV4 authentication, and IAM
- * execution role with Bedrock, ECR, CloudWatch, and X-Ray permissions.
+ * Purpose: Create an Amazon Bedrock AgentCore Runtime (A2A protocol) for the Execution Agent.
+ * ARM64 container, SigV4; Verification Stack invokes via PutResourcePolicy (applied post-deploy).
  *
- * Resource-based policy (PutResourcePolicy) for Verification Agent invocation
- * is applied by deploy-split-stacks.sh post-deploy (Runtime only; Endpoint does
- * not support PutResourcePolicy). Deploy IAM needs
- * bedrock-agentcore-control:PutResourcePolicy.
+ * Responsibilities: Create Runtime CFN resource, IAM execution role (Bedrock/ECR/CloudWatch/X-Ray),
+ * environment variables for container. Resource policy for cross-account invocation is applied by deploy script.
+ *
+ * Inputs: ExecutionAgentRuntimeProps (agentRuntimeName, containerImageUri, lifecycleConfiguration,
+ * bedrockModelId, awsRegion, verificationAccountId).
+ *
+ * Outputs: runtime, executionRole, runtimeArn.
  *
  * @module cdk/lib/execution/constructs/execution-agent-runtime
  */

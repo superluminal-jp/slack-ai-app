@@ -2,6 +2,17 @@ import * as cdk from "aws-cdk-lib";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import { Construct } from "constructs";
 
+/**
+ * Rate limiting DynamoDB table construct.
+ *
+ * Purpose: Store rate-limit state (partition key rate_limit_key) with TTL for automatic cleanup.
+ *
+ * Responsibilities: Create pay-per-request DynamoDB table with TTL; encryption; destroy on stack removal.
+ *
+ * Inputs: None (optional NestedStackProps).
+ *
+ * Outputs: table.
+ */
 export class RateLimit extends Construct {
   public readonly table: dynamodb.Table;
 

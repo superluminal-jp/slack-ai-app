@@ -85,26 +85,33 @@ try:
 except ImportError as e:
     _log("WARN", "document_extractor_import_failed", {"error": str(e)})
 
-    # Define stub functions that return None
+    # Define stub functions that log a warning and return None
     def extract_text_from_pdf(*args, **kwargs):
+        _log("WARN", "stub_extractor_called", {"function": "extract_text_from_pdf", "reason": "document_extractor not available"})
         return None
 
     def extract_text_from_docx(*args, **kwargs):
+        _log("WARN", "stub_extractor_called", {"function": "extract_text_from_docx", "reason": "document_extractor not available"})
         return None
 
     def extract_text_from_csv(*args, **kwargs):
+        _log("WARN", "stub_extractor_called", {"function": "extract_text_from_csv", "reason": "document_extractor not available"})
         return None
 
     def extract_text_from_xlsx(*args, **kwargs):
+        _log("WARN", "stub_extractor_called", {"function": "extract_text_from_xlsx", "reason": "document_extractor not available"})
         return None
 
     def extract_text_from_pptx(*args, **kwargs):
+        _log("WARN", "stub_extractor_called", {"function": "extract_text_from_pptx", "reason": "document_extractor not available"})
         return None
 
     def extract_text_from_txt(*args, **kwargs):
+        _log("WARN", "stub_extractor_called", {"function": "extract_text_from_txt", "reason": "document_extractor not available"})
         return None
 
     def convert_pptx_slides_to_images(*args, **kwargs):
+        _log("WARN", "stub_extractor_called", {"function": "convert_pptx_slides_to_images", "reason": "document_extractor not available"})
         return None
 
 # File size limits (in bytes)

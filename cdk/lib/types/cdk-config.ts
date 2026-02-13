@@ -11,6 +11,8 @@
  * 4. Local config file (cdk.config.local.json - optional)
  * 5. Base config file (cdk.config.json - optional)
  * 6. Default values (in code)
+ *
+ * Key types: CdkConfig (validated shape). Key functions: loadCdkConfig, validateConfig, applyEnvOverrides.
  */
 
 import * as fs from "fs";
@@ -18,7 +20,8 @@ import * as path from "path";
 import { z } from "zod";
 
 /**
- * CDK Configuration Interface
+ * Validated CDK configuration shape. All required fields are enforced by CdkConfigSchema (Zod).
+ * Optional fields (e.g. slackBotToken, executionAgentArn) may be set via env or config file.
  */
 export interface CdkConfig {
   /** AWS Region for deployment */

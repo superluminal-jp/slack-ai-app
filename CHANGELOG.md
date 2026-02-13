@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **CDK Logging, Comments, and Error Handling** (029-cdk-logging-error-handling)
+  - Structured CDK logging: `cdk-logger` (level, phase, context) and `cdk-error` (message, cause, remediation, source) per log-event and error-report contracts
+  - App entry and stack lifecycle logs in `bin/cdk.ts`; entry-point validation throws `CdkError` with remediation hints
+  - `LogRetentionAspect` warns on `CfnLogGroup` without retention; applied at app level
+  - Documented-unit JSDoc (Purpose, Responsibilities, Inputs, Outputs) for execution/verification constructs and key types
+  - Spec, plan, tasks, contracts (log-event, error-report), and quickstart in `specs/029-cdk-logging-error-handling/`
 - **S3-backed Large File Transfer** (028-s3-large-file-transfer)
   - Large file artifacts (> 200 KB) uploaded to S3 `generated_files/` prefix, delivered to Slack Poster via pre-signed URL in SQS message — bypasses SQS 256 KB limit
   - Files <= 200 KB continue inline (contentBase64) for backward compatibility

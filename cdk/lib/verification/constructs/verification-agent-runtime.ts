@@ -1,13 +1,16 @@
 /**
- * CDK Construct for Verification Agent AgentCore Runtime.
+ * Verification Agent AgentCore Runtime construct.
  *
- * Creates an Amazon Bedrock AgentCore Runtime with A2A protocol per AWS documentation:
- * - CreateAgentRuntime: https://docs.aws.amazon.com/bedrock-agentcore-control/latest/APIReference/API_CreateAgentRuntime.html
- * - A2A protocol contract: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-a2a-protocol-contract.html
- * - Host agent or tools: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agents-tools-runtime.html
+ * Purpose: Create an Amazon Bedrock AgentCore Runtime (A2A protocol) for the Verification Agent.
+ * Invokes Execution Agent via A2A; receives Slack events from SlackEventHandler (or AgentInvoker).
  *
- * A2A container: port 9000, ARM64 (see runtime-a2a-protocol-contract). EnvironmentVariables
- * are supported by CreateAgentRuntime and passed to the runtime environment (string-to-string map).
+ * Responsibilities: Create Runtime CFN resource, IAM role, grant DynamoDB/Secrets/S3/SQS; optional
+ * error debug log group and file-exchange bucket. A2A container port 9000, ARM64.
+ *
+ * Inputs: VerificationAgentRuntimeProps (agentRuntimeName, containerImageUri, DynamoDB tables,
+ * secrets, executionAgentArn, optional slackPostRequestQueue, errorDebugLogGroup, fileExchangeBucket).
+ *
+ * Outputs: runtime, executionRole, runtimeArn (verificationAgentRuntimeArn).
  *
  * @module cdk/lib/verification/constructs/verification-agent-runtime
  */

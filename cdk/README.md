@@ -441,3 +441,25 @@ cd lib/verification/agent/verification-agent && python -m pytest tests/ -v  # 93
 | Execution Agent      | pytest    | 110     | FastAPI server, Bedrock, Agent Card, metrics, file artifacts, attachment processing      |
 | Verification Agent   | pytest    | 93      | Security pipeline, A2A client, Slack posting, Agent Card, file posting, S3 file transfer |
 | **Total**            |           | **228** | **All passing**                                                                          |
+
+## Logging and documentation conventions
+
+These conventions define how we log lifecycle events and document code (FR-006) so that operators and maintainers can trace behavior and understand intent without reading implementation details.
+
+### Logging
+
+- **Where**: Use the structured logger in `lib/utils/cdk-logger.ts` for app-entry and lifecycle events (e.g. config load, stack creation). Do not add ad-hoc `console.log`/`console.warn` for operational messages.
+- **Format**: Each log entry has a **level** (`info`, `warn`, `error`, `debug`), a **message**, and optionally a **phase** (e.g. `config`, `synthesis`, `stack`, `construct`) and **context** (key-value object). See `specs/029-cdk-logging-error-handling/contracts/log-event.schema.json`.
+- **No secrets**: Never include secrets, tokens, or PII in log messages or context. Caller is responsible for omitting sensitive data.
+- **Environment**: Logging works when stdout/stderr is redirected or in CI; do not assume an interactive TTY.
+
+### Errors
+
+- **Entry-point validation**: Use `CdkError` from `lib/utils/cdk-error.ts` when throwing from the app entry (e.g. invalid deployment environment, config load failure). Provide a clear **message**, optional **cause**, **remediation** (e.g. allowed values), and **source** (`app`, `stack`, `construct`, `toolkit`). See `specs/029-cdk-logging-error-handling/contracts/error-report.schema.json`.
+- **No secrets**: Never include secrets or PII in error message, cause, or remediation. When wrapping a nested error, do not copy raw error text that might contain secrets.
+
+### Comments and JSDoc
+
+- **Module level**: Every top-level stack and construct module should have a short JSDoc block describing (1) **purpose** (what this unit does and why it exists) and (2) **main responsibilities**. Optionally list key inputs/outputs.
+- **Function/API level**: Public APIs (constructs, props interfaces, notable functions) should have JSDoc with a summary and, where relevant, `@param` and `@returns`. Document non-obvious configuration choices, ordering, and constraints at the point of use.
+- **Style**: Use a single, consistent style across the CDK codebase so that maintainers know where to find explanations (module vs. function level).

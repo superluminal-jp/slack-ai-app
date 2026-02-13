@@ -7,6 +7,7 @@ Configure on first import.
 
 import json
 import logging
+import os
 import sys
 import time
 from typing import Any
@@ -30,7 +31,7 @@ def _setup() -> None:
     logger = logging.getLogger(LOGGER_NAME)
     if logger.handlers:
         return
-    logger.setLevel(logging.INFO)
+    logger.setLevel(getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO))
     logger.propagate = False
     handler = _StdoutHandler()
     handler.setFormatter(logging.Formatter("%(message)s"))

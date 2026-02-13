@@ -7,15 +7,23 @@ import * as path from "path";
 import { execSync } from "child_process";
 import * as fs from "fs";
 
+/**
+ * Slack Poster construct (019): SQS queue + Lambda for posting messages to Slack.
+ *
+ * Purpose: Verification Agent sends post requests to this queue; Lambda consumes and calls Slack API.
+ * Decouples agent from Slack API and allows retries.
+ *
+ * Responsibilities: Create SQS queue and Lambda; Lambda has Slack OAuth token and posts to channels.
+ *
+ * Inputs: SlackPosterProps (stackName for queue naming).
+ *
+ * Outputs: queue, function.
+ */
 export interface SlackPosterProps {
   /** Stack name for queue naming */
   stackName: string;
 }
 
-/**
- * Slack Poster (019): SQS queue + Lambda that posts to Slack.
- * Verification Agent sends post requests to this queue instead of calling Slack API.
- */
 export class SlackPoster extends Construct {
   public readonly queue: sqs.IQueue;
   public readonly function: lambda.Function;

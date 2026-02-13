@@ -5,17 +5,15 @@ import { Construct } from "constructs";
 /**
  * S3 bucket for temporary file exchange between verification and execution zones.
  *
- * Files are uploaded by the verification agent after downloading from Slack,
- * then downloaded by the execution agent via pre-signed GET URLs.
- * Objects are cleaned up immediately after processing; 1-day lifecycle rule
- * acts as a safety net for orphaned objects.
+ * Purpose: Hold files uploaded by the verification agent (from Slack) for the execution agent
+ * to download via pre-signed URLs; lifecycle rules and auto-delete limit exposure.
  *
- * Best practices (per AWS S3 security guidance):
- * - SSE-S3 encryption at rest
- * - Block all public access (BlockPublicAcls, BlockPublicPolicy, IgnorePublicAcls, RestrictPublicBuckets)
- * - Enforce SSL (deny non-HTTPS requests)
- * - Lifecycle rules on attachments/ and generated_files/ for automatic cleanup of orphans
- * - Auto-delete objects on stack removal (dev)
+ * Responsibilities: Create bucket with SSE-S3, block public access, enforce SSL; lifecycle
+ * on attachments/ and generated_files/; auto-delete objects on stack removal.
+ *
+ * Inputs: None (construct id only).
+ *
+ * Outputs: bucket, bucketName, bucketArn.
  */
 export class FileExchangeBucket extends Construct {
   /** The S3 bucket resource. */

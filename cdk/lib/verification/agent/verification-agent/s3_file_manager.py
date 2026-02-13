@@ -177,13 +177,24 @@ def upload_file_to_s3(
     prefix = FILE_EXCHANGE_PREFIX.rstrip("/")
     key = f"{prefix}/{correlation_id}/{file_id}/{file_name}"
 
-    client = _s3_client()
-    client.put_object(
-        Bucket=bucket,
-        Key=key,
-        Body=file_bytes,
-        ContentType=mimetype or "application/octet-stream",
-    )
+    try:
+        client = _s3_client()
+        client.put_object(
+            Bucket=bucket,
+            Key=key,
+            Body=file_bytes,
+            ContentType=mimetype or "application/octet-stream",
+        )
+    except ClientError as e:
+        _log("ERROR", "s3_upload_failed", {
+            "correlation_id": correlation_id,
+            "file_id": file_id,
+            "key": key,
+            "size": len(file_bytes),
+            "error": str(e),
+            "error_code": e.response.get("Error", {}).get("Code"),
+        })
+        raise
 
     _log("INFO", "s3_upload_success", {
         "correlation_id": correlation_id,

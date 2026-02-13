@@ -1,8 +1,14 @@
 /**
- * CDK Construct for Execution Agent ECR Docker Image.
+ * Execution Agent ECR Docker Image construct.
  *
- * Uses DockerImageAsset to build and push the Execution Agent
- * container image to ECR with ARM64 platform support.
+ * Purpose: Build and push the Execution Agent container image to ECR for use by
+ * AgentCore Runtime. ARM64 only (required by AgentCore).
+ *
+ * Responsibilities: Build from agent Dockerfile, push to ECR, expose imageUri for runtime.
+ *
+ * Inputs: ExecutionAgentEcrProps (optional dockerfilePath).
+ *
+ * Outputs: imageAsset, imageUri (for ExecutionAgentRuntime containerImageUri).
  *
  * @module cdk/lib/execution/constructs/execution-agent-ecr
  */
