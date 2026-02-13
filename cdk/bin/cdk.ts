@@ -174,14 +174,14 @@ const executionStackName = `${baseExecutionStackName}-${environmentSuffix}`;
 const verificationAccountId = getConfigString("verificationAccountId");
 const executionAccountId = getConfigString("executionAccountId");
 
-// AgentCore configuration
+// AgentCore configuration (default names include env suffix so Dev and Prod can coexist in same account)
 const executionAgentName = getConfigString(
   "executionAgentName",
-  "SlackAI_ExecutionAgent"
+  `SlackAI_ExecutionAgent_${environmentSuffix}`
 );
 const verificationAgentName = getConfigString(
   "verificationAgentName",
-  "SlackAI_VerificationAgent"
+  `SlackAI_VerificationAgent_${environmentSuffix}`
 );
 const executionAgentArn = getConfigString("executionAgentArn");
 
