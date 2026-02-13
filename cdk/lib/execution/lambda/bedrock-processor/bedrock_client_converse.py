@@ -15,10 +15,19 @@ Note: Migrated from InvokeModel API to Converse API for better image handling.
 """
 
 import os
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 import boto3
 from botocore.exceptions import ClientError
+
+from logger_util import get_logger, log
+
+_logger = get_logger()
+
+
+def _log(level: str, event_type: str, data: dict) -> None:
+    """Structured JSON logging for CloudWatch (searchable, parseable)."""
+    log(_logger, level, event_type, {**data, "component": "bedrock_client"}, service="execution-agent")
 
 
 # Model configuration
@@ -67,6 +76,124 @@ def get_max_tokens_for_model(model_id: str) -> int:
     
     # Default: 4096 tokens (safe fallback for unknown models)
     return 4096
+
+
+# MIME to Bedrock document format (per data-model; PPTX not native)
+MIME_TO_DOCUMENT_FORMAT = {
+    "application/pdf": "pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    "text/csv": "csv",
+    "text/plain": "txt",
+}
+# PPTX -> text extraction only (not in map)
+
+
+def _sanitize_document_name(file_name: str, max_length: int = 100) -> str:
+    """
+    Sanitize document name for Bedrock: alphanumeric, hyphens, spaces only.
+    Prevents prompt injection via filename. Strip extension, truncate.
+    """
+    import re
+    base = file_name.rsplit(".", 1)[0] if "." in file_name else file_name
+    sanitized = re.sub(r"[^a-zA-Z0-9\s\-()\[\]]", "-", base)
+    sanitized = re.sub(r"\s+", " ", sanitized).strip() or "document"
+    return sanitized[:max_length]
+
+
+def prepare_document_content_converse(
+    raw_bytes: bytes,
+    mimetype: str,
+    file_name: str,
+) -> Optional[Dict[str, Any]]:
+    """
+    Build Bedrock Converse API document content block for native document support.
+
+    Supported formats (per data-model): pdf, docx, xlsx, csv, txt.
+    PPTX returns None to trigger text extraction fallback.
+
+    Args:
+        raw_bytes: Raw document file bytes.
+        mimetype: MIME type (e.g. application/pdf).
+        file_name: Original filename (sanitized for name field).
+
+    Returns:
+        Document content block {"document": {"name", "format", "source": {"bytes"}}}
+        or None for unsupported formats (e.g. PPTX).
+    """
+    if not raw_bytes or not isinstance(raw_bytes, bytes):
+        return None
+
+    format_val = MIME_TO_DOCUMENT_FORMAT.get(mimetype)
+    if format_val is None:
+        return None
+
+    name = _sanitize_document_name(file_name)
+    return {
+        "document": {
+            "name": name,
+            "format": format_val,
+            "source": {"bytes": raw_bytes},
+        },
+    }
+
+
+def build_content_blocks(
+    prompt: str,
+    documents: Optional[List[Dict[str, Any]]] = None,
+    document_texts: Optional[List[str]] = None,
+    images: Optional[List[bytes]] = None,
+    image_formats: Optional[List[str]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Build content blocks for Bedrock Converse / Strands Agent multimodal input.
+
+    Args:
+        prompt: User message text
+        documents: Native document blocks [{bytes, format, name}]
+        document_texts: Fallback text from documents (e.g. PPTX)
+        images: Image bytes list
+        image_formats: Format per image (png, jpeg, gif, webp)
+
+    Returns:
+        List of content blocks (text, document, image)
+    """
+    content_parts: List[Dict[str, Any]] = []
+    if prompt and prompt.strip():
+        content_parts.append({"text": prompt.strip()})
+    elif documents:
+        content_parts.append({"text": "Please summarize or analyze the attached document(s)."})
+
+    if document_texts:
+        for doc_text in document_texts:
+            if doc_text:
+                content_parts.append({"text": f"\n\n[Document content]\n{doc_text}"})
+
+    if documents:
+        for doc in documents:
+            raw_bytes = doc.get("bytes")
+            format_val = doc.get("format")
+            name = doc.get("name", "document")
+            if raw_bytes and format_val:
+                safe_name = _sanitize_document_name(name)
+                content_parts.append({
+                    "document": {
+                        "name": safe_name,
+                        "format": format_val,
+                        "source": {"bytes": raw_bytes},
+                    },
+                })
+
+    if images:
+        formats = image_formats if image_formats else ["png"] * len(images)
+        for image_bytes, image_format in zip(images, formats):
+            content_parts.append({
+                "image": {
+                    "format": image_format,
+                    "source": {"bytes": image_bytes},
+                },
+            })
+    return content_parts
 
 
 def prepare_image_content_converse(image_bytes: bytes, mime_type: str = "image/png") -> Dict[str, Any]:
@@ -210,31 +337,14 @@ def invoke_bedrock(
         service_name="bedrock-runtime", region_name=aws_region
     )
     
-    # Build content array for current message (text + images + document texts)
-    content_parts = []
-    
-    # Add text prompt if present
-    if prompt and prompt.strip():
-        content_parts.append({"text": prompt.strip()})
-    
-    # Add document texts if present
-    if document_texts:
-        for doc_text in document_texts:
-            if doc_text:
-                content_parts.append({"text": f"\n\n[Document content]\n{doc_text}"})
-    
-    # Add images if present (binary data, no Base64 encoding)
-    if images:
-        formats = image_formats if image_formats else ["png"] * len(images)
-        for image_bytes, image_format in zip(images, formats):
-            content_parts.append({
-                "image": {
-                    "format": image_format,
-                    "source": {
-                        "bytes": image_bytes  # Binary data directly
-                    }
-                }
-            })
+    # Build content array: text first, then document blocks, then images
+    content_parts = build_content_blocks(
+        prompt=prompt,
+        documents=documents,
+        document_texts=document_texts,
+        images=images,
+        image_formats=image_formats,
+    )
     
     # Build messages array with conversation history
     messages = []
@@ -296,17 +406,6 @@ def invoke_bedrock(
         print(f"Usage: {response.get('usage')}")
         
         # Extract AI-generated text from response
-        # Converse API response format:
-        # {
-        #   "output": {
-        #     "message": {
-        #       "role": "assistant",
-        #       "content": [{"text": "..."}]
-        #     }
-        #   },
-        #   "stopReason": "end_turn",
-        #   "usage": {...}
-        # }
         output = response.get("output", {})
         message = output.get("message", {})
         content_blocks = message.get("content", [])
@@ -351,97 +450,3 @@ def invoke_bedrock(
         # Unexpected errors
         print(f"Unexpected error invoking Bedrock (Converse API): {str(e)}")
         raise
-
-
-def _detect_prompt_injection(prompt: str) -> tuple[bool, Optional[str]]:
-    """
-    Detect potential prompt injection attacks.
-    
-    Checks for common prompt injection patterns:
-    - "ignore previous instructions"
-    - "system prompt"
-    - "forget everything"
-    - "new instructions"
-    - "override"
-    - "jailbreak"
-    
-    Args:
-        prompt: User message text
-        
-    Returns:
-        Tuple of (is_suspicious: bool, reason: Optional[str])
-        - is_suspicious: True if prompt injection pattern detected
-        - reason: Reason for suspicion (None if not suspicious)
-    """
-    if not prompt:
-        return False, None
-    
-    prompt_lower = prompt.lower()
-    
-    # Common prompt injection patterns (case-insensitive)
-    suspicious_patterns = [
-        ("ignore previous", "Attempt to ignore previous instructions"),
-        ("ignore all previous", "Attempt to ignore all previous instructions"),
-        ("system prompt", "Attempt to access system prompt"),
-        ("forget everything", "Attempt to reset context"),
-        ("new instructions", "Attempt to provide new instructions"),
-        ("override", "Attempt to override system behavior"),
-        ("jailbreak", "Attempt to jailbreak the model"),
-        ("you are now", "Attempt to change model behavior"),
-        ("act as", "Attempt to change model role"),
-        ("pretend to be", "Attempt to change model role"),
-    ]
-    
-    for pattern, reason in suspicious_patterns:
-        if pattern in prompt_lower:
-            return True, reason
-    
-    return False, None
-
-
-def validate_prompt(prompt: str, max_length: int = 4000) -> tuple[bool, Optional[str]]:
-    """
-    Validate user prompt before sending to Bedrock.
-    
-    Args:
-        prompt: User message text
-        max_length: Maximum allowed prompt length (default: 4000 chars)
-        
-    Returns:
-        tuple: (is_valid: bool, error_message: Optional[str])
-        
-    Example:
-        >>> is_valid, error = validate_prompt("Hello")
-        >>> print(is_valid)
-        True
-        >>> is_valid, error = validate_prompt("")
-        >>> print(error)
-        "Please send me a message and I'll respond!"
-    """
-    # Check if prompt is empty
-    if not prompt or not prompt.strip():
-        return (
-            False,
-            "Please send me a message and I'll respond! For example, 'Hello' or 'What can you do?'",
-        )
-    
-    # Check if prompt exceeds maximum length
-    if len(prompt) > max_length:
-        return (
-            False,
-            f"Your message is too long ({len(prompt)} characters). Please keep it under {max_length} characters.",
-        )
-    
-    # Check for prompt injection patterns
-    is_suspicious, reason = _detect_prompt_injection(prompt)
-    if is_suspicious:
-        # Log security event but don't reveal the specific pattern to user
-        # This prevents attackers from learning which patterns are detected
-        return (
-            False,
-            "Your message contains potentially harmful content. Please rephrase your request.",
-        )
-    
-    # All validations passed
-    return True, None
-

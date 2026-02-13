@@ -305,10 +305,13 @@ deploy_verification_stack() {
     echo "${role_arn}"
 }
 
-update_execution_stack() {
-    log_info "=========================================="
-    log_info "Phase 3: Updating Execution Stack Resource Policy"
-    log_info "=========================================="
+# Apply resource policy on Execution Agent Runtime so Verification Agent can invoke it.
+# CloudFormation does not support RuntimeResourcePolicy; use Control Plane API.
+# Deploy IAM needs bedrock-agentcore-control:PutResourcePolicy.
+# Note: PutResourcePolicy is only supported on Runtime resources, not Endpoint resources.
+apply_execution_agent_resource_policy() {
+    local exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn" 2>/dev/null || echo "")
+    [[ -z "${exec_agent_arn}" ]] && return 0
 
     cd "${PROJECT_ROOT}"
     cd "${CDK_DIR}"
@@ -320,9 +323,143 @@ update_execution_stack() {
     fi
     npx cdk deploy "${EXECUTION_STACK_NAME}" ${profile_args} --require-approval never --context deploymentEnv="${DEPLOYMENT_ENV}"
 
-    cd "${PROJECT_ROOT}"
+    # Principal: Verification Agent role (verification account for cross-account; caller account for same-account)
+    local verification_account=$(get_config_value "verificationAccountId" || echo "")
+    [[ -z "${verification_account}" ]] && verification_account="${account_id}"
+    local verify_role_arn="arn:aws:iam::${verification_account}:role/SlackAI_VerificationAgent-ExecutionRole"
 
-    log_success "Execution Stack updated with resource policy"
+    log_info "Applying resource policy: Execution Agent allows Verification Agent role"
+    # Only pass AWS_PROFILE to subprocess when non-empty (empty string causes ProfileNotFound)
+    local env_prefix="AWS_REGION=${AWS_REGION} VERIFICATION_ACCOUNT=${verification_account}"
+    if [[ -n "${AWS_PROFILE}" ]]; then
+        env_prefix="${env_prefix} AWS_PROFILE=${AWS_PROFILE}"
+    fi
+    env ${env_prefix} python3 -c "
+import boto3
+import json
+import os
+
+region = os.environ.get('AWS_REGION', 'ap-northeast-1')
+verification_account = os.environ.get('VERIFICATION_ACCOUNT', '')
+profile = os.environ.get('AWS_PROFILE')
+session = boto3.Session(profile_name=profile, region_name=region) if profile else boto3.Session(region_name=region)
+client = session.client('bedrock-agentcore-control', region_name=region)
+
+runtime_arn = '${exec_agent_arn}'
+principal = '${verify_role_arn}'
+
+# Per AWS best practices: Sid, Condition aws:SourceAccount for confused deputy prevention.
+# Resource must match the resourceArn parameter exactly (wildcard '*' is rejected).
+policy = {
+    'Version': '2012-10-17',
+    'Statement': [{
+        'Sid': 'AllowVerificationAgentInvoke',
+        'Effect': 'Allow',
+        'Principal': {'AWS': principal},
+        'Action': 'bedrock-agentcore:InvokeAgentRuntime',
+        'Resource': runtime_arn,
+        'Condition': {'StringEquals': {'aws:SourceAccount': verification_account}}
+    }]
+}
+policy_json = json.dumps(policy)
+
+client.put_resource_policy(resourceArn=runtime_arn, policy=policy_json)
+print('  Runtime policy applied')
+" 2>&1 && log_success "Execution Agent resource policy applied" || log_warning "Could not apply resource policy (check bedrock-agentcore-control PutResourcePolicy permissions)"
+}
+
+# Extract AgentCore Runtime ID from ARN (arn:...:runtime/Name-xxxxx -> Name-xxxxx)
+# Control Plane API uses agent-runtime-id, not ARN; status is READY (not ACTIVE).
+get_agent_runtime_id_from_arn() {
+    local arn="$1"
+    [[ -n "${arn}" ]] && echo "${arn##*/}" || echo ""
+}
+
+validate_agentcore() {
+    log_info "=========================================="
+    log_info "AgentCore Validation"
+    log_info "=========================================="
+
+    local profile_args=""
+    if [[ -n "${AWS_PROFILE}" ]]; then
+        profile_args="--profile ${AWS_PROFILE}"
+    fi
+
+    # Control Plane: bedrock-agentcore-control get-agent-runtime --agent-runtime-id <id>
+    # Status values: CREATING, CREATE_FAILED, UPDATING, UPDATE_FAILED, READY, DELETING (console "Ready" = READY)
+    local target_status="READY"
+
+    # Check Execution Agent Runtime status
+    local exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn" 2>/dev/null || echo "")
+    if [[ -n "${exec_agent_arn}" ]]; then
+        local exec_id=$(get_agent_runtime_id_from_arn "${exec_agent_arn}")
+        if [[ -n "${exec_id}" ]]; then
+            log_info "Checking Execution Agent Runtime status (id: ${exec_id})..."
+            local max_wait=120
+            local elapsed=0
+            local interval=10
+
+            while [[ ${elapsed} -lt ${max_wait} ]]; do
+                local status=$(aws bedrock-agentcore-control get-agent-runtime \
+                    --agent-runtime-id "${exec_id}" \
+                    --region "${AWS_REGION}" \
+                    ${profile_args} \
+                    --query 'status' --output text 2>/dev/null || echo "UNKNOWN")
+
+                if [[ "${status}" == "${target_status}" ]]; then
+                    log_success "Execution Agent Runtime is ${target_status}"
+                    break
+                fi
+
+                log_info "Execution Agent status: ${status}. Waiting ${interval}s... (${elapsed}/${max_wait}s)"
+                sleep ${interval}
+                elapsed=$((elapsed + interval))
+            done
+
+            if [[ ${elapsed} -ge ${max_wait} ]]; then
+                log_warning "Execution Agent did not reach ${target_status} within ${max_wait}s. Current: ${status}"
+            fi
+        else
+            log_warning "Could not extract Execution Agent runtime ID from ARN"
+        fi
+    fi
+
+    # Check Verification Agent Runtime status
+    local verify_agent_arn=$(get_stack_output "${VERIFICATION_STACK_NAME}" "VerificationAgentRuntimeArn" 2>/dev/null || echo "")
+    if [[ -n "${verify_agent_arn}" ]]; then
+        local verify_id=$(get_agent_runtime_id_from_arn "${verify_agent_arn}")
+        if [[ -n "${verify_id}" ]]; then
+            log_info "Checking Verification Agent Runtime status (id: ${verify_id})..."
+            local max_wait=120
+            local elapsed=0
+            local interval=10
+
+            while [[ ${elapsed} -lt ${max_wait} ]]; do
+                local status=$(aws bedrock-agentcore-control get-agent-runtime \
+                    --agent-runtime-id "${verify_id}" \
+                    --region "${AWS_REGION}" \
+                    ${profile_args} \
+                    --query 'status' --output text 2>/dev/null || echo "UNKNOWN")
+
+                if [[ "${status}" == "${target_status}" ]]; then
+                    log_success "Verification Agent Runtime is ${target_status}"
+                    break
+                fi
+
+                log_info "Verification Agent status: ${status}. Waiting ${interval}s... (${elapsed}/${max_wait}s)"
+                sleep ${interval}
+                elapsed=$((elapsed + interval))
+            done
+
+            if [[ ${elapsed} -ge ${max_wait} ]]; then
+                log_warning "Verification Agent did not reach ${target_status} within ${max_wait}s. Current: ${status}"
+            fi
+        else
+            log_warning "Could not extract Verification Agent runtime ID from ARN"
+        fi
+    fi
+
+    log_success "AgentCore validation complete."
 }
 
 print_summary() {

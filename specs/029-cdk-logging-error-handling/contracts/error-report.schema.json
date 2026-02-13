@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "specs/029-cdk-logging-error-handling/contracts/error-report.schema.json",
+  "title": "ErrorReport",
+  "description": "User-facing error outcome for validation or deployment failure. Must not contain secrets.",
+  "type": "object",
+  "required": ["message"],
+  "properties": {
+    "message": {
+      "type": "string",
+      "description": "Clear, actionable description of the failure; no secrets"
+    },
+    "cause": {
+      "type": "string",
+      "description": "Short technical cause; safe to display"
+    },
+    "resourceId": {
+      "type": "string",
+      "description": "Construct path or logical id for locating the failure (FR-007)"
+    },
+    "remediation": {
+      "type": "string",
+      "description": "Suggested next step where feasible"
+    },
+    "source": {
+      "type": "string",
+      "enum": ["app", "stack", "construct", "toolkit"],
+      "description": "Origin of the error"
+    }
+  }
+}

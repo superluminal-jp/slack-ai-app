@@ -13,15 +13,18 @@ Reference:
 - AWS Bedrock Converse: https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference.html
 """
 
-from typing import List, Dict, Optional, Any
-from file_downloader import download_file, get_file_download_url
-from logger import (
-    get_correlation_id,
-    log_info,
-    log_warn,
-    log_error,
-    log_exception,
-)
+import json
+from typing import Any, Dict, List, Optional
+
+from file_downloader import download_file, get_file_download_url, download_from_presigned_url
+from logger_util import get_logger, log
+
+_logger = get_logger()
+
+
+def _log(level: str, event_type: str, data: dict) -> None:
+    """Structured JSON logging for CloudWatch."""
+    log(_logger, level, event_type, data, service="execution-agent-attachment")
 
 
 # Supported image MIME types (Bedrock Converse API supported formats)
@@ -76,28 +79,29 @@ try:
         convert_pptx_slides_to_images,
     )
 except ImportError as e:
-    # If document extractor modules are not available, use None functions
-    # Import logger here to avoid circular dependency
-    from logger import log_warn
-    log_warn(
-        "document_extractor_import_failed",
-        {},
-        e,
-    )
-    # Define stub functions that return None
+    _log("WARN", "document_extractor_import_failed", {"error": str(e)})
+
+    # Define stub functions that log a warning and return None
     def extract_text_from_pdf(*args, **kwargs):
+        _log("WARN", "stub_extractor_called", {"function": "extract_text_from_pdf", "reason": "document_extractor not available"})
         return None
     def extract_text_from_docx(*args, **kwargs):
+        _log("WARN", "stub_extractor_called", {"function": "extract_text_from_docx", "reason": "document_extractor not available"})
         return None
     def extract_text_from_csv(*args, **kwargs):
+        _log("WARN", "stub_extractor_called", {"function": "extract_text_from_csv", "reason": "document_extractor not available"})
         return None
     def extract_text_from_xlsx(*args, **kwargs):
+        _log("WARN", "stub_extractor_called", {"function": "extract_text_from_xlsx", "reason": "document_extractor not available"})
         return None
     def extract_text_from_pptx(*args, **kwargs):
+        _log("WARN", "stub_extractor_called", {"function": "extract_text_from_pptx", "reason": "document_extractor not available"})
         return None
     def extract_text_from_txt(*args, **kwargs):
+        _log("WARN", "stub_extractor_called", {"function": "extract_text_from_txt", "reason": "document_extractor not available"})
         return None
     def convert_pptx_slides_to_images(*args, **kwargs):
+        _log("WARN", "stub_extractor_called", {"function": "convert_pptx_slides_to_images", "reason": "document_extractor not available"})
         return None
 
 # File size limits (in bytes)

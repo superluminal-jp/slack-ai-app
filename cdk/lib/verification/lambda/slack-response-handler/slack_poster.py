@@ -7,9 +7,41 @@ Includes message size splitting for messages exceeding Slack's 4000 character li
 
 import re
 from typing import Optional, List
+
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
-from logger import log_info, log_error, log_exception, log_warn
+
+from logger_util import get_logger, log
+
+_logger = get_logger()
+
+
+def _log(level: str, event_type: str, data: Optional[dict] = None, exc: Optional[Exception] = None) -> None:
+    d = dict(data) if data else {}
+    if exc:
+        d["exception"] = str(exc)
+    log(_logger, level, event_type, d, service="verification-agent")
+
+
+def log_info(event_type: str, data: Optional[dict] = None) -> None:
+    _log("INFO", event_type, data)
+
+
+def log_warn(event_type: str, data: Optional[dict] = None, exc: Optional[Exception] = None) -> None:
+    _log("WARN", event_type, data, exc)
+
+
+def log_error(
+    event_type: str,
+    data: Optional[dict] = None,
+    exc: Optional[Exception] = None,
+    include_stack_trace: bool = True,
+) -> None:
+    _log("ERROR", event_type, data, exc)
+
+
+def log_exception(event_type: str, data: Optional[dict], exc: Exception) -> None:
+    _log("ERROR", event_type, data, exc)
 
 
 def _is_valid_timestamp(ts: Optional[str]) -> bool:

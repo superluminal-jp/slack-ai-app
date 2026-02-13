@@ -111,13 +111,18 @@ The system processes requests through two independent zones that can be deployed
 ┌─────────────────────────────────────────────────────────────┐
 │ Verification Zone                                            │
 │ ┌─────────────────────────────────────────────────────────┐ │
-│ │ SlackEventHandler (Function URL)                        │ │
-│ │ - Signature verification (Key 1)                       │ │
-│ │ - Existence Check via Slack API (Key 2)                │ │
-│ │ - Whitelist authorization                             │ │
-│ │ - Event deduplication                                  │ │
-│ │ [2] → Immediate response "Processing..." (<3 sec)      │ │
-│ │ [3] → Calls Execution API (IAM authenticated)          │ │
+│ │ SlackEventHandler Lambda (Function URL)                 │ │
+│ │ - Signature verification, reaction (👀 on receive, ✅ on reply) │ │
+│ │ - AgentCore A2A path (only path)                          │ │
+│ │ [2] InvokeAgentRuntime (SigV4)                          │ │
+│ └──────────────────────┬──────────────────────────────────┘ │
+│                        │                                     │
+│ ┌─────────────────────▼──────────────────────────────────┐ │
+│ │ Verification Agent (AgentCore Runtime, ARM64)           │ │
+│ │ - A2A protocol (raw JSON POST, port 9000)              │ │
+│ │ - Security pipeline: existence → auth → rate limit      │ │
+│ │ - Agent Card: /.well-known/agent-card.json              │ │
+│ │ [3] InvokeAgentRuntime (SigV4, cross-account)           │ │
 │ └──────────────────────┬──────────────────────────────────┘ │
 └────────────────────────┼────────────────────────────────────┘
                          │ [3] API Gateway (IAM auth)
@@ -549,6 +554,41 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## Recent Updates
 
+- **2026-02-11**: Reaction swap on reply (eyes→checkmark)
+  - When posting AI response to Slack, the system removes 👀 and adds ✅ on the original message for clear completion feedback
+  - Slack Poster Lambda performs reaction swap after successful post; `message_ts` added to SQS payload for reaction target
+- **2026-02-11**: Slack file attachment support (024)
+  - S3-based secure file transfer: Verification Agent downloads from Slack, uploads to S3, generates pre-signed URLs; Execution Agent downloads via pre-signed URL (no bot token in execution zone)
+  - Document Q&A: PDF, DOCX, XLSX, CSV, TXT via native Bedrock document blocks; PPTX via text extraction fallback
+  - Image analysis: PNG, JPEG, GIF, WebP via Bedrock image blocks
+  - Multiple files: up to 5 files per message; limits 10 MB/image, 5 MB/document
+  - User-friendly error messages (FR-013), structured logging with correlation IDs (FR-014)
+  - Test counts: Verification 93, Execution 110
+- **2026-02-10**: Normal flow validation test suite (022)
+  - Added 20 TDD tests across 4 new test classes in `tests/test_main.py` for the normal pipeline flow (delegation to Execution Agent)
+  - `Test022NormalFlowDelegation` (5 tests) — verifies echo off triggers execution delegation without echo prefix
+  - `Test022SecurityCheckPipeline` (5 tests) — verifies security check ordering: existence check → authorization → rate limit
+  - `Test022ExecutionErrorPaths` (6 tests) — verifies error handling with no internal detail leakage and `is_processing` reset
+  - `Test022StructuredLogging` (4 tests) — verifies all logs are valid JSON with correlation IDs and no token leakage
+  - pipeline.py enhancements: JSONDecodeError handling, Base64 decode logging
+  - Test counts: Verification 83 (was 63), pipeline.py coverage 94%
+- **2026-02-09**: Strands migration cleanup (021)
+  - Migrated both agents from `bedrock-agentcore` SDK to FastAPI + uvicorn with direct route definitions
+  - CloudWatch IAM namespace fix (`StringLike` with `SlackAI-*` pattern)
+  - Dependency version pinning (`~=`), E2E test suite
+  - Test counts: Verification 63, Execution 79, CDK 25
+- **2026-02-08**: A2A file to Slack (014)
+  - Execution Agent returns AI-generated files (CSV/JSON/text) as `generated_file` artifact
+  - Verification Agent parses artifact and posts to thread (text then file) via `post_file_to_slack` (Slack SDK files_upload_v2)
+  - File limits: 5 MB max, MIME types text/csv, application/json, text/plain. Bot scope `files:write` required
+  - Spec and contracts in `specs/014-a2a-file-to-slack/`; zone-communication §6.5 documents the flow
+- **2026-02-07**: Implemented AgentCore A2A inter-zone communication
+  - Amazon Bedrock AgentCore Runtime with A2A protocol for inter-zone communication
+  - Containerized Verification Agent / Execution Agent (ARM64 Docker)
+  - SigV4 authentication + resource-based policies for cross-account support
+  - Agent Card (`/.well-known/agent-card.json`) for Agent Discovery
+  - AgentCore A2A as the only communication path
+  - 97 TDD tests all passing (Python 73 + CDK/Jest 24, since expanded to 187+)
 - **2025-12-28**: Added dual authentication support (IAM and API key) for Execution API Gateway
   - Default authentication method: API key (configurable via `EXECUTION_API_AUTH_METHOD`)
   - API keys stored securely in AWS Secrets Manager

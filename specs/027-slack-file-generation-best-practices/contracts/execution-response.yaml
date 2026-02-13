@@ -1,0 +1,60 @@
+# Execution Agent Response Contract
+# Execution Agent → Verification Agent
+# Feature: 027-slack-file-generation-best-practices
+# Inherits from: 025-slack-file-generation (no structural changes)
+
+ExecutionResponse:
+  type: object
+  required:
+    - status
+    - correlation_id
+  properties:
+    status:
+      type: string
+      enum: [success, error]
+      description: Overall processing status
+    response_text:
+      type: string
+      description: AI-generated response text (includes file description when file_artifact present)
+    correlation_id:
+      type: string
+      format: uuid
+      description: Request correlation ID (echoed from request)
+    channel:
+      type: string
+      description: Slack channel ID (echoed from request)
+    thread_ts:
+      type: string
+      description: Slack thread timestamp (echoed from request)
+    file_artifact:
+      $ref: '#/FileArtifact'
+      description: Generated file (when tool creates a file)
+    error_code:
+      type: string
+      description: Error identifier (when status=error)
+    error_message:
+      type: string
+      description: User-friendly error message in Japanese (when status=error)
+
+FileArtifact:
+  type: object
+  properties:
+    contentBase64:
+      type: string
+      format: byte
+      description: Base64-encoded file content
+    fileName:
+      type: string
+      description: Output filename with extension (sanitized per 027)
+    mimeType:
+      type: string
+      description: Output MIME type
+      enum:
+        - text/csv
+        - text/plain
+        - application/json
+        - text/markdown
+        - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+        - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+        - application/vnd.openxmlformats-officedocument.presentationml.presentation
+        - image/png

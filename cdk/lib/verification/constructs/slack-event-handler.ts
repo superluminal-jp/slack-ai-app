@@ -7,6 +7,19 @@ import * as path from "path";
 import { execSync } from "child_process";
 import * as fs from "fs";
 
+/**
+ * Slack Event Handler Lambda construct.
+ *
+ * Purpose: Receive Slack events (Function URL), validate signature and token, then invoke
+ * Verification Agent (A2A) or enqueue to SQS for async invocation.
+ *
+ * Responsibilities: Lambda with Function URL; Slack signing verification; DynamoDB/Secrets
+ * integration; invoke AgentCore or push to agentInvocationQueue.
+ *
+ * Inputs: SlackEventHandlerProps (secrets, table names, verificationAgentArn, region, model, optional queue).
+ *
+ * Outputs: function, functionUrl.
+ */
 export interface SlackEventHandlerProps {
   slackSigningSecret: secretsmanager.ISecret; // Slack app signing secret from Secrets Manager
   slackBotTokenSecret: secretsmanager.ISecret; // Bot OAuth token from Secrets Manager
@@ -125,9 +138,11 @@ export class SlackEventHandler extends Construct {
       })
     );
 
-    // Grant Lambda function permission to read API key from Secrets Manager (for API key authentication)
-    // The secret name follows the pattern: execution-api-key (or can be customized)
-    // This permission allows reading the API key secret for Execution API Gateway authentication
+    // Grant AgentCore Runtime invocation permission (A2A path).
+    // 026 US1 (T007): Least privilege — scoped to specific ARNs per audit-iam-bedrock.md.
+    // Per AWS: both runtime and endpoint may be evaluated for InvokeAgentRuntime.
+    // https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/resource-based-policies.html
+    const runtimeEndpointArn = `${props.verificationAgentArn}/runtime-endpoint/DEFAULT`;
     this.function.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,

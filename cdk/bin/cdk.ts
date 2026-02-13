@@ -6,10 +6,22 @@
  * It handles configuration loading, validation, and stack creation for both
  * ExecutionStack and VerificationStack.
  *
+ * Configuration priority (highest first): (1) Environment variables (e.g. DEPLOYMENT_ENV, SLACK_BOT_TOKEN),
+ * (2) Command-line context (--context key=value), (3) Environment-specific config file (cdk.config.{env}.json),
+ * (4) Defaults in code. See getConfigValue / getConfigString and loadConfiguration.
+ *
+ * Stack creation flow: (1) ExecutionStack is created first and exposes executionAgentArn.
+ * (2) VerificationStack is created with executionAgentArn from Execution Stack output or config.
+ * Deploy order: deploy ExecutionStack, then set executionAgentArn and deploy VerificationStack.
+ *
+ * Audit (FR-005, SC-004): Log and CdkError messages in this file and in lib/utils (cdk-logger,
+ * cdk-error) do not include secrets, tokens, or PII; config load failure does not log raw error.
+ *
  * @module cdk/bin/cdk
  */
 
 import * as cdk from "aws-cdk-lib";
+import { Aspects } from "aws-cdk-lib";
 import * as path from "path";
 import { ExecutionStack } from "../lib/execution/execution-stack";
 import { VerificationStack } from "../lib/verification/verification-stack";
@@ -18,6 +30,9 @@ import {
   applyEnvOverrides,
   CdkConfig,
 } from "../lib/types/cdk-config";
+import { LogRetentionAspect } from "../lib/aspects/log-retention-aspect";
+import { logInfo, logWarn } from "../lib/utils/cdk-logger";
+import { CdkError } from "../lib/utils/cdk-error";
 
 // Constants
 const VALID_ENVIRONMENTS = ["dev", "prod"] as const;
@@ -28,13 +43,19 @@ type DeploymentEnvironment = (typeof VALID_ENVIRONMENTS)[number];
 
 const app = new cdk.App();
 
+logInfo("CDK app starting", { phase: "config" });
+
+// Apply synthesis-time validation aspects (e.g. log retention, naming)
+Aspects.of(app).add(new LogRetentionAspect());
+
 /**
- * Get and validate deployment environment
+ * Get and validate deployment environment.
+ * Entry-point validation uses CdkError (cause, remediation, source) per error-report contract.
  *
  * Priority: 1. DEPLOYMENT_ENV environment variable, 2. cdk.json context, 3. default
  *
  * @returns Validated deployment environment
- * @throws {Error} If deployment environment is invalid
+ * @throws {CdkError} If deployment environment is invalid
  */
 function getDeploymentEnvironment(): DeploymentEnvironment {
   const deploymentEnvRaw =
@@ -47,17 +68,19 @@ function getDeploymentEnvironment(): DeploymentEnvironment {
     .trim() as DeploymentEnvironment;
 
   if (!VALID_ENVIRONMENTS.includes(deploymentEnv)) {
-    throw new Error(
-      `Invalid deployment environment '${deploymentEnvRaw}'. ` +
-        `Must be one of: ${VALID_ENVIRONMENTS.join(", ")}`
-    );
+    CdkError.throw({
+      message: `Invalid deployment environment '${deploymentEnvRaw}'. Must be one of: ${VALID_ENVIRONMENTS.join(", ")}.`,
+      cause: "Invalid deployment environment",
+      remediation: `Set DEPLOYMENT_ENV or use --context deploymentEnv to one of: ${VALID_ENVIRONMENTS.join(", ")}`,
+      source: "app",
+    });
   }
 
   // Warn if using default
   if (!process.env.DEPLOYMENT_ENV && !app.node.tryGetContext("deploymentEnv")) {
-    console.warn(
-      `[WARNING] DEPLOYMENT_ENV not set. Defaulting to '${DEFAULT_ENVIRONMENT}' environment.`
-    );
+    logWarn(`DEPLOYMENT_ENV not set. Defaulting to '${DEFAULT_ENVIRONMENT}' environment.`, {
+      phase: "config",
+    });
   }
 
   return deploymentEnv;
@@ -78,18 +101,26 @@ function loadConfiguration(env: DeploymentEnvironment): CdkConfig | null {
     const cdkDir = path.resolve(__dirname, "..");
     const fileConfig = loadCdkConfig(env, cdkDir);
     return applyEnvOverrides(fileConfig);
-  } catch (error) {
-    // Fallback to context-based configuration for backward compatibility
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.warn(
-      `[WARNING] Failed to load configuration file: ${errorMessage}`
-    );
-    console.warn(`[WARNING] Falling back to cdk.json context or defaults.`);
+  } catch {
+    // Wrapped error: context (step "config load") and user-facing message only; raw error
+    // not logged to avoid paths or sensitive data (FR-007). Cause is preserved in catch for
+    // optional rethrow with CdkError had we chosen to fail fast.
+    logWarn("Configuration file load failed; falling back to context or defaults.", {
+      phase: "config",
+      context: { step: "config load" },
+    });
     return null;
   }
 }
 
 const config = loadConfiguration(deploymentEnv);
+
+logInfo(
+  config
+    ? "Configuration loaded from file or env overrides."
+    : "Using context or defaults (no config file).",
+  { phase: "config", context: { deploymentEnv } }
+);
 
 /**
  * Get configuration value with priority: context > config file > default
@@ -121,7 +152,7 @@ function getConfigString(key: string, defaultValue = ""): string {
   return value || "";
 }
 
-// Get configuration values with priority: context > config file > defaults
+// Get configuration values with priority: context > config file > defaults (see module JSDoc for full priority)
 const region = getConfigValue("awsRegion", DEFAULT_REGION);
 
 // Base stack names (without environment suffix)
@@ -305,31 +336,15 @@ function createExecutionStack(
   });
 }
 
-/**
- * Create Verification Stack
- *
- * @param app - CDK app instance
- * @param stackName - Stack name
- * @param env - CDK environment
- * @param executionApiUrl - Execution API URL
- * @param executionApiArn - Execution API ARN
- * @param executionAccountId - Execution account ID (optional)
- */
-function createVerificationStack(
-  app: cdk.App,
-  stackName: string,
-  env: cdk.Environment,
-  executionApiUrl: string,
-  executionApiArn: string,
-  executionAccountId?: string
-): void {
-  new VerificationStack(app, stackName, {
-    env: env,
-    executionApiUrl: executionApiUrl,
-    executionApiArn: executionApiArn,
-    executionAccountId: executionAccountId,
-  });
-}
+// Create Execution Stack (A2A only)
+const executionStack = new ExecutionStack(app, executionStackName, {
+  env: executionEnv,
+  awsRegion: region,
+  bedrockModelId: bedrockModelId || undefined,
+  verificationAccountId: verificationAccountId || undefined,
+  executionAgentName: executionAgentName || undefined,
+});
+logInfo("Execution stack created.", { phase: "stack", context: { stackName: executionStackName } });
 
 /**
  * Print deployment instructions when ExecutionApiUrl is not configured
@@ -351,90 +366,10 @@ function printDeploymentInstructions(
 ║                    DEPLOYMENT - STEP 1: Execution Stack                   ║
 ╚════════════════════════════════════════════════════════════════════════════╝
 
-[INFO] ExecutionApiUrl is not configured. Only ExecutionStack will be deployed.
-
-[STATUS] Stack to deploy: ${executionStackName}
-[STATUS] VerificationStack will be skipped (requires ExecutionApiUrl)
-
-[NEXT STEPS] After deploying ExecutionStack:
-
-  1. Deploy ExecutionStack:
-     AWS_PROFILE=${awsProfile} DEPLOYMENT_ENV=${deploymentEnv} \\
-     npx cdk deploy ${executionStackName} --profile ${awsProfile}
-
-  2. Get ExecutionApiUrl from stack outputs:
-     AWS_PROFILE=${awsProfile} aws cloudformation describe-stacks \\
-       --stack-name ${executionStackName} \\
-       --region ${region} \\
-       --query 'Stacks[0].Outputs[?OutputKey==\`ExecutionApiUrl\`].OutputValue' \\
-       --output text
-
-  3. Update configuration file (cdk.config.${deploymentEnv}.json):
-     Set "executionApiUrl": "<URL from step 2>"
-
-  4. Deploy VerificationStack:
-     AWS_PROFILE=${awsProfile} DEPLOYMENT_ENV=${deploymentEnv} \\
-     npx cdk deploy ${verificationStackName} --profile ${awsProfile}
-
-  5. Get VerificationLambdaRoleArn from stack outputs:
-     AWS_PROFILE=${awsProfile} aws cloudformation describe-stacks \\
-       --stack-name ${verificationStackName} \\
-       --region ${region} \\
-       --query 'Stacks[0].Outputs[?OutputKey==\`VerificationLambdaRoleArn\`].OutputValue' \\
-       --output text
-
-  6. Update configuration file (cdk.config.${deploymentEnv}.json):
-     Set "verificationLambdaRoleArn": "<ARN from step 5>"
-
-  7. Update ExecutionStack with resource policy:
-     AWS_PROFILE=${awsProfile} DEPLOYMENT_ENV=${deploymentEnv} \\
-     npx cdk deploy ${executionStackName} --profile ${awsProfile}
-
-╔════════════════════════════════════════════════════════════════════════════╗
-║  TIP: Use scripts/deploy-split-stacks.sh for automated deployment         ║
-╚════════════════════════════════════════════════════════════════════════════╝
-  `);
-}
-
-// Create Execution Stack
-createExecutionStack(
-  app,
-  executionStackName,
-  executionEnv,
-  verificationLambdaRoleArn || undefined,
-  verificationAccountId || undefined,
-  executionResponseQueueUrl || undefined
-);
-
-// Create Verification Stack (requires Execution API URL from first deployment)
-if (executionApiUrl) {
-  const executionApiArn = getApiArnFromUrl(
-    executionApiUrl,
-    region,
-    executionAccountId || process.env.CDK_DEFAULT_ACCOUNT
-  );
-
-  if (!executionApiArn) {
-    console.warn(
-      `[WARNING] Failed to extract API ARN from URL: ${executionApiUrl}`
-    );
-  }
-
-  createVerificationStack(
-    app,
-    verificationStackName,
-    verificationEnv,
-    executionApiUrl,
-    executionApiArn,
-    executionAccountId || undefined
-  );
-} else {
-  // If no API URL, only synthesize Execution Stack
-  // User will need to deploy Execution Stack first, get URL, then re-run
-  printDeploymentInstructions(
-    deploymentEnv,
-    executionStackName,
-    verificationStackName,
-    region
-  );
-}
+new VerificationStack(app, verificationStackName, {
+  env: verificationEnv,
+  executionAccountId: executionAccountId || undefined,
+  verificationAgentName: verificationAgentName || undefined,
+  executionAgentArn: resolvedExecutionAgentArn || undefined,
+});
+logInfo("Verification stack created.", { phase: "stack", context: { stackName: verificationStackName } });

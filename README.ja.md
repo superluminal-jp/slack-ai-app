@@ -111,13 +111,18 @@ export DEPLOYMENT_ENV=prod
 ┌─────────────────────────────────────────────────────────────┐
 │ 検証ゾーン (Verification Zone)                               │
 │ ┌─────────────────────────────────────────────────────────┐ │
-│ │ SlackEventHandler (Function URL)                        │ │
-│ │ - 署名検証（鍵 1）                                       │ │
-│ │ - Slack API 実在性チェック（鍵 2）                       │ │
-│ │ - ホワイトリスト認可                                    │ │
-│ │ - イベント重複排除                                      │ │
-│ │ [2] → リアクション（👀）で応答（Lambda関数タイムアウト: 10秒）        │ │
-│ │ [3] → Execution API を呼び出し（IAM 認証）              │ │
+│ │ SlackEventHandler Lambda (Function URL)                 │ │
+│ │ - 署名検証、リアクション（受付時👀、返信時✅）           │ │
+│ │ - AgentCore A2A パス（唯一の経路）                      │ │
+│ │ [2] InvokeAgentRuntime (SigV4)                          │ │
+│ └──────────────────────┬──────────────────────────────────┘ │
+│                        │                                     │
+│ ┌─────────────────────▼──────────────────────────────────┐ │
+│ │ Verification Agent (AgentCore Runtime, ARM64)           │ │
+│ │ - A2A プロトコル (raw JSON POST, port 9000)             │ │
+│ │ - セキュリティパイプライン: 存在確認 → 認可 → レート制限│ │
+│ │ - Agent Card: /.well-known/agent-card.json              │ │
+│ │ [3] InvokeAgentRuntime (SigV4, クロスアカウント対応)    │ │
 │ └──────────────────────┬──────────────────────────────────┘ │
 └────────────────────────┼────────────────────────────────────┘
                          │ [3] API Gateway (IAM認証 または APIキー認証)
@@ -553,10 +558,36 @@ Signing Secret + Bot Token の両方が漏洩した場合、攻撃者は：
 
 ---
 
-**最終更新日**: 2025-12-29
+**最終更新日**: 2026-02-11
 
 ## 最近の更新
 
+- **2026-02-11**: 返信時のリアクション差し替え（👀→✅）
+  - Slack に AI レスポンスを投稿する際、元メッセージの 👀 を削除して ✅ を付与し、処理完了を視覚的に表示
+  - Slack Poster Lambda が投稿成功後にリアクション差し替えを実行。SQS ペイロードに `message_ts` を追加
+- **2026-02-11**: Slack 添付ファイル対応（024）
+  - S3 ベースのセキュアファイル転送: Verification Agent が Slack からダウンロード→S3 にアップロード→署名付き URL 生成。Execution Agent は署名付き URL 経由で取得（実行ゾーンに bot token 不要）
+  - ドキュメント Q&A: PDF, DOCX, XLSX, CSV, TXT を Bedrock ネイティブブロックで。PPTX はテキスト抽出フォールバック
+  - 画像分析: PNG, JPEG, GIF, WebP を Bedrock 画像ブロックで
+  - 複数ファイル: 1 メッセージ最大 5 ファイル、画像 10 MB・ドキュメント 5 MB 制限
+- **2026-02-09**: Strands マイグレーション & クリーンアップ（021）
+  - Verification Agent / Execution Agent を `bedrock-agentcore` SDK から FastAPI + uvicorn に移行（直接ルート定義）
+  - CloudWatch IAM ネームスペース修正（`StringLike` + `SlackAI-*` パターン）
+- 依存関係バージョンピニング（`~=`）、E2E テストスイート追加
+  - テスト数: Verification 63、Execution 79、CDK 25
+- **2026-02-08**: A2A ファイルを Slack スレッドに返す機能を実装（014）
+  - Execution Zone が AI 生成ファイル（CSV/JSON/テキスト）を `generated_file` artifact で返却
+  - Verification Zone が artifact をパースし、Slack スレッドにテキスト→ファイルの順で投稿（`post_file_to_slack`、Slack SDK files_upload_v2）
+  - ファイル制限: 最大 5 MB、許可 MIME は text/csv / application/json / text/plain。超過時はテキストで理由を返す
+  - テキストのみ・ファイルのみ・テキスト＋ファイルの各パターンをサポート。Bot に `files:write` スコープが必要
+  - 仕様・契約: `specs/014-a2a-file-to-slack/`、`docs/reference/architecture/zone-communication.md` §6.5
+- **2026-02-07**: AgentCore A2A ゾーン間通信を実装
+  - Amazon Bedrock AgentCore Runtime と A2A プロトコルによるゾーン間通信
+  - Verification Agent / Execution Agent のコンテナ化 (ARM64 Docker)
+  - SigV4 認証 + リソースベースポリシーによるクロスアカウント対応
+  - Agent Card (`/.well-known/agent-card.json`) による Agent Discovery
+  - AgentCore A2A を唯一の通信経路として採用
+  - TDD テスト 97 件全パス（Python 73 + CDK/Jest 24、以降 167+ に拡大）
 - **2025-12-28**: Execution API Gateway にデュアル認証サポート（IAM 認証と API キー認証）を追加
   - デフォルト認証方法: API キー認証（`EXECUTION_API_AUTH_METHOD` 環境変数で設定可能）
   - API キーは AWS Secrets Manager に安全に保存

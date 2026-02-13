@@ -16,6 +16,7 @@ PPTX slide-to-image conversion is not supported (LibreOffice removed).
 """
 
 import csv
+import json
 import zipfile
 import xml.etree.ElementTree as ET
 from io import BytesIO, StringIO
@@ -41,6 +42,16 @@ except ImportError as e:
         e,
     )
     openpyxl = None
+
+
+from logger_util import get_logger, log
+
+_logger = get_logger()
+
+
+def _log(level: str, event_type: str, data: dict) -> None:
+    """Structured JSON logging for CloudWatch."""
+    log(_logger, level, event_type, data, service="execution-agent-document-extractor")
 
 
 def extract_text_from_pdf(pdf_bytes: bytes) -> Optional[str]:

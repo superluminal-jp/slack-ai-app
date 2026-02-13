@@ -151,7 +151,7 @@ cdk bootstrap aws://123456789012/ap-northeast-1
    - `channels:read` - チャンネル情報を読み取る（Existence Check 用）
    - `chat:write` - メッセージを送信する
    - `files:read` - ファイルを読み取る（添付ファイル処理用）
-   - `reactions:write` - リアクションを追加/削除する（リクエスト受付時 👀、成功時 ✅、失敗時 ❌ の表示用）
+   - `reactions:write` - リアクションを追加/削除する（受付時 👀、返信成功時に 👀→✅ に差し替え）
    - `team:read` - チーム情報を読み取る（Existence Check 用）
    - `users:read` - ユーザー情報を読み取る（Existence Check 用）
 

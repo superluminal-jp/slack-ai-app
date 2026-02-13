@@ -1,0 +1,63 @@
+# Best Practices Checklist
+# Feature: 027-slack-file-generation-best-practices
+# Use for: Deploy pre-check, PR review
+
+checklist:
+  - layer: ファイル生成
+    items:
+      - id: BP-FG-001
+        description: ファイルサイズ上限が設定されている
+        verification: file_config.py に MAX_FILE_SIZE_BYTES が定義されている
+        criterion: 10 MB 以下
+      - id: BP-FG-002
+        description: ファイル名サニタイズが実装されている
+        verification: 単体テストで禁止文字を含む入力がサニタイズされる
+        criterion: サニタイズ済みファイル名が返る
+      - id: BP-FG-003
+        description: サイズ超過時にユーザー通知する
+        verification: サイズ超過時に response_text にエラーメッセージがある
+        criterion: 日本語で説明、代替手段を提案
+
+  - layer: Strands
+    items:
+      - id: BP-S-001
+        description: 各ツールに docstring とパラメータ説明がある
+        verification: 各 @tool の docstring と inputSchema の description を確認
+        criterion: 日本語で目的・入出力が明確
+      - id: BP-S-002
+        description: ツール定義が tool-definitions.yaml と同期
+        verification: contracts/tool-definitions.yaml と実装の一致
+        criterion: パラメータ名・型が一致
+
+  - layer: Bedrock
+    items:
+      - id: BP-B-001
+        description: 全通信が HTTPS
+        verification: 026 検証結果を参照
+        criterion: boto3 デフォルト、use_ssl=False なし
+      - id: BP-B-002
+        description: 最小権限
+        verification: 026 検証結果を参照
+        criterion: InvokeModel / InvokeAgentRuntime のみ
+
+  - layer: AgentCore
+    items:
+      - id: BP-A-001
+        description: ThrottlingException に指数バックオフリトライ
+        verification: 026 検証結果を参照
+        criterion: agent-invoker に実装済み
+      - id: BP-A-002
+        description: エラーハンドリング
+        verification: 026 検証結果を参照
+        criterion: ValidationException, ResourceNotFoundException 等を処理
+
+  - layer: CDK
+    items:
+      - id: BP-C-001
+        description: grant メソッドで権限付与
+        verification: 026 検証結果を参照
+        criterion: 手動 IAM ポリシーを避ける
+      - id: BP-C-002
+        description: 暗号化デフォルト
+        verification: S3, DynamoDB の暗号化設定
+        criterion: デフォルトで有効

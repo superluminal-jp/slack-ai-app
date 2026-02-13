@@ -14,18 +14,21 @@ The application uses two independent stacks that can be deployed separately, sup
 Both stacks can be deployed independently using CDK CLI. This follows CDK best practices for modular infrastructure:
 
 **Deploy ExecutionStack only:**
+
 ```bash
 export DEPLOYMENT_ENV=dev
 npx cdk deploy SlackAI-Execution-Dev
 ```
 
-**Deploy VerificationStack only** (requires `executionApiUrl` to be configured):
+**Deploy VerificationStack only** (requires `executionAgentArn` from Execution Stack or config):
+
 ```bash
 export DEPLOYMENT_ENV=dev
 npx cdk deploy SlackAI-Verification-Dev
 ```
 
 **Key benefits of independent deployment:**
+
 - Deploy ExecutionStack without VerificationStack
 - Deploy VerificationStack after ExecutionStack is deployed (with `executionApiUrl` configured)
 - Update either stack independently without affecting the other
@@ -33,6 +36,7 @@ npx cdk deploy SlackAI-Verification-Dev
 - Better separation of concerns and lifecycle management
 
 **Stack dependencies:**
+
 - ExecutionStack: No dependencies (can be deployed standalone)
 - VerificationStack: Requires `executionApiUrl` from ExecutionStack (configured in `cdk.config.{env}.json` or via `--context`)
 
@@ -91,7 +95,7 @@ cp cdk.config.json.example cdk.config.prod.json
 ```json
 {
   "awsRegion": "ap-northeast-1",
-  "bedrockModelId": "jp.anthropic.claude-haiku-4-5-20251001-v1:0",
+  "bedrockModelId": "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
   "deploymentEnv": "dev",
   "verificationStackName": "SlackAI-Verification",
   "executionStackName": "SlackAI-Execution",
@@ -252,20 +256,18 @@ Then follow the same steps as above. The deployment script (`scripts/deploy-spli
 
 ### ExecutionStack
 
-| Output              | Description                                         |
-| ------------------- | --------------------------------------------------- |
-| ExecutionApiUrl     | API Gateway URL for VerificationStack configuration |
-| ExecutionApiArn     | API Gateway ARN for IAM policy                      |
-| BedrockProcessorArn | Lambda function ARN                                 |
-| ExecutionApiKeyId   | API Gateway API Key ID (if API key auth is enabled) |
+| Output                   | Description                                           |
+| ------------------------ | ----------------------------------------------------- |
+| ExecutionAgentRuntimeArn | AgentCore Runtime ARN (for Verification Stack config) |
 
 ### VerificationStack
 
-| Output                    | Description                                 |
-| ------------------------- | ------------------------------------------- |
-| SlackEventHandlerUrl      | Function URL for Slack Event Subscriptions  |
-| VerificationLambdaRoleArn | Role ARN for ExecutionStack resource policy |
-| SlackEventHandlerArn      | Lambda function ARN                         |
+| Output                      | Description                                |
+| --------------------------- | ------------------------------------------ |
+| SlackEventHandlerUrl        | Function URL for Slack Event Subscriptions |
+| VerificationLambdaRoleArn   | Lambda role ARN                            |
+| SlackEventHandlerArn        | Lambda function ARN                        |
+| VerificationAgentRuntimeArn | AgentCore Runtime ARN                      |
 
 ## Useful Commands
 
@@ -346,20 +348,20 @@ cdk/
 
 ### Configuration Fields
 
-| Field                       | Required | Type   | Description                                                                             |
-| --------------------------- | -------- | ------ | --------------------------------------------------------------------------------------- |
-| `awsRegion`                 | Yes      | string | AWS region for deployment (e.g., `ap-northeast-1`)                                      |
-| `bedrockModelId`            | Yes      | string | Bedrock model ID (e.g., `jp.anthropic.claude-haiku-4-5-20251001-v1:0`)                  |
-| `deploymentEnv`             | Yes      | enum   | Deployment environment: `"dev"` or `"prod"`                                             |
-| `verificationStackName`     | Yes      | string | Base name for Verification Stack (without environment suffix)                           |
-| `executionStackName`        | Yes      | string | Base name for Execution Stack (without environment suffix)                              |
-| `verificationAccountId`     | Yes      | string | 12-digit AWS account ID for Verification Stack                                          |
-| `executionAccountId`        | Yes      | string | 12-digit AWS account ID for Execution Stack                                             |
-| `verificationLambdaRoleArn` | No       | string | Lambda role ARN from Verification Stack (populated after Verification Stack deployment) |
-| `executionApiUrl`           | No       | string | Execution API URL (populated after Execution Stack deployment)                          |
-| `executionResponseQueueUrl` | No       | string | SQS queue URL from Verification Stack (populated after Verification Stack deployment)   |
-| `slackBotToken`             | No       | string | Slack Bot OAuth Token (can be set via environment variable `SLACK_BOT_TOKEN`)           |
-| `slackSigningSecret`        | No       | string | Slack Signing Secret (can be set via environment variable `SLACK_SIGNING_SECRET`)       |
+| Field                   | Required | Type   | Description                                                                       |
+| ----------------------- | -------- | ------ | --------------------------------------------------------------------------------- |
+| `awsRegion`             | Yes      | string | AWS region for deployment (e.g., `ap-northeast-1`)                                |
+| `bedrockModelId`        | Yes      | string | Bedrock model ID (e.g., `jp.anthropic.claude-sonnet-4-5-20250929-v1:0`)           |
+| `deploymentEnv`         | Yes      | enum   | Deployment environment: `"dev"` or `"prod"`                                       |
+| `verificationStackName` | Yes      | string | Base name for Verification Stack (without environment suffix)                     |
+| `executionStackName`    | Yes      | string | Base name for Execution Stack (without environment suffix)                        |
+| `verificationAccountId` | Yes      | string | 12-digit AWS account ID for Verification Stack                                    |
+| `executionAccountId`    | Yes      | string | 12-digit AWS account ID for Execution Stack                                       |
+| `slackBotToken`         | No       | string | Slack Bot OAuth Token (can be set via environment variable `SLACK_BOT_TOKEN`)     |
+| `slackSigningSecret`    | No       | string | Slack Signing Secret (can be set via environment variable `SLACK_SIGNING_SECRET`) |
+| `executionAgentName`    | No       | string | AgentCore Execution Agent name (e.g., `SlackAI-ExecutionAgent`)                   |
+| `verificationAgentName` | No       | string | AgentCore Verification Agent name (e.g., `SlackAI-VerificationAgent`)             |
+| `executionAgentArn`     | No       | string | Execution Agent Runtime ARN (populated after Execution Stack deployment)          |
 
 ### Configuration Validation
 
@@ -374,19 +376,17 @@ Validation errors provide clear, actionable error messages indicating which fiel
 
 ## Environment Variables
 
-| Variable                      | Required | Description                                                                                   |
-| ----------------------------- | -------- | --------------------------------------------------------------------------------------------- |
-| DEPLOYMENT_ENV                | No       | Deployment environment (`dev` or `prod`). Defaults to `dev`                                   |
-| AWS_REGION                    | No       | AWS region (overrides config file)                                                            |
-| BEDROCK_MODEL_ID              | No       | Bedrock model ID (overrides config file)                                                      |
-| VERIFICATION_ACCOUNT_ID       | No       | Verification account ID (overrides config file)                                               |
-| EXECUTION_ACCOUNT_ID          | No       | Execution account ID (overrides config file)                                                  |
-| EXECUTION_RESPONSE_QUEUE_URL  | No       | SQS queue URL for responses (overrides config file)                                           |
-| SLACK_BOT_TOKEN               | No\*     | Slack Bot OAuth Token (required if not set in config file. Takes precedence over config file) |
-| SLACK_SIGNING_SECRET          | No\*     | Slack Signing Secret (required if not set in config file. Takes precedence over config file)  |
-| ENABLE_API_KEY_AUTH           | No       | Enable API key authentication for Execution API Gateway (default: true, set to "false" to disable) |
-| ENABLE_API_GATEWAY_MONITORING | No       | Enable CloudWatch dashboard                                                                   |
-| ALARM_EMAIL                   | No       | Email for alarm notifications                                                                 |
+| Variable                | Required | Description                                                                                   |
+| ----------------------- | -------- | --------------------------------------------------------------------------------------------- |
+| DEPLOYMENT_ENV          | No       | Deployment environment (`dev` or `prod`). Defaults to `dev`                                   |
+| AWS_REGION              | No       | AWS region (overrides config file)                                                            |
+| BEDROCK_MODEL_ID        | No       | Bedrock model ID (overrides config file)                                                      |
+| VERIFICATION_ACCOUNT_ID | No       | Verification account ID (overrides config file)                                               |
+| EXECUTION_ACCOUNT_ID    | No       | Execution account ID (overrides config file)                                                  |
+| SLACK_BOT_TOKEN         | No\*     | Slack Bot OAuth Token (required if not set in config file. Takes precedence over config file) |
+| SLACK_SIGNING_SECRET    | No\*     | Slack Signing Secret (required if not set in config file. Takes precedence over config file)  |
+| EXECUTION_AGENT_ARN     | No       | Execution Agent Runtime ARN (overrides config file)                                           |
+| ALARM_EMAIL             | No       | Email for alarm notifications                                                                 |
 
 **Note**: `*` indicates that the variable is required if not provided via config file. Either environment variable or config file value must be set.
 
@@ -424,9 +424,10 @@ cdk/
 ```
 
 **Key Benefits of This Structure**:
-- **Complete Stack Isolation**: Each stack contains both CDK code and Lambda code
-- **Clear Separation**: Directory structure reflects stack independence
-- **Simple Paths**: Lambda paths are simple (e.g., `../lambda/bedrock-processor`)
+
+- **Complete Stack Isolation**: Each stack contains CDK code and AgentCore agent code; Verification also has SlackEventHandler Lambda
+- **A2A-Only Communication**: Inter-zone communication is exclusively via AgentCore A2A
+- **Comprehensive Testing**: 167+ tests (Execution 79 + Verification 63 + CDK/Jest 25+)
 - **Maintainability**: Changes to one stack don't affect the other
 - **Best Practices**: Follows monorepo patterns for feature-based separation
 
@@ -440,3 +441,34 @@ npm run test
 npm run test -- execution-stack.test.ts
 npm run test -- verification-stack.test.ts
 ```
+
+### Test Coverage
+
+| Test Suite           | Framework | Tests   | Description                                                                              |
+| -------------------- | --------- | ------- | ---------------------------------------------------------------------------------------- |
+| AgentCore Constructs | Jest      | 25      | Runtime, IAM, cross-account policies, echo mode config                                   |
+| Execution Agent      | pytest    | 110     | FastAPI server, Bedrock, Agent Card, metrics, file artifacts, attachment processing      |
+| Verification Agent   | pytest    | 93      | Security pipeline, A2A client, Slack posting, Agent Card, file posting, S3 file transfer |
+| **Total**            |           | **228** | **All passing**                                                                          |
+
+## Logging and documentation conventions
+
+These conventions define how we log lifecycle events and document code (FR-006) so that operators and maintainers can trace behavior and understand intent without reading implementation details.
+
+### Logging
+
+- **Where**: Use the structured logger in `lib/utils/cdk-logger.ts` for app-entry and lifecycle events (e.g. config load, stack creation). Do not add ad-hoc `console.log`/`console.warn` for operational messages.
+- **Format**: Each log entry has a **level** (`info`, `warn`, `error`, `debug`), a **message**, and optionally a **phase** (e.g. `config`, `synthesis`, `stack`, `construct`) and **context** (key-value object). See `specs/029-cdk-logging-error-handling/contracts/log-event.schema.json`.
+- **No secrets**: Never include secrets, tokens, or PII in log messages or context. Caller is responsible for omitting sensitive data.
+- **Environment**: Logging works when stdout/stderr is redirected or in CI; do not assume an interactive TTY.
+
+### Errors
+
+- **Entry-point validation**: Use `CdkError` from `lib/utils/cdk-error.ts` when throwing from the app entry (e.g. invalid deployment environment, config load failure). Provide a clear **message**, optional **cause**, **remediation** (e.g. allowed values), and **source** (`app`, `stack`, `construct`, `toolkit`). See `specs/029-cdk-logging-error-handling/contracts/error-report.schema.json`.
+- **No secrets**: Never include secrets or PII in error message, cause, or remediation. When wrapping a nested error, do not copy raw error text that might contain secrets.
+
+### Comments and JSDoc
+
+- **Module level**: Every top-level stack and construct module should have a short JSDoc block describing (1) **purpose** (what this unit does and why it exists) and (2) **main responsibilities**. Optionally list key inputs/outputs.
+- **Function/API level**: Public APIs (constructs, props interfaces, notable functions) should have JSDoc with a summary and, where relevant, `@param` and `@returns`. Document non-obvious configuration choices, ordering, and constraints at the point of use.
+- **Style**: Use a single, consistent style across the CDK codebase so that maintainers know where to find explanations (module vs. function level).

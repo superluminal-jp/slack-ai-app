@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "specs/029-cdk-logging-error-handling/contracts/log-event.schema.json",
+  "title": "LogEvent",
+  "description": "Structured log entry emitted during CDK synthesis or deployment. Must not contain secrets.",
+  "type": "object",
+  "required": ["level", "message"],
+  "properties": {
+    "level": {
+      "type": "string",
+      "enum": ["info", "warn", "error", "debug"],
+      "description": "Severity of the log entry"
+    },
+    "message": {
+      "type": "string",
+      "description": "Human-readable message; must not contain secrets or PII"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of the event"
+    },
+    "phase": {
+      "type": "string",
+      "description": "Lifecycle phase, e.g. config, synthesis, stack, construct"
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Optional key-value context (e.g. stackName, constructId); must not contain secrets"
+    }
+  }
+}
