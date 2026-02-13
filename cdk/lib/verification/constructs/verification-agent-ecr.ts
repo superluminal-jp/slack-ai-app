@@ -1,8 +1,13 @@
 /**
- * CDK Construct for Verification Agent ECR Docker Image.
+ * Verification Agent ECR Docker Image construct.
  *
- * Uses DockerImageAsset to build and push the Verification Agent
- * container image to ECR with ARM64 platform support.
+ * Purpose: Build and push the Verification Agent container image to ECR for AgentCore Runtime. ARM64 only.
+ *
+ * Responsibilities: Build from agent Dockerfile, push to ECR, expose imageUri; optional CACHEBUST build arg.
+ *
+ * Inputs: VerificationAgentEcrProps (optional dockerfilePath).
+ *
+ * Outputs: imageAsset, imageUri (for VerificationAgentRuntime containerImageUri).
  *
  * @module cdk/lib/verification/constructs/verification-agent-ecr
  */

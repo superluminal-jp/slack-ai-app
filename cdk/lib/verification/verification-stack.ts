@@ -20,14 +20,20 @@ import { VerificationStackProps } from "../types/stack-config";
 /**
  * Verification Stack (Account A / Verification Zone)
  *
- * Contains resources for request validation and authorization (A2A only):
- * - SlackEventHandler Lambda with Function URL (invokes Verification Agent via AgentCore)
- * - DynamoDB tables (token storage, event dedupe, existence check cache, whitelist config, rate limit)
- * - Secrets Manager (Slack credentials)
- * - Verification Agent AgentCore Runtime (A2A)
- * - CloudWatch alarms
+ * Purpose: Handles Slack events, validates and authorizes requests, and invokes the Verification Agent
+ * (AgentCore A2A). Communicates with Execution Stack only via AgentCore A2A (SigV4); no API Gateway or SQS.
  *
- * Communicates with Execution Stack only via AgentCore A2A (SigV4); no API Gateway or SQS.
+ * Responsibilities:
+ * - Slack event ingestion (SlackEventHandler Lambda with Function URL)
+ * - DynamoDB (token storage, event dedupe, existence check cache, whitelist, rate limit)
+ * - Secrets Manager (Slack credentials)
+ * - Verification Agent AgentCore Runtime (A2A) and ECR image
+ * - Agent invocation (AgentInvoker, SlackPoster), S3 file exchange bucket, CloudWatch alarms
+ *
+ * Inputs: VerificationStackProps (env, executionAccountId, verificationAgentName, executionAgentArn, etc.);
+ * context: deploymentEnv, awsRegion, slackBotToken, slackSigningSecret, bedrockModelId, executionAgentArn.
+ *
+ * Outputs: slackEventHandler, functionUrl, lambdaRoleArn, verificationAgentRuntimeArn, agentInvocationQueue; CfnOutputs for URLs and ARNs.
  */
 export class VerificationStack extends cdk.Stack {
   /** The Slack Event Handler Lambda */
@@ -113,6 +119,7 @@ const slackSigningSecretResource = new secretsmanager.Secret(
       }
     );
 
+    // Order: DynamoDB tables and SQS/Secrets first; VerificationAgentRuntime depends on all of them
     const tokenStorage = new TokenStorage(this, "TokenStorage");
     const eventDedupe = new EventDedupe(this, "EventDedupe");
     const existenceCheckCache = new ExistenceCheckCache(this, "ExistenceCheckCache");
@@ -125,7 +132,7 @@ const slackSigningSecretResource = new secretsmanager.Secret(
       retentionPeriod: cdk.Duration.days(14),
     });
 
-    // Visibility timeout >= 6 * Agent Invoker Lambda timeout (900s) per AWS SQS+Lambda best practice
+    // Visibility timeout >= 6 * Agent Invoker Lambda timeout (900s) per AWS SQS+Lambda best practice; prevents redrive during long runs
     const agentInvocationQueue = new sqs.Queue(this, "AgentInvocationRequest", {
       queueName: `${this.stackName}-agent-invocation-request`,
       visibilityTimeout: cdk.Duration.seconds(5400),
@@ -146,6 +153,7 @@ const slackSigningSecretResource = new secretsmanager.Secret(
       this.node.tryGetContext("executionAgentArn") ||
       "";
 
+    // ECR before Runtime (Runtime needs containerImageUri). SlackPoster and LogGroup before Runtime (optional queue and log group).
     this.verificationAgentEcr = new VerificationAgentEcr(
       this,
       "VerificationAgentEcr"

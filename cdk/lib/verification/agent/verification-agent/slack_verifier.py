@@ -18,6 +18,10 @@ import hmac
 import time
 from typing import Optional
 
+from logger_util import get_logger, log
+
+_logger = get_logger()
+
 
 def verify_signature(
     body: Optional[str],
@@ -110,8 +114,5 @@ def verify_signature(
         return hmac.compare_digest(expected_signature, signature)
 
     except Exception as e:
-        # Log error in production (but don't expose details to caller)
-        # For MVP, we silently return False
-        from logger_util import get_logger, log
-        log(get_logger(), "WARN", "signature_verification_error", {"error": str(e)}, service="verification-agent")
+        log(_logger, "WARN", "signature_verification_error", {"error": str(e)}, service="verification-agent")
         return False

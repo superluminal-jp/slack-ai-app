@@ -60,8 +60,11 @@ def log_execution_error(
             logEvents=[{"timestamp": ts_ms, "message": message}],
         )
     except ClientError as e:
-        if e.response["Error"]["Code"] != "ResourceAlreadyExistsException":
-            pass  # Ignore
+        if e.response["Error"]["Code"] == "ResourceAlreadyExistsException":
+            pass  # Expected race condition on stream creation
+        else:
+            import sys
+            print(f"[WARN] log_execution_error: unexpected ClientError: {e}", file=sys.stdout)
     except Exception:
         pass  # Fail silently
 
@@ -107,7 +110,10 @@ def log_execution_agent_error_response(
             logEvents=[{"timestamp": ts_ms, "message": message}],
         )
     except ClientError as e:
-        if e.response["Error"]["Code"] != "ResourceAlreadyExistsException":
-            pass
+        if e.response["Error"]["Code"] == "ResourceAlreadyExistsException":
+            pass  # Expected race condition on stream creation
+        else:
+            import sys
+            print(f"[WARN] log_execution_agent_error_response: unexpected ClientError: {e}", file=sys.stdout)
     except Exception:
-        pass
+        pass  # Fail silently

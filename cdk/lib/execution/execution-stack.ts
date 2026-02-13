@@ -7,12 +7,18 @@ import { ExecutionStackProps } from "../types/stack-config";
 /**
  * Execution Stack (Account B / Execution Zone)
  *
- * Contains resources for AI processing via AgentCore A2A only:
- * - Execution Agent ECR image
- * - Execution Agent AgentCore Runtime (A2A protocol)
+ * Purpose: Provides the Execution Agent as an AgentCore Runtime (A2A-only). AI processing
+ * runs in this zone; the Verification Stack invokes it via AgentCore (SigV4). No API Gateway or SQS.
  *
- * This stack can be deployed independently. Verification Stack
- * invokes the Execution Agent via AgentCore (SigV4); no API Gateway or SQS.
+ * Responsibilities:
+ * - Build and publish Execution Agent container image (ECR)
+ * - Create AgentCore Runtime for the Execution Agent (A2A protocol)
+ * - Expose Execution Agent ARN for cross-stack reference (Verification Stack)
+ *
+ * Inputs: ExecutionStackProps (env, awsRegion, bedrockModelId, verificationAccountId, executionAgentName);
+ * context: deploymentEnv, awsRegion, bedrockModelId, verificationAccountId, executionAgentName.
+ *
+ * Outputs: executionAgentArn (CfnOutput ExecutionAgentRuntimeArn); executionAgentEcr; executionAgentRuntime.
  */
 export class ExecutionStack extends cdk.Stack {
   /** AgentCore Runtime for Execution Agent */
@@ -52,6 +58,7 @@ export class ExecutionStack extends cdk.Stack {
       this.node.tryGetContext("executionAgentName") ||
       "SlackAI_ExecutionAgent";
 
+    // ECR must be created before Runtime (Runtime requires containerImageUri from ECR)
     this.executionAgentEcr = new ExecutionAgentEcr(this, "ExecutionAgentEcr");
 
     const bedrockModelId =
@@ -67,6 +74,7 @@ export class ExecutionStack extends cdk.Stack {
         containerImageUri: this.executionAgentEcr.imageUri,
         bedrockModelId: bedrockModelId || undefined,
         awsRegion: awsRegion,
+        // Required for cross-account: resource policy allows Verification Stack account to invoke
         verificationAccountId: verificationAccountId || undefined,
       }
     );

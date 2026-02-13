@@ -251,6 +251,7 @@ def run(payload: dict) -> str:
                 "correlation_id": correlation_id,
             })
         except Exception as e:
+            # Intentional fail-open: rate limit infra failure should not block user requests.
             _log("WARN", "rate_limit_check_error", {
                 "correlation_id": correlation_id,
                 "error": str(e),
@@ -492,6 +493,7 @@ def run(payload: dict) -> str:
                     })
 
     except Exception as e:
+        is_processing = False
         tb_str = traceback.format_exc()
         _log("ERROR", "unhandled_exception", {
             "correlation_id": correlation_id,

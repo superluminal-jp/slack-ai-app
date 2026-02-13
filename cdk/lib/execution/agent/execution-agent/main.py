@@ -434,7 +434,7 @@ def handle_message_tool(payload_json: str) -> str:
             )
             documents_first = native_documents if native_documents else None
 
-            # Build agent input (T011: Strands Agent replaces invoke_bedrock)
+            # Build multimodal content blocks for Strands Agent
             # T023 (US4): Attachments (native_documents, document_texts_fallback, images) are
             # passed to the agent via build_content_blocks; tools receive this context when
             # invoked, enabling attachment-based conversion (e.g., CSV attachment → Excel output).
@@ -662,11 +662,25 @@ async def handle_invocation(request: Request):
     """Handle invoke_agent_runtime payload — parse and process."""
     start_time = time.time()
     body = await request.body()
-    payload = json.loads(body)
+
+    try:
+        payload = json.loads(body)
+    except (json.JSONDecodeError, TypeError) as e:
+        _log("ERROR", "request_parse_error", {
+            "error": str(e),
+            "body_preview": body[:200].decode("utf-8", errors="replace") if body else "",
+        })
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "error_code": "invalid_json", "error_message": "Invalid JSON payload"},
+        )
 
     # Extract correlation_id from nested prompt for tracing
     raw_prompt = payload.get("prompt", "{}")
-    task_payload = json.loads(raw_prompt) if isinstance(raw_prompt, str) else raw_prompt
+    try:
+        task_payload = json.loads(raw_prompt) if isinstance(raw_prompt, str) else raw_prompt
+    except (json.JSONDecodeError, TypeError):
+        task_payload = {}
     correlation_id = task_payload.get("correlation_id", "")
 
     _log(

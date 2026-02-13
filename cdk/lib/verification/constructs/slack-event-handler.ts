@@ -8,6 +8,19 @@ import * as path from "path";
 import { execSync } from "child_process";
 import * as fs from "fs";
 
+/**
+ * Slack Event Handler Lambda construct.
+ *
+ * Purpose: Receive Slack events (Function URL), validate signature and token, then invoke
+ * Verification Agent (A2A) or enqueue to SQS for async invocation.
+ *
+ * Responsibilities: Lambda with Function URL; Slack signing verification; DynamoDB/Secrets
+ * integration; invoke AgentCore or push to agentInvocationQueue.
+ *
+ * Inputs: SlackEventHandlerProps (secrets, table names, verificationAgentArn, region, model, optional queue).
+ *
+ * Outputs: function, functionUrl.
+ */
 export interface SlackEventHandlerProps {
   slackSigningSecret: secretsmanager.ISecret; // Slack app signing secret from Secrets Manager
   slackBotTokenSecret: secretsmanager.ISecret; // Bot OAuth token from Secrets Manager

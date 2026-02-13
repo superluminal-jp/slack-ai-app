@@ -8,6 +8,18 @@ import * as path from "path";
 import { execSync } from "child_process";
 import * as fs from "fs";
 
+/**
+ * Agent Invoker Lambda construct (016).
+ *
+ * Purpose: Consume agent-invocation requests from SQS and invoke the Verification Agent
+ * via AgentCore InvokeAgentRuntime. Decouples Slack event handler from agent execution.
+ *
+ * Responsibilities: Lambda triggered by SQS; call InvokeAgentRuntime; 900s timeout/visibility.
+ *
+ * Inputs: AgentInvokerProps (agentInvocationQueue, verificationAgentArn).
+ *
+ * Outputs: function.
+ */
 export interface AgentInvokerProps {
   /** SQS queue for agent invocation requests (agent-invocation-request). */
   agentInvocationQueue: sqs.IQueue;
@@ -15,10 +27,6 @@ export interface AgentInvokerProps {
   verificationAgentArn: string;
 }
 
-/**
- * Agent Invoker Lambda (016): triggered by SQS, calls InvokeAgentRuntime(Verification Agent).
- * Timeout 900s to allow long-running agent execution; SQS visibility is 900s.
- */
 export class AgentInvoker extends Construct {
   public readonly function: lambda.Function;
 
