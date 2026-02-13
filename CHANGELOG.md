@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CDK main branch TypeScript (A2A-only)**: Resolved merge drift on main: `bin/cdk.ts` now uses `executionAgentName`, `verificationAgentName`, `executionAgentArn`, `bedrockModelId` and creates both stacks; `SlackEventHandlerProps` uses `verificationAgentArn` and optional `agentInvocationQueue`; tests aligned with A2A-only props
 - **Verification Agent missing `import time`**: Restored `import time` in `authorization.py`, `rate_limiter.py`, `slack_poster.py` — dropped during logging refactor, causing `NameError` on every request and silent failure (no Slack response)
 - **Deploy script PutResourcePolicy**: Fixed `Resource: "*"` (must match specific ARN); removed unsupported endpoint policy; fixed empty `AWS_PROFILE` causing `ProfileNotFound`
 - **AgentCore Runtime CloudWatch logs**: Replaced `print()` with Python `logging` module. Structured JSON logs are output via `logging.StreamHandler(sys.stdout)` with `%(message)s` formatter for CloudWatch compatibility. Added `logger_util` in both agents for centralized configuration.

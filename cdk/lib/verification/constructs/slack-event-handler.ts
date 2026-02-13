@@ -2,6 +2,7 @@ import * as cdk from "aws-cdk-lib";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
+import * as sqs from "aws-cdk-lib/aws-sqs";
 import { Construct } from "constructs";
 import * as path from "path";
 import { execSync } from "child_process";
@@ -30,7 +31,10 @@ export interface SlackEventHandlerProps {
   rateLimitTableName: string; // DynamoDB table name for rate limiting
   awsRegion: string; // AWS region (e.g., ap-northeast-1)
   bedrockModelId: string; // Bedrock model ID (e.g., amazon.nova-pro-v1:0)
-  executionApiUrl: string; // API Gateway URL for Execution Layer (required)
+  /** ARN of Verification Agent Runtime (A2A path). Required. */
+  verificationAgentArn: string;
+  /** SQS queue for async agent invocation (016). When set, handler sends requests here instead of invoking AgentCore directly. */
+  agentInvocationQueue?: sqs.IQueue;
 }
 
 export class SlackEventHandler extends Construct {
@@ -110,16 +114,19 @@ export class SlackEventHandler extends Construct {
         // Optional: Whitelist environment variables (comma-separated values)
         // These are optional fallbacks if DynamoDB and Secrets Manager are not used
         // WHITELIST_TEAM_IDS, WHITELIST_USER_IDS, WHITELIST_CHANNEL_IDS can be set via CDK context or environment
-        // API Gateway URL for Execution Layer (required)
-        EXECUTION_API_URL: props.executionApiUrl,
-        // Authentication method for Execution API (default: 'api_key')
-        // Set to 'iam' to use IAM authentication
-        EXECUTION_API_AUTH_METHOD: process.env.EXECUTION_API_AUTH_METHOD || "api_key",
-        // API key secret name in Secrets Manager (required if EXECUTION_API_AUTH_METHOD is 'api_key')
-        // Default: 'execution-api-key-{env}' (environment-specific)
-        EXECUTION_API_KEY_SECRET_NAME: process.env.EXECUTION_API_KEY_SECRET_NAME || `execution-api-key-${deploymentEnv}`,
+        // A2A: Verification Agent Runtime ARN (required)
+        VERIFICATION_AGENT_ARN: props.verificationAgentArn,
+        // 016: when set, handler sends to SQS instead of invoking AgentCore directly
+        ...(props.agentInvocationQueue && {
+          AGENT_INVOCATION_QUEUE_URL: props.agentInvocationQueue.queueUrl,
+        }),
       },
     });
+
+    // 016: Grant SQS SendMessage when async invocation queue is provided
+    if (props.agentInvocationQueue) {
+      props.agentInvocationQueue.grantSendMessages(this.function);
+    }
 
     // Grant Lambda function permission to read secrets
     props.slackSigningSecret.grantRead(this.function);
@@ -146,10 +153,8 @@ export class SlackEventHandler extends Construct {
     this.function.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
-        actions: ["secretsmanager:GetSecretValue"],
-        resources: [
-          `arn:aws:secretsmanager:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:secret:execution-api-key-${deploymentEnv}*`,
-        ],
+        actions: ["bedrock-agentcore:InvokeAgentRuntime"],
+        resources: [props.verificationAgentArn, runtimeEndpointArn],
       })
     );
 

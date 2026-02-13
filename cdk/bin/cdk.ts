@@ -173,9 +173,15 @@ const executionStackName = `${baseExecutionStackName}-${environmentSuffix}`;
 // Cross-account configuration (optional)
 const verificationAccountId = getConfigString("verificationAccountId");
 const executionAccountId = getConfigString("executionAccountId");
-const verificationLambdaRoleArn = getConfigString("verificationLambdaRoleArn");
-const executionApiUrl = getConfigString("executionApiUrl");
-const executionResponseQueueUrl = getConfigString("executionResponseQueueUrl");
+const executionAgentName = getConfigString(
+  "executionAgentName",
+  "SlackAI_ExecutionAgent"
+);
+const verificationAgentName = getConfigString(
+  "verificationAgentName",
+  "SlackAI_VerificationAgent"
+);
+const executionAgentArn = getConfigString("executionAgentArn");
 
 /**
  * Set loaded config values to CDK context for backward compatibility
@@ -196,14 +202,12 @@ function setContextFromConfig(config: CdkConfig | null): void {
   app.node.setContext("executionStackName", baseExecutionStackName);
   app.node.setContext("verificationAccountId", verificationAccountId);
   app.node.setContext("executionAccountId", executionAccountId);
+  app.node.setContext("executionAgentName", executionAgentName);
+  app.node.setContext("verificationAgentName", verificationAgentName);
+  if (executionAgentArn) {
+    app.node.setContext("executionAgentArn", executionAgentArn);
+  }
 
-  // Optional configuration (only set if provided)
-  if (verificationLambdaRoleArn) {
-    app.node.setContext("verificationLambdaRoleArn", verificationLambdaRoleArn);
-  }
-  if (executionApiUrl) {
-    app.node.setContext("executionApiUrl", executionApiUrl);
-  }
   if (config.slackBotToken) {
     app.node.setContext("slackBotToken", config.slackBotToken);
   }
@@ -310,31 +314,8 @@ const verificationEnv = getStackEnvironment(
   defaultEnv
 );
 
-/**
- * Create Execution Stack
- *
- * @param app - CDK app instance
- * @param stackName - Stack name
- * @param env - CDK environment
- * @param verificationLambdaRoleArn - Verification Lambda role ARN (optional)
- * @param verificationAccountId - Verification account ID (optional)
- * @param executionResponseQueueUrl - SQS queue URL for responses (optional)
- */
-function createExecutionStack(
-  app: cdk.App,
-  stackName: string,
-  env: cdk.Environment,
-  verificationLambdaRoleArn?: string,
-  verificationAccountId?: string,
-  executionResponseQueueUrl?: string
-): void {
-  new ExecutionStack(app, stackName, {
-    env: env,
-    verificationLambdaRoleArn: verificationLambdaRoleArn,
-    verificationAccountId: verificationAccountId,
-    executionResponseQueueUrl: executionResponseQueueUrl,
-  });
-}
+// Bedrock model ID (Execution Agent + Verification Stack)
+const bedrockModelId = getConfigString("bedrockModelId", "amazon.nova-pro-v1:0");
 
 // Create Execution Stack (A2A only)
 const executionStack = new ExecutionStack(app, executionStackName, {
@@ -346,25 +327,9 @@ const executionStack = new ExecutionStack(app, executionStackName, {
 });
 logInfo("Execution stack created.", { phase: "stack", context: { stackName: executionStackName } });
 
-/**
- * Print deployment instructions when ExecutionApiUrl is not configured
- *
- * @param deploymentEnv - Deployment environment
- * @param executionStackName - Execution stack name
- * @param verificationStackName - Verification stack name
- * @param region - AWS region
- */
-function printDeploymentInstructions(
-  deploymentEnv: DeploymentEnvironment,
-  executionStackName: string,
-  verificationStackName: string,
-  region: string
-): void {
-  const awsProfile = process.env.AWS_PROFILE || "amplify-admin";
-  console.warn(`
-╔════════════════════════════════════════════════════════════════════════════╗
-║                    DEPLOYMENT - STEP 1: Execution Stack                   ║
-╚════════════════════════════════════════════════════════════════════════════╝
+// Create Verification Stack (A2A only; needs executionAgentArn from Execution Stack or config)
+const resolvedExecutionAgentArn =
+  executionAgentArn || executionStack.executionAgentArn;
 
 new VerificationStack(app, verificationStackName, {
   env: verificationEnv,
