@@ -19,4 +19,4 @@ COPY . .
 # AgentCore A2A protocol requires port 9000
 EXPOSE 9000
 
-CMD ["python", "main.py"]
+CMD ["opentelemetry-instrument", "python", "main.py"]
