@@ -1,13 +1,15 @@
 # Slack AI App - CDK Infrastructure
 
-This CDK project deploys the Slack AI application infrastructure to AWS using two independent stacks.
+This CDK project deploys the Slack AI application infrastructure to AWS using two independent stacks, with Amazon Bedrock AgentCore A2A protocol support. Agent containers use FastAPI + uvicorn for direct route handling.
 
 ## Deployment Architecture
 
 The application uses two independent stacks that can be deployed separately, supporting both same-account and cross-account deployments:
 
-- **ExecutionStack**: BedrockProcessor + API Gateway
-- **VerificationStack**: SlackEventHandler + DynamoDB + Secrets
+- **ExecutionStack**: Execution Agent (AgentCore Runtime + ECR)
+- **VerificationStack**: SlackEventHandler Lambda + Verification Agent (AgentCore Runtime) + S3 file exchange bucket + DynamoDB + Secrets
+
+Communication between zones is exclusively via AgentCore A2A (no API Gateway or SQS).
 
 ### Stack Independence
 
@@ -30,7 +32,7 @@ npx cdk deploy SlackAI-Verification-Dev
 **Key benefits of independent deployment:**
 
 - Deploy ExecutionStack without VerificationStack
-- Deploy VerificationStack after ExecutionStack is deployed (with `executionApiUrl` configured)
+- Deploy VerificationStack after ExecutionStack is deployed (with `executionAgentArn` from output or config)
 - Update either stack independently without affecting the other
 - Deploy to different AWS accounts (cross-account deployment)
 - Better separation of concerns and lifecycle management
@@ -38,7 +40,7 @@ npx cdk deploy SlackAI-Verification-Dev
 **Stack dependencies:**
 
 - ExecutionStack: No dependencies (can be deployed standalone)
-- VerificationStack: Requires `executionApiUrl` from ExecutionStack (configured in `cdk.config.{env}.json` or via `--context`)
+- VerificationStack: Requires `executionAgentArn` from Execution Stack output (or set in `cdk.config.{env}.json`)
 
 ### Step 1: Create Configuration File
 
@@ -101,11 +103,11 @@ cp cdk.config.json.example cdk.config.prod.json
   "executionStackName": "SlackAI-Execution",
   "verificationAccountId": "YOUR_AWS_ACCOUNT_ID",
   "executionAccountId": "YOUR_AWS_ACCOUNT_ID",
-  "verificationLambdaRoleArn": "",
-  "executionApiUrl": "",
-  "executionResponseQueueUrl": "",
   "slackBotToken": "",
-  "slackSigningSecret": ""
+  "slackSigningSecret": "",
+  "executionAgentName": "SlackAI-ExecutionAgent",
+  "verificationAgentName": "SlackAI-VerificationAgent",
+  "executionAgentArn": ""
 }
 ```
 
@@ -121,11 +123,9 @@ cp cdk.config.json.example cdk.config.prod.json
 **Note**:
 
 - Get your account ID with: `aws sts get-caller-identity --query Account --output text`
-- Optional fields (`verificationLambdaRoleArn`, `executionApiUrl`, `executionResponseQueueUrl`) can be left empty initially and will be populated after deployment
-- **Deployment order**:
-  1. Deploy ExecutionStack → Get `ExecutionApiUrl`
-  2. Deploy VerificationStack → Get `VerificationLambdaRoleArn` and `ExecutionResponseQueueUrl`
-  3. Update ExecutionStack with `verificationLambdaRoleArn` and `executionResponseQueueUrl`
+- **Deployment order** (A2A only):
+  1. Deploy ExecutionStack → Get `ExecutionAgentRuntimeArn` from outputs
+  2. Set `executionAgentArn` in config (or use cross-stack reference when both stacks in same app) and deploy VerificationStack
 - **Slack credentials** (`slackBotToken`, `slackSigningSecret`) can be set via environment variables or config file. Environment variables take precedence.
 - **Security**: If you include Slack credentials in config files, ensure they are not committed to Git. Use `cdk.config.local.json` (gitignored) for sensitive values, or use environment variables instead.
 - You can create `cdk.config.local.json` for personal overrides (this file is gitignored)
@@ -147,7 +147,7 @@ npx cdk deploy SlackAI-Execution-Dev \
 
 **Note**: Stack names now include environment suffix. Use `SlackAI-Execution-Dev` for dev or `SlackAI-Execution-Prod` for prod.
 
-Note the `ExecutionApiUrl` from the outputs.
+Note the `ExecutionAgentRuntimeArn` from the outputs.
 
 ### Step 4: Deploy Verification Stack
 
@@ -155,48 +155,22 @@ Note the `ExecutionApiUrl` from the outputs.
 # Set deployment environment (must match Step 3)
 export DEPLOYMENT_ENV=dev  # or 'prod'
 
-# Deploy Verification Stack with ExecutionApiUrl
+# Set executionAgentArn (from Step 3 output) in cdk.config.dev.json or via context
+# Then deploy Verification Stack
 npx cdk deploy SlackAI-Verification-Dev \
   --context deploymentEnv=dev \
-  --context executionApiUrl=<ExecutionApiUrl from step 3> \
+  --context executionAgentArn=<ExecutionAgentRuntimeArn from step 3> \
   --profile YOUR_PROFILE \
   --require-approval never
 ```
 
-**Note**: Alternatively, update `cdk.config.{env}.json` with `executionApiUrl` instead of using `--context`.
+**Note**: Alternatively, set `executionAgentArn` in `cdk.config.{env}.json` and run without `--context executionAgentArn`.
 
 **Note**: Use `SlackAI-Verification-Dev` for dev or `SlackAI-Verification-Prod` for prod.
 
-Note the `VerificationLambdaRoleArn` from the outputs.
-
-### Step 5: Update Execution Stack with Resource Policy and SQS Queue URL
-
-```bash
-# Set deployment environment (must match previous steps)
-export DEPLOYMENT_ENV=dev  # or 'prod'
-
-# Get ExecutionResponseQueueUrl from Verification Stack outputs
-EXECUTION_RESPONSE_QUEUE_URL=$(aws cloudformation describe-stacks \
-  --stack-name SlackAI-Verification-Dev \
-  --region ap-northeast-1 \
-  --query 'Stacks[0].Outputs[?OutputKey==`ExecutionResponseQueueUrl`].OutputValue' \
-  --output text)
-
-# Update Execution Stack to add API Gateway resource policy and SQS queue URL
-npx cdk deploy SlackAI-Execution-Dev \
-  --context deploymentEnv=dev \
-  --context verificationLambdaRoleArn=<VerificationLambdaRoleArn from step 4> \
-  --context executionResponseQueueUrl=${EXECUTION_RESPONSE_QUEUE_URL} \
-  --context verificationAccountId=YOUR_AWS_ACCOUNT_ID \
-  --profile YOUR_PROFILE \
-  --require-approval never
-```
-
-**Note**: Alternatively, you can update `cdk.config.dev.json` (or `cdk.config.prod.json`) with `executionResponseQueueUrl` instead of using `--context`.
-
 ### Alternative: Use Deployment Script
 
-For automated 3-phase deployment, use the provided script:
+For automated A2A-only deployment (Execution then Verification with executionAgentArn), use the provided script:
 
 ```bash
 # From project root
@@ -220,10 +194,8 @@ This script automatically:
 1. Validates deployment environment (`dev` or `prod`)
 2. Sets stack names with environment suffix (`-Dev` or `-Prod`)
 3. Deploys Execution Stack
-4. Gets ExecutionApiUrl and updates `cdk.config.{env}.json`
-5. Deploys Verification Stack with ExecutionApiUrl
-6. Gets VerificationLambdaRoleArn and ExecutionResponseQueueUrl and updates `cdk.config.{env}.json`
-7. Updates Execution Stack with resource policy and SQS queue URL
+4. Gets ExecutionAgentRuntimeArn and updates `cdk.config.{env}.json`
+5. Deploys Verification Stack with executionAgentArn (A2A-only)
 
 **Note**:
 
@@ -303,7 +275,7 @@ npx cdk destroy SlackAI-Execution-Dev  # or SlackAI-Execution-Prod
 This project supports environment separation for development (`dev`) and production (`prod`) deployments:
 
 - **Stack Names**: Automatically suffixed with `-Dev` or `-Prod` (e.g., `SlackAI-Execution-Dev`, `SlackAI-Verification-Prod`)
-- **Resource Isolation**: All resources (Lambda functions, DynamoDB tables, Secrets Manager, API Gateway, etc.) are automatically separated by environment
+- **Resource Isolation**: All resources (Lambda, DynamoDB, Secrets Manager, AgentCore runtimes, etc.) are automatically separated by environment
 - **Resource Tagging**: All resources are tagged with:
   - `Environment`: `dev` or `prod`
   - `Project`: `SlackAI`
@@ -323,11 +295,6 @@ export DEPLOYMENT_ENV=prod
 ```
 
 **Note**: If `DEPLOYMENT_ENV` is not set, defaults to `dev` with a warning. Each environment should use separate Slack apps/workspaces or different secrets for security.
-
-**Environment-Specific Resource Names**:
-- API Gateway API Key: `execution-api-key-{env}` (e.g., `execution-api-key-dev`, `execution-api-key-prod`)
-- API Gateway Usage Plan: `execution-api-usage-plan-{env}` (e.g., `execution-api-usage-plan-dev`, `execution-api-usage-plan-prod`)
-- Secrets Manager Secret: `execution-api-key-{env}` (e.g., `execution-api-key-dev`, `execution-api-key-prod`)
 
 These resource names are automatically suffixed with the environment name to ensure complete isolation between dev and prod environments.
 
@@ -397,27 +364,44 @@ The CDK project follows a fully separated stack structure where each stack is se
 ```
 cdk/
 ├── bin/
-│   └── cdk.ts                    # CDK application entry point
+│   └── cdk.ts                        # CDK application entry point
 ├── lib/
-│   ├── execution/                # Execution Stack (完全自己完結)
-│   │   ├── execution-stack.ts    # Stack definition
+│   ├── execution/                     # Execution Stack
+│   │   ├── execution-stack.ts         # Stack definition
 │   │   ├── constructs/
-│   │   │   ├── bedrock-processor.ts
-│   │   │   ├── execution-api.ts
-│   │   │   └── api-gateway-monitoring.ts
-│   │   └── lambda/               # Lambda code
-│   │       └── bedrock-processor/
-│   ├── verification/              # Verification Stack (完全自己完結)
-│   │   ├── verification-stack.ts # Stack definition
+│   │   │   ├── execution-agent-runtime.ts  # AgentCore Runtime (A2A)
+│   │   │   └── execution-agent-ecr.ts      # ECR image build
+│   │   ├── agent/
+│   │   │   └── execution-agent/            # Execution Agent container
+│   │   │       ├── Dockerfile              # ARM64 container
+│   │   │       ├── requirements.txt
+│   │   │       ├── main.py                 # FastAPI server (port 9000)
+│   │   │       ├── agent_card.py           # Agent Card
+│   │   │       ├── cloudwatch_metrics.py
+│   │   │       ├── bedrock_client_converse.py
+│   │   │       ├── attachment_processor.py
+│   │   │       └── tests/                  # Python tests (79 tests)
+│   ├── verification/                  # Verification Stack
+│   │   ├── verification-stack.ts      # Stack definition
 │   │   ├── constructs/
-│   │   │   ├── slack-event-handler.ts
-│   │   │   ├── slack-response-handler.ts
+│   │   │   ├── verification-agent-runtime.ts  # AgentCore Runtime (A2A)
+│   │   │   ├── verification-agent-ecr.ts      # ECR image build
+│   │   │   ├── slack-event-handler.ts         # Invokes Verification Agent via A2A
 │   │   │   └── (other constructs)
-│   │   └── lambda/               # Lambda code
-│   │       ├── slack-event-handler/
-│   │       └── slack-response-handler/
-│   └── types/                    # Shared type definitions
-├── test/                         # Unit tests
+│   │   ├── agent/
+│   │   │   └── verification-agent/            # Verification Agent container
+│   │   │       ├── Dockerfile                 # ARM64 container
+│   │   │       ├── requirements.txt
+│   │   │       ├── main.py                    # FastAPI server (port 9000)
+│   │   │       ├── a2a_client.py              # Execution Agent A2A client
+│   │   │       ├── agent_card.py              # Agent Card
+│   │   │       ├── cloudwatch_metrics.py
+│   │   │       └── tests/                     # Python tests (63 tests)
+│   │   └── lambda/
+│   │       └── slack-event-handler/
+│   └── types/                         # Shared type definitions
+├── test/                              # CDK/Jest tests (25 tests)
+│   └── agentcore-constructs.test.ts   # AgentCore construct tests
 ├── package.json
 ├── tsconfig.json
 └── cdk.json
@@ -434,12 +418,19 @@ cdk/
 ## Testing
 
 ```bash
-# Run unit tests
+# Run all CDK/Jest tests
 npm run test
 
-# Run specific test file
-npm run test -- execution-stack.test.ts
-npm run test -- verification-stack.test.ts
+# Run AgentCore construct tests (25 tests)
+npx jest test/agentcore-constructs.test.ts --verbose
+
+# Run specific stack tests
+npx jest test/execution-stack.test.ts
+npx jest test/verification-stack.test.ts
+
+# Run Python agent tests
+cd lib/execution/agent/execution-agent && python -m pytest tests/ -v     # 79 tests
+cd lib/verification/agent/verification-agent && python -m pytest tests/ -v  # 93 tests
 ```
 
 ### Test Coverage

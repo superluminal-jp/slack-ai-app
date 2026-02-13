@@ -1,0 +1,172 @@
+# A2A Contract: Verification Agent
+# Agent Card + A2A Message Definitions
+# Protocol: JSON-RPC 2.0 over HTTP (port 9000)
+
+agent_card:
+  name: "SlackAI-VerificationAgent"
+  description: >
+    Slack リクエストの検証・認可・タスク委任を担う AgentCore エージェント。
+    Slack 署名検証、Existence Check、ホワイトリスト認可、レート制限、
+    プロンプトインジェクション検出を実行し、検証通過後に Execution Agent へ
+    A2A プロトコルでタスクを委任する。AI 処理結果を Slack スレッドに投稿する。
+  version: "1.0.0"
+  protocolVersion: "0.3.0"
+  preferredTransport: "JSONRPC"
+  capabilities:
+    streaming: false
+  defaultInputModes:
+    - text
+  defaultOutputModes:
+    - text
+  skills:
+    - id: "slack-request-validation"
+      name: "Slack リクエスト検証"
+      description: "HMAC SHA256 署名検証、タイムスタンプ検証、イベント重複排除"
+      tags: ["security", "validation", "slack"]
+    - id: "existence-check"
+      name: "Existence Check"
+      description: "Slack API による team_id/user_id/channel_id の実在性確認（キャッシュ 5 分 TTL）"
+      tags: ["security", "authorization", "slack"]
+    - id: "whitelist-authorization"
+      name: "ホワイトリスト認可"
+      description: "team_id/user_id/channel_id の条件付き AND ホワイトリスト認可"
+      tags: ["security", "authorization"]
+    - id: "rate-limiting"
+      name: "レート制限"
+      description: "ユーザーごとのレート制限（トークンバケット、1 分窓、10 req/分）"
+      tags: ["security", "rate-limit"]
+    - id: "task-delegation"
+      name: "タスク委任"
+      description: "Execution Agent への A2A タスク委任とレスポンスの Slack 投稿"
+      tags: ["orchestration", "a2a"]
+    - id: "slack-response"
+      name: "Slack レスポンス投稿"
+      description: "AI 処理結果の Slack スレッドへの投稿（chat.postMessage、4000 文字分割）"
+      tags: ["slack", "response"]
+
+# Authentication (inbound)
+authentication:
+  type: "SIGV4"
+  # Verification Agent は SlackEventHandler Lambda から InvokeAgentRuntime で呼び出される
+  # 同一アカウント内のため SigV4 で十分
+
+---
+# A2A Endpoint Definitions
+
+endpoints:
+  # Health check
+  - path: "/ping"
+    method: "GET"
+    description: "ヘルスチェック"
+    response:
+      200:
+        body:
+          status: "Healthy"  # or "HealthyBusy"
+          time_of_last_update: 1640995200
+
+  # Agent Card discovery
+  - path: "/.well-known/agent-card.json"
+    method: "GET"
+    description: "Agent Card メタデータ"
+    response:
+      200:
+        content_type: "application/json"
+        body: "$ref: agent_card"
+
+  # A2A message endpoint
+  - path: "/"
+    method: "POST"
+    description: "A2A JSON-RPC 2.0 メッセージ受信"
+    request:
+      content_type: "application/json"
+      body:
+        jsonrpc: "2.0"
+        id: "string (correlation_id UUID v4)"
+        method: "message/send"
+        params:
+          message:
+            role: "user"
+            parts:
+              - kind: "text"
+                text: "JSON-encoded SlackTaskPayload"
+            messageId: "string (UUID v4)"
+    response:
+      200:
+        content_type: "application/json"
+        body:
+          jsonrpc: "2.0"
+          id: "string (same correlation_id)"
+          result:
+            artifacts:
+              - artifactId: "string (UUID v4)"
+                name: "slack_response_result"
+                parts:
+                  - kind: "text"
+                    text: "JSON-encoded SlackResponseResult"
+
+---
+# Payload Schemas
+
+schemas:
+  SlackTaskPayload:
+    description: "SlackEventHandler Lambda から Verification Agent へ送信されるペイロード"
+    properties:
+      channel:
+        type: string
+        required: true
+        description: "Slack チャンネル ID"
+        example: "C01234567"
+      text:
+        type: string
+        required: true
+        description: "ユーザーメッセージテキスト"
+      bot_token:
+        type: string
+        required: true
+        description: "Slack Bot Token"
+      thread_ts:
+        type: string
+        required: false
+        description: "スレッド返信用タイムスタンプ"
+      attachments:
+        type: array
+        required: false
+        description: "添付ファイルメタデータ配列"
+        items:
+          properties:
+            id: { type: string }
+            name: { type: string }
+            mimetype: { type: string }
+            size: { type: integer }
+            url_private_download: { type: string }
+      correlation_id:
+        type: string
+        required: true
+        description: "相関 ID（UUID v4）"
+      team_id:
+        type: string
+        required: true
+        description: "Slack ワークスペース ID"
+      user_id:
+        type: string
+        required: true
+        description: "Slack ユーザー ID"
+
+  SlackResponseResult:
+    description: "Verification Agent が Slack へのレスポンス投稿結果"
+    properties:
+      status:
+        type: string
+        enum: ["posted", "failed"]
+        required: true
+      channel:
+        type: string
+        required: true
+      thread_ts:
+        type: string
+      message_ts:
+        type: string
+        description: "投稿されたメッセージのタイムスタンプ"
+      error:
+        type: string
+        description: "エラー詳細（status=failed 時）"

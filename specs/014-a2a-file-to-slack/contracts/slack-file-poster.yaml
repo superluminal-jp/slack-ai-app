@@ -1,0 +1,59 @@
+# Slack File Posting Contract (Verification Agent)
+# post_file_to_slack の入力・出力・エラー
+
+name: "Slack File Poster (014)"
+description: "Verification Agent が A2A から受け取ったファイルを Slack スレッドに投稿する API"
+version: "1.0.0"
+
+---
+# 関数シグネチャ（論理）
+
+function: post_file_to_slack
+parameters:
+  channel:
+    type: string
+    required: true
+    description: "Slack チャンネル ID（例: C01234567）"
+  thread_ts:
+    type: string
+    required: false
+    description: "スレッドに投稿する場合の親メッセージ ts（例: 1234567890.123456）"
+  file_bytes:
+    type: bytes
+    required: true
+    description: "ファイル内容（バイナリ）"
+  file_name:
+    type: string
+    required: true
+    description: "ファイル名（例: export.csv）"
+  mime_type:
+    type: string
+    required: true
+    description: "MIME タイプ（例: text/csv）"
+  bot_token:
+    type: string
+    required: true
+    description: "Slack Bot OAuth Token（xoxb-*）"
+
+returns: None
+raises:
+  - ValueError: "channel, file_name, bot_token が空または不正"
+  - SlackApiError: "Slack API 呼び出し失敗（getUploadURLExternal / completeUploadExternal）"
+
+---
+# Slack API フロー（推奨）
+
+steps:
+  1: "files.getUploadURLExternal を呼び出し（filename, length を渡す）"
+  2: "返却された upload_url に file_bytes を POST（Content-Type: application/octet-stream または mime_type）"
+  3: "files.completeUploadExternal を呼び出し（files=[{id, title}], channel_id, thread_ts があれば指定）"
+
+scopes_required:
+  - "files:write"
+
+---
+# エラー時の振る舞い（FR-007）
+
+on_failure:
+  - "呼び出し元（main）で例外をキャッチ"
+  - "同一 thread_ts にテキストで「ファイルの投稿に失敗しました。しばらくしてからお試しください。」等を post_to_slack で投稿"

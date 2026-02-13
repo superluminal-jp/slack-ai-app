@@ -9,7 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **CDK main branch TypeScript (A2A-only)**: Resolved merge drift on main: `bin/cdk.ts` now uses `executionAgentName`, `verificationAgentName`, `executionAgentArn`, `bedrockModelId` and creates both stacks; `SlackEventHandlerProps` uses `verificationAgentArn` and optional `agentInvocationQueue`; tests aligned with A2A-only props
 - **Verification Agent missing `import time`**: Restored `import time` in `authorization.py`, `rate_limiter.py`, `slack_poster.py` — dropped during logging refactor, causing `NameError` on every request and silent failure (no Slack response)
 - **Deploy script PutResourcePolicy**: Fixed `Resource: "*"` (must match specific ARN); removed unsupported endpoint policy; fixed empty `AWS_PROFILE` causing `ProfileNotFound`
 - **AgentCore Runtime CloudWatch logs**: Replaced `print()` with Python `logging` module. Structured JSON logs are output via `logging.StreamHandler(sys.stdout)` with `%(message)s` formatter for CloudWatch compatibility. Added `logger_util` in both agents for centralized configuration.
@@ -125,6 +124,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Verification Agent and Execution Agent: replaced `bedrock-agentcore` SDK (`BedrockAgentCoreApp`, `_handle_invocation`, `add_async_task`/`complete_async_task`) with FastAPI + uvicorn direct routing
+- Agent containers now use raw JSON POST on port 9000 (not JSON-RPC 2.0) for AgentCore `invoke_agent_runtime` compatibility
+- README.ja.md, README.md, docs/README.md: 014 A2A file-to-Slack feature and recent updates (2026-02-08)
+- docs/reference/operations/slack-setup.md: Added `files:write` scope for 014 file uploads; manifest example updated
+- docs/slack-app-manifest.yaml: Added `files:write` to bot scopes for 014
+- docs/how-to/troubleshooting.md: New section "ファイルがスレッドに表示されない（014）"; log pattern `slack_post_file_failed`
+- Architecture overview (`docs/reference/architecture/overview.md`) now includes AgentCore A2A section
+- Zone communication docs (`zone-communication.md`) updated with A2A protocol path
+- System architecture diagram (`system-architecture-diagram.md`) includes AgentCore resources
+- Deployment script (`deploy-split-stacks.sh`) includes AgentCore validation phase
+- CDK config types updated with `executionAgentName`, `verificationAgentName`, `useAgentCore`, `executionAgentArn`
+- SlackEventHandler Lambda updated with Feature Flag routing (`USE_AGENTCORE` environment variable)
+- README.md and README.ja.md updated with AgentCore A2A architecture documentation
+- cdk/README.md updated with AgentCore resources, config fields, and test coverage
+- docs/README.md updated with AgentCore documentation links
 - Restructured docs/ directory with tutorials/, how-to/, reference/, explanation/ categories
 - Simplified README.md to focus on overview and navigation
 - Converted docs/README.md to navigation hub
@@ -139,14 +153,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fixed `IndentationError` in `verification-agent/main.py` line 132 (12 spaces → 8 spaces)
+- Fixed `useAgentCore` variable declaration order in `verification-stack.ts` (temporal dead zone)
 - Resolved DynamoDB table name conflicts between existing and new stacks
 - Fixed CloudFormation Early Validation errors for cross-stack resource references
 - Improved error handling for Execution API unavailability
 
 ### Removed
 
-- `SlackBedrockStack` single-stack deployment - コードベースから完全に削除されました。2 つの独立したスタック（VerificationStack + ExecutionStack）が標準です。
-- Single-stack deployment mode - `cdk/bin/cdk.ts` から削除されました。デフォルトは 2 つの独立したスタックのデプロイです。
+- `bedrock-agentcore` SDK dependency — replaced by `fastapi`, `uvicorn`, and `strands-agents[a2a]`
+- `BedrockAgentCoreApp` / `_handle_invocation` / `add_async_task` / `complete_async_task` patterns from agent containers
+- `SlackBedrockStack` single-stack deployment — removed from codebase. Two independent stacks (VerificationStack + ExecutionStack) are the standard.
+- Single-stack deployment mode — removed from `cdk/bin/cdk.ts`. Default is two independent stacks deployment.
 
 ## [1.0.0] - 2025-12-27
 
@@ -175,4 +193,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [Unreleased]: https://github.com/owner/slack-ai-app/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/owner/slack-ai-app/releases/tag/v1.0.0
-

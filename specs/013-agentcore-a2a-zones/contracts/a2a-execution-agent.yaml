@@ -1,0 +1,237 @@
+# A2A Contract: Execution Agent
+# Agent Card + A2A Message Definitions
+# Protocol: JSON-RPC 2.0 over HTTP (port 9000)
+
+agent_card:
+  name: "SlackAI-ExecutionAgent"
+  description: >
+    AI 処理を担う AgentCore エージェント。Verification Agent から A2A プロトコルで
+    タスクを受信し、Amazon Bedrock Converse API を呼び出して AI レスポンスを生成する。
+    添付ファイル処理（画像分析、ドキュメント抽出）、スレッド履歴取得、
+    マルチモーダル入力にも対応。非同期タスクとして長時間処理をサポート。
+  version: "1.0.0"
+  protocolVersion: "0.3.0"
+  preferredTransport: "JSONRPC"
+  capabilities:
+    streaming: false
+  defaultInputModes:
+    - text
+  defaultOutputModes:
+    - text
+  skills:
+    - id: "bedrock-conversation"
+      name: "Bedrock 会話処理"
+      description: "Amazon Bedrock Converse API による会話型 AI 処理（テキスト入力 → テキスト出力）"
+      tags: ["ai", "bedrock", "conversation"]
+    - id: "attachment-processing"
+      name: "添付ファイル処理"
+      description: "画像分析（Bedrock Vision）、ドキュメント抽出（PDF, DOCX, CSV, XLSX, PPTX, TXT）"
+      tags: ["ai", "bedrock", "multimodal", "attachments"]
+    - id: "thread-history"
+      name: "スレッド履歴取得"
+      description: "Slack conversations.replies API によるスレッド会話履歴の取得と Bedrock への提供"
+      tags: ["slack", "context", "history"]
+    - id: "async-processing"
+      name: "非同期 AI 処理"
+      description: "AgentCore 非同期タスク管理による長時間 Bedrock 処理のバックグラウンド実行"
+      tags: ["async", "background", "long-running"]
+
+# Authentication (inbound)
+authentication:
+  type: "SIGV4"
+  # クロスアカウント: Verification Account の IAM ロールに InvokeAgentRuntime を許可
+  # Resource-based policy を Runtime と Endpoint の両方に設定
+  cross_account:
+    caller_principal: "arn:aws:iam::<VERIFICATION_ACCOUNT_ID>:role/VerificationAgentExecutionRole"
+    actions:
+      - "bedrock-agentcore:InvokeAgentRuntime"
+
+---
+# A2A Endpoint Definitions
+
+endpoints:
+  # Health check
+  - path: "/ping"
+    method: "GET"
+    description: "ヘルスチェック（非同期タスク進行中は HealthyBusy）"
+    response:
+      200:
+        body:
+          status: "Healthy"  # "Healthy" or "HealthyBusy"
+          time_of_last_update: 1640995200
+
+  # Agent Card discovery
+  - path: "/.well-known/agent-card.json"
+    method: "GET"
+    description: "Agent Card メタデータ"
+    response:
+      200:
+        content_type: "application/json"
+        body: "$ref: agent_card"
+
+  # A2A message endpoint
+  - path: "/"
+    method: "POST"
+    description: "A2A JSON-RPC 2.0 メッセージ受信（AI 処理タスク）"
+    request:
+      content_type: "application/json"
+      body:
+        jsonrpc: "2.0"
+        id: "string (correlation_id UUID v4)"
+        method: "message/send"
+        params:
+          message:
+            role: "user"
+            parts:
+              - kind: "text"
+                text: "JSON-encoded ExecutionTaskPayload"
+            messageId: "string (UUID v4)"
+    response:
+      # 同期レスポンス（処理完了時）
+      200:
+        content_type: "application/json"
+        body:
+          jsonrpc: "2.0"
+          id: "string (same correlation_id)"
+          result:
+            artifacts:
+              - artifactId: "string (UUID v4)"
+                name: "execution_response"
+                parts:
+                  - kind: "text"
+                    text: "JSON-encoded ExecutionResponse"
+      # エラーレスポンス
+      200_error:
+        content_type: "application/json"
+        body:
+          jsonrpc: "2.0"
+          id: "string (same correlation_id)"
+          error:
+            code: -32055  # RuntimeClientError
+            message: "Runtime client error - Please check your CloudWatch logs for more information"
+
+---
+# Payload Schemas
+
+schemas:
+  ExecutionTaskPayload:
+    description: "Verification Agent から Execution Agent へ送信される AI 処理タスク"
+    properties:
+      channel:
+        type: string
+        required: true
+        description: "Slack チャンネル ID"
+        example: "C01234567"
+      text:
+        type: string
+        required: true
+        description: "ユーザーメッセージテキスト"
+      bot_token:
+        type: string
+        required: true
+        description: "Slack Bot Token（スレッド履歴取得・添付ダウンロード用）"
+      thread_ts:
+        type: string
+        required: false
+        description: "スレッド返信用タイムスタンプ"
+      attachments:
+        type: array
+        required: false
+        description: "添付ファイルメタデータ配列"
+        items:
+          properties:
+            id: { type: string, description: "Slack ファイル ID" }
+            name: { type: string, description: "ファイル名" }
+            mimetype: { type: string, description: "MIME タイプ" }
+            size: { type: integer, description: "ファイルサイズ（バイト）" }
+            url_private_download: { type: string, description: "ダウンロード URL" }
+      correlation_id:
+        type: string
+        required: true
+        description: "相関 ID（UUID v4、トレース用）"
+      team_id:
+        type: string
+        required: true
+        description: "Slack ワークスペース ID"
+      user_id:
+        type: string
+        required: true
+        description: "Slack ユーザー ID"
+
+  ExecutionResponse:
+    description: "Execution Agent から Verification Agent へ返却される AI 処理結果"
+    properties:
+      status:
+        type: string
+        enum: ["success", "error"]
+        required: true
+        description: "処理結果ステータス"
+      channel:
+        type: string
+        required: true
+        description: "投稿先チャンネル ID"
+      thread_ts:
+        type: string
+        required: false
+        description: "スレッド返信用タイムスタンプ"
+      correlation_id:
+        type: string
+        required: false
+        description: "相関 ID（リクエストの correlation_id と一致）"
+      bot_token:
+        type: string
+        required: true
+        description: "Slack API 投稿用 Bot Token"
+      response_text:
+        type: string
+        required: false
+        description: "AI 生成テキスト（status=success 時）"
+      error_code:
+        type: string
+        required: false
+        description: "エラーコード（status=error 時）"
+        enum:
+          - "bedrock_timeout"
+          - "bedrock_throttling"
+          - "bedrock_model_error"
+          - "attachment_download_failed"
+          - "attachment_processing_failed"
+          - "thread_history_failed"
+          - "internal_error"
+      error_message:
+        type: string
+        required: false
+        description: "ユーザー向けエラーメッセージ（status=error 時）"
+
+---
+# Error Code Mapping
+
+error_codes:
+  bedrock_timeout:
+    description: "Bedrock API のタイムアウト"
+    user_message: "AI の応答が遅れています。しばらくして再度お試しください。"
+    json_rpc_code: -32055
+  bedrock_throttling:
+    description: "Bedrock API のスロットリング"
+    user_message: "現在リクエストが多いため、しばらくお待ちください。"
+    json_rpc_code: -32053
+  bedrock_model_error:
+    description: "Bedrock モデルのエラー"
+    user_message: "AI の処理中にエラーが発生しました。再度お試しください。"
+    json_rpc_code: -32055
+  attachment_download_failed:
+    description: "添付ファイルのダウンロード失敗"
+    user_message: "添付ファイルの取得に失敗しました。ファイルを再度アップロードしてお試しください。"
+    json_rpc_code: -32055
+  attachment_processing_failed:
+    description: "添付ファイルの処理失敗"
+    user_message: "添付ファイルの処理中にエラーが発生しました。"
+    json_rpc_code: -32055
+  thread_history_failed:
+    description: "スレッド履歴の取得失敗"
+    user_message: "会話履歴の取得に失敗しました。"
+    json_rpc_code: -32055
+  internal_error:
+    description: "内部エラー"
+    user_message: "内部エラーが発生しました。管理者にお問い合わせください。"
+    json_rpc_code: -32055

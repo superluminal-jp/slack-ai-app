@@ -1,6 +1,6 @@
 # slack-ai-app Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2025-12-06
+Auto-generated from all feature plans. Last updated: 2026-02-07
 
 ## Active Technologies
 - Python 3.11（Execution / Verification エージェント）、TypeScript 5.x（CDK） (014-a2a-file-to-slack)
@@ -21,7 +21,7 @@ Auto-generated from all feature plans. Last updated: 2025-12-06
 - TypeScript 5.x (cdk/), Node.js 18+ + aws-cdk-lib 2.215.x, constructs ^10.x, Jest (tests), zod (config validation) (029-cdk-logging-error-handling)
 - N/A (infrastructure definitions only; runtime state is in AWS) (029-cdk-logging-error-handling)
 
-- Python 3.11+ for Lambda functions, TypeScript for AWS CDK infrastructure + AWS CDK, boto3 (Bedrock SDK), slack-sdk (Python), AWS Lambda runtime, requests/httpx for file downloads, PyPDF2/pdfplumber for PDF extraction, python-docx for DOCX extraction (004-slack-attachments)
+- Python 3.11（エージェントコード）、TypeScript 5.x（CDK インフラ） (013-agentcore-a2a-zones)
 
 ## Project Structure
 
@@ -36,7 +36,7 @@ cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLO
 
 ## Code Style
 
-Python 3.11+ for Lambda functions, TypeScript for AWS CDK infrastructure: Follow standard conventions
+Python 3.11（エージェントコード）、TypeScript 5.x（CDK インフラ）: Follow standard conventions
 
 ## Recent Changes
 - 029-cdk-logging-error-handling: Added TypeScript 5.x (cdk/), Node.js 18+ + aws-cdk-lib 2.215.x, constructs ^10.x, Jest (tests), zod (config validation)

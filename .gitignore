@@ -19,9 +19,7 @@ yarn-error.log*
 *.tsbuildinfo
 .npm
 
-# AWS CDK
-*.js
-*.d.ts
+# AWS CDK (compiled .js/.d.ts handled by cdk/.gitignore)
 cdk.out/
 .cdk.staging/
 cdk.context.json
@@ -47,11 +45,6 @@ Thumbs.db
 # Logs
 *.log
 logs/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
 
 # Testing
 coverage/
@@ -65,7 +58,6 @@ coverage.xml
 # Temporary files
 *.tmp
 *.temp
-*.swp
 .cache/
 
 # Lambda deployment packages

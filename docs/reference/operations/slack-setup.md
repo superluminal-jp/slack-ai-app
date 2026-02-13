@@ -71,6 +71,7 @@ oauth_config:
       - team:read # Existence Check: team_id 検証
       - users:read # Existence Check: user_id 検証
       - channels:read # Existence Check: channel_id 検証
+      - files:write # 014: AI 生成ファイルをスレッドに投稿
 
 event_subscriptions:
   bot_events:

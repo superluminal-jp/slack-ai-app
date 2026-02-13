@@ -7,20 +7,26 @@ type: How-to
 audience: [Developer, Operations]
 status: Published
 created: 2025-12-27
-updated: 2025-12-27
+updated: 2026-02-11
 
 ---
 
 ## 概要
 
-このガイドでは、Slack Bedrock MVP の運用中に発生する可能性のある一般的な問題と、その解決方法を説明します。
+このガイドでは、Slack AI App の運用中に発生する可能性のある一般的な問題と、その解決方法を説明します。レガシーパス（API Gateway + SQS）と AgentCore A2A パスの両方をカバーします。
 
 ## 目次
 
 - [接続エラー](#接続エラー)
 - [認証エラー](#認証エラー)
+- [API キー / シークレット関連](#api-キー--シークレット関連)
 - [タイムアウトエラー](#タイムアウトエラー)
 - [Bedrock エラー](#bedrock-エラー)
+- [JSON シリアライゼーションエラー](#json-シリアライゼーションエラー)
+- [AgentCore A2A エラー](#agentcore-a2a-エラー)
+- [ファイルがスレッドに表示されない（014）](#ファイルがスレッドに表示されない014)
+- [添付ファイル処理エラー（024）](#添付ファイル処理エラー024)
+- [016 非同期起動（SQS / Agent Invoker / DLQ）](#016-非同期起動sqs--agent-invoker--dlq)
 - [ログの確認方法](#ログの確認方法)
 
 ---
@@ -86,6 +92,44 @@ timedatectl status
 
 1. DynamoDB のホワイトリストテーブルを確認
 2. 必要に応じてユーザー/チャンネルを追加
+
+---
+
+## API キー / シークレット関連
+
+### 症状: `execution_api_invocation_failed` ログエラー
+
+**考えられる原因**:
+
+1. `execution-api-key-{env}` シークレットが Secrets Manager に存在しない
+2. シークレットの値が正しくない
+
+**解決手順**:
+
+1. Secrets Manager でシークレットの存在を確認:
+
+```bash
+# 開発環境
+aws secretsmanager describe-secret --secret-id execution-api-key-dev
+
+# シークレットが存在しない場合は作成
+API_KEY_ID=$(aws cloudformation describe-stacks \
+  --stack-name SlackAI-Execution-Dev \
+  --query 'Stacks[0].Outputs[?OutputKey==`ExecutionApiKeyId`].OutputValue' \
+  --output text)
+
+API_KEY_VALUE=$(aws apigateway get-api-key \
+  --api-key $API_KEY_ID \
+  --include-value \
+  --query 'value' \
+  --output text)
+
+aws secretsmanager create-secret \
+  --name execution-api-key-dev \
+  --secret-string "$API_KEY_VALUE"
+```
+
+2. Lambda 環境変数 `EXECUTION_API_KEY_SECRET_NAME` が正しいシークレット名を指しているか確認
 
 ---
 

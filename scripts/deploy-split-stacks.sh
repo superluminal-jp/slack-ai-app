@@ -3,10 +3,9 @@
 # deploy-split-stacks.sh
 #
 # Deploys the Slack AI application using two independent stacks.
-# This script handles the 3-phase deployment process:
-#   1. Deploy ExecutionStack (get API URL)
-#   2. Deploy VerificationStack (get Lambda Role ARN)
-#   3. Update ExecutionStack with resource policy
+# This script handles the A2A-only deployment process:
+#   1. Deploy ExecutionStack (get ExecutionAgentRuntimeArn)
+#   2. Deploy VerificationStack with executionAgentArn (A2A)
 #
 # Usage:
 #   export DEPLOYMENT_ENV=dev  # or 'prod'
@@ -28,6 +27,20 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+# Logging functions (defined early so config block can use them)
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
 
 # Configuration
 # Get script directory and project root
@@ -72,23 +85,7 @@ BASE_VERIFICATION_STACK_NAME="${VERIFICATION_STACK_NAME:-SlackAI-Verification}"
 EXECUTION_STACK_NAME="${BASE_EXECUTION_STACK_NAME}-${ENVIRONMENT_SUFFIX}"
 VERIFICATION_STACK_NAME="${BASE_VERIFICATION_STACK_NAME}-${ENVIRONMENT_SUFFIX}"
 
-# Functions
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
+# Helper functions
 get_config_value() {
     local key=$1
     local config_file="${CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
@@ -241,22 +238,22 @@ deploy_execution_stack() {
     log_info "Waiting for stack outputs to be available..."
     sleep 5
 
-    # Get API URL from stack outputs
-    local api_url=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionApiUrl")
+    # Get Execution Agent Runtime ARN from stack outputs (A2A)
+    local exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn")
 
-    if [[ -z "${api_url}" ]]; then
-        log_error "Failed to get ExecutionApiUrl from stack outputs"
+    if [[ -z "${exec_agent_arn}" ]]; then
+        log_error "Failed to get ExecutionAgentRuntimeArn from stack outputs"
         log_info "Stack may still be updating. Please check CloudFormation console."
         exit 1
     fi
 
     log_success "Execution Stack deployed successfully"
-    log_info "Execution API URL: ${api_url}"
+    log_info "Execution Agent Runtime ARN: ${exec_agent_arn}"
 
-    # Update cdk.json with API URL
-    update_cdk_context "executionApiUrl" "${api_url}"
+    # Update config with executionAgentArn for Verification Stack deployment
+    update_cdk_context "executionAgentArn" "${exec_agent_arn}"
 
-    echo "${api_url}"
+    echo "${exec_agent_arn}"
 }
 
 deploy_verification_stack() {
@@ -273,8 +270,10 @@ deploy_verification_stack() {
         profile_args="--profile ${AWS_PROFILE}"
     fi
     
+    local context_args="--context deploymentEnv=${DEPLOYMENT_ENV}"
+
     log_info "Deploying ${VERIFICATION_STACK_NAME}..."
-    if ! npx cdk deploy "${VERIFICATION_STACK_NAME}" ${profile_args} --require-approval never --context deploymentEnv="${DEPLOYMENT_ENV}"; then
+    if ! npx cdk deploy "${VERIFICATION_STACK_NAME}" ${profile_args} --require-approval never ${context_args}; then
         log_error "Failed to deploy ${VERIFICATION_STACK_NAME}"
         exit 1
     fi
@@ -285,24 +284,12 @@ deploy_verification_stack() {
     log_info "Waiting for stack outputs to be available..."
     sleep 5
 
-    # Get Lambda Role ARN from stack outputs
-    local role_arn=$(get_stack_output "${VERIFICATION_STACK_NAME}" "VerificationLambdaRoleArn")
     local function_url=$(get_stack_output "${VERIFICATION_STACK_NAME}" "SlackEventHandlerUrl")
 
-    if [[ -z "${role_arn}" ]]; then
-        log_error "Failed to get VerificationLambdaRoleArn from stack outputs"
-        log_info "Stack may still be updating. Please check CloudFormation console."
-        exit 1
-    fi
-
     log_success "Verification Stack deployed successfully"
-    log_info "Verification Lambda Role ARN: ${role_arn}"
     log_info "Slack Event Handler URL: ${function_url}"
 
-    # Update cdk.json with role ARN
-    update_cdk_context "verificationLambdaRoleArn" "${role_arn}"
-
-    echo "${role_arn}"
+    echo "${function_url}"
 }
 
 # Apply resource policy on Execution Agent Runtime so Verification Agent can invoke it.
@@ -313,15 +300,12 @@ apply_execution_agent_resource_policy() {
     local exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn" 2>/dev/null || echo "")
     [[ -z "${exec_agent_arn}" ]] && return 0
 
-    cd "${PROJECT_ROOT}"
-    cd "${CDK_DIR}"
-
-    # Re-deploy Execution Stack with resource policy
     local profile_args=""
     if [[ -n "${AWS_PROFILE}" ]]; then
         profile_args="--profile ${AWS_PROFILE}"
     fi
-    npx cdk deploy "${EXECUTION_STACK_NAME}" ${profile_args} --require-approval never --context deploymentEnv="${DEPLOYMENT_ENV}"
+    local account_id=$(aws sts get-caller-identity ${profile_args} --query Account --output text 2>/dev/null || echo "")
+    [[ -z "${account_id}" ]] && return 0
 
     # Principal: Verification Agent role (verification account for cross-account; caller account for same-account)
     local verification_account=$(get_config_value "verificationAccountId" || echo "")
@@ -464,7 +448,8 @@ validate_agentcore() {
 
 print_summary() {
     local function_url=$(get_stack_output "${VERIFICATION_STACK_NAME}" "SlackEventHandlerUrl")
-    local api_url=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionApiUrl")
+    local exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn" 2>/dev/null || echo "N/A")
+    local verify_agent_arn=$(get_stack_output "${VERIFICATION_STACK_NAME}" "VerificationAgentRuntimeArn" 2>/dev/null || echo "N/A")
 
     echo ""
     log_info "=========================================="
@@ -474,12 +459,14 @@ print_summary() {
     echo "Slack Event Handler URL (for Slack Event Subscriptions):"
     echo "  ${function_url}"
     echo ""
-    echo "Execution API URL (internal):"
-    echo "  ${api_url}"
+    echo "AgentCore (A2A):"
+    echo "  Execution Agent ARN:     ${exec_agent_arn}"
+    echo "  Verification Agent ARN:  ${verify_agent_arn}"
     echo ""
     echo "Next steps:"
     echo "  1. Configure Slack app Event Subscriptions with the Function URL above"
     echo "  2. Test by sending a message to your Slack bot"
+    echo "  3. Verify AgentCore Agent Cards at /.well-known/agent-card.json"
     echo ""
 }
 
@@ -490,14 +477,17 @@ main() {
 
     check_prerequisites
 
-    # Phase 1: Deploy Execution Stack
+    # Phase 1: Deploy Execution Stack (get ExecutionAgentRuntimeArn)
     deploy_execution_stack
 
-    # Phase 2: Deploy Verification Stack
+    # Phase 2: Deploy Verification Stack (uses executionAgentArn from config)
     deploy_verification_stack
 
-    # Phase 3: Update Execution Stack with resource policy
-    update_execution_stack
+    # Phase 2.5: Apply Execution Agent resource policy (allows Verification Agent to invoke)
+    apply_execution_agent_resource_policy
+
+    # Phase 3: Validate AgentCore runtimes
+    validate_agentcore
 
     # Print summary
     print_summary

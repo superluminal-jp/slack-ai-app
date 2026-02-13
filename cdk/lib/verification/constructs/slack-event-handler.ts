@@ -44,11 +44,7 @@ export class SlackEventHandler extends Construct {
   constructor(scope: Construct, id: string, props: SlackEventHandlerProps) {
     super(scope, id);
 
-    // Get deployment environment from stack name or context
     const stack = cdk.Stack.of(this);
-    const stackName = stack.stackName;
-    const deploymentEnv = stackName.includes("-Prod") ? "prod" : "dev";
-
     const lambdaPath = path.join(__dirname, "../lambda/slack-event-handler");
     
     // Create Lambda function for Slack event handling
@@ -61,7 +57,7 @@ export class SlackEventHandler extends Construct {
           command: [
             "bash",
             "-c",
-            "pip install --no-cache-dir -r requirements.txt -t /asset-output && cp -au . /asset-output",
+            "pip install --no-cache-dir -r requirements.txt -t /asset-output && cp -r . /asset-output",
           ],
           // Local bundling for faster builds and Colima compatibility
           local: {
@@ -95,7 +91,8 @@ export class SlackEventHandler extends Construct {
           },
         },
       }),
-      timeout: cdk.Duration.seconds(10),
+      // A2A / Execution 応答待ち（Bedrock 推論含む）。60s でタイムアウトするため 120s に延長
+      timeout: cdk.Duration.seconds(120),
       environment: {
         TOKEN_TABLE_NAME: props.tokenTableName,
         DEDUPE_TABLE_NAME: props.dedupeTableName,
@@ -111,9 +108,6 @@ export class SlackEventHandler extends Construct {
         // Optional: Whitelist secret name (can be set via environment variable or Secrets Manager)
         // Format: {stackName}/slack/whitelist-config
         WHITELIST_SECRET_NAME: `${cdk.Stack.of(this).stackName}/slack/whitelist-config`,
-        // Optional: Whitelist environment variables (comma-separated values)
-        // These are optional fallbacks if DynamoDB and Secrets Manager are not used
-        // WHITELIST_TEAM_IDS, WHITELIST_USER_IDS, WHITELIST_CHANNEL_IDS can be set via CDK context or environment
         // A2A: Verification Agent Runtime ARN (required)
         VERIFICATION_AGENT_ARN: props.verificationAgentArn,
         // 016: when set, handler sends to SQS instead of invoking AgentCore directly
@@ -155,26 +149,6 @@ export class SlackEventHandler extends Construct {
         effect: iam.Effect.ALLOW,
         actions: ["bedrock-agentcore:InvokeAgentRuntime"],
         resources: [props.verificationAgentArn, runtimeEndpointArn],
-      })
-    );
-
-    // Grant Bedrock permissions to Lambda function
-    // Per AWS official documentation, use wildcard resource with optional conditions
-    // Reference: https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_service-with-iam.html
-    this.function.addToRolePolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: [
-          "bedrock:InvokeModel",
-          "bedrock:InvokeModelWithResponseStream",
-        ],
-        resources: ["*"], // AWS recommended approach
-        // Optional: Add condition to restrict to specific model
-        // conditions: {
-        //   StringEquals: {
-        //     "bedrock:ModelId": "amazon.nova-pro-v1:0"
-        //   }
-        // }
       })
     );
 

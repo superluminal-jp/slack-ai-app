@@ -173,6 +173,8 @@ const executionStackName = `${baseExecutionStackName}-${environmentSuffix}`;
 // Cross-account configuration (optional)
 const verificationAccountId = getConfigString("verificationAccountId");
 const executionAccountId = getConfigString("executionAccountId");
+
+// AgentCore configuration
 const executionAgentName = getConfigString(
   "executionAgentName",
   "SlackAI_ExecutionAgent"
@@ -202,17 +204,17 @@ function setContextFromConfig(config: CdkConfig | null): void {
   app.node.setContext("executionStackName", baseExecutionStackName);
   app.node.setContext("verificationAccountId", verificationAccountId);
   app.node.setContext("executionAccountId", executionAccountId);
-  app.node.setContext("executionAgentName", executionAgentName);
-  app.node.setContext("verificationAgentName", verificationAgentName);
-  if (executionAgentArn) {
-    app.node.setContext("executionAgentArn", executionAgentArn);
-  }
 
   if (config.slackBotToken) {
     app.node.setContext("slackBotToken", config.slackBotToken);
   }
   if (config.slackSigningSecret) {
     app.node.setContext("slackSigningSecret", config.slackSigningSecret);
+  }
+  app.node.setContext("executionAgentName", executionAgentName);
+  app.node.setContext("verificationAgentName", verificationAgentName);
+  if (executionAgentArn) {
+    app.node.setContext("executionAgentArn", executionAgentArn);
   }
 }
 
@@ -234,56 +236,13 @@ function getDefaultEnv(region: string): cdk.Environment {
 const defaultEnv = getDefaultEnv(region);
 
 /**
- * Extract API Gateway ARN from URL (for IAM policy)
+ * Deployment Architecture (A2A only):
  *
- * @param apiUrl - API Gateway URL (e.g., https://{api-id}.execute-api.{region}.amazonaws.com/prod/)
- * @param region - AWS region
- * @param account - AWS account ID (optional)
- * @returns API Gateway ARN or empty string if URL is invalid
- */
-function getApiArnFromUrl(
-  apiUrl: string,
-  region: string,
-  account?: string
-): string {
-  if (!apiUrl) {
-    return "";
-  }
-
-  // Extract API ID from URL: https://{api-id}.execute-api.{region}.amazonaws.com/prod/
-  const match = apiUrl.match(/https:\/\/([^.]+)\.execute-api\./);
-  if (!match || !match[1]) {
-    return "";
-  }
-
-  const apiId = match[1];
-  const accountId = account || process.env.CDK_DEFAULT_ACCOUNT || "*";
-  return `arn:aws:execute-api:${region}:${accountId}:${apiId}/*`;
-}
-
-/**
- * Deployment Architecture:
+ * - ExecutionStack: Execution Agent AgentCore Runtime (A2A)
+ * - VerificationStack: SlackEventHandler + Verification Agent + DynamoDB + Secrets
  *
- * The application uses two independent stacks that can be deployed separately:
- * - ExecutionStack: BedrockProcessor + API Gateway
- * - VerificationStack: SlackEventHandler + DynamoDB + Secrets
- *
- * Stacks can be deployed independently using CDK CLI:
- *   - Deploy ExecutionStack: npx cdk deploy SlackAI-Execution-{Env}
- *   - Deploy VerificationStack: npx cdk deploy SlackAI-Verification-{Env}
- *
- * Deploy order (for initial setup):
- *   1. ExecutionStack → Get ExecutionApiUrl
- *   2. VerificationStack (with ExecutionApiUrl) → Get VerificationLambdaRoleArn
- *   3. ExecutionStack (update with VerificationLambdaRoleArn)
- *
- * Cross-account deployment is supported by setting verificationAccountId and executionAccountId.
- * If both account IDs are the same (or not set), same-account deployment is used.
- *
- * Stack independence:
- * - ExecutionStack can be deployed without VerificationStack
- * - VerificationStack requires ExecutionApiUrl (from ExecutionStack) to be configured
- * - If ExecutionApiUrl is not configured, only ExecutionStack will be synthesized
+ * Deploy order: 1) ExecutionStack → get ExecutionAgentRuntimeArn
+ *               2) VerificationStack with executionAgentArn (and executionAccountId if cross-account)
  */
 
 /**
