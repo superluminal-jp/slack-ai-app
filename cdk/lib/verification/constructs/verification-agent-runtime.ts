@@ -77,10 +77,10 @@ export class VerificationAgentRuntime extends Construct {
 
     const stack = cdk.Stack.of(this);
 
-    // Create IAM execution role for AgentCore Runtime
+    // Create IAM execution role for AgentCore Runtime (roleName unique per account; use stack name so Dev/Prod do not collide)
     // Trust policy: bedrock-agentcore.amazonaws.com
     this.executionRole = new iam.Role(this, "ExecutionRole", {
-      roleName: `${props.agentRuntimeName}-ExecutionRole`,
+      roleName: `${stack.stackName}-ExecutionRole`,
       assumedBy: new iam.ServicePrincipal("bedrock-agentcore.amazonaws.com", {
         conditions: {
           StringEquals: {
