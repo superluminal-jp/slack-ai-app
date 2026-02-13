@@ -144,10 +144,11 @@ const slackSigningSecretResource = new secretsmanager.Secret(
     });
     this.agentInvocationQueue = agentInvocationQueue;
 
+    // Runtime name must be unique per account (Dev and Prod coexist); default includes env from stack name
     const verificationAgentName =
       props.verificationAgentName ||
       this.node.tryGetContext("verificationAgentName") ||
-      "SlackAI_VerificationAgent";
+      `SlackAI_VerificationAgent_${this.stackName.includes("-Prod") ? "Prod" : "Dev"}`;
     const executionAgentArn =
       props.executionAgentArn ||
       this.node.tryGetContext("executionAgentArn") ||

@@ -53,10 +53,11 @@ export class ExecutionStack extends cdk.Stack {
       this.node.tryGetContext("verificationAccountId") ||
       "";
 
+    // Runtime name must be unique per account (Dev and Prod coexist); default includes env from stack name
     const executionAgentName =
       props?.executionAgentName ||
       this.node.tryGetContext("executionAgentName") ||
-      "SlackAI_ExecutionAgent";
+      `SlackAI_ExecutionAgent_${this.stackName.includes("-Prod") ? "Prod" : "Dev"}`;
 
     // ECR must be created before Runtime (Runtime requires containerImageUri from ECR)
     this.executionAgentEcr = new ExecutionAgentEcr(this, "ExecutionAgentEcr");
