@@ -29,7 +29,7 @@ This application enables teams to use AI capabilities directly from Slack. Team 
 
 ## Quick Start
 
-> **📖 Full guide**: [docs/quickstart.md](docs/quickstart.md)
+> **📖 Full guide**: [docs/developer/quickstart.md](docs/developer/quickstart.md)
 
 ### Prerequisites
 
@@ -70,7 +70,7 @@ export AWS_PROFILE=your-profile-name  # Optional: if using AWS profiles
 
 **Note**: Slack credentials can be set directly in `cdk.config.{env}.json` file. Environment variables are also supported, but configuration files are easier to manage.
 
-**⚠️ Important**: Configure whitelist after deployment. See [Quick Start Guide](docs/quickstart.md).
+**⚠️ Important**: Configure whitelist after deployment. See [Quick Start Guide](docs/developer/quickstart.md).
 
 ### Environment Separation
 
@@ -229,17 +229,17 @@ This structure supports:
 - ✅ Agent Card (A2A compliant) for Agent Discovery
 - ✅ Independent lifecycle management
 
-For technical details, see [Architecture Overview](docs/reference/architecture/overview.md).
+For technical details, see [Architecture Overview](docs/developer/architecture.md).
 
 ## Documentation
 
 | Audience            | Path                                                                                                                              |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| **Getting Started** | [Quick Start](docs/quickstart.md)                                                                                                 |
-| **Developers**      | [Architecture](docs/reference/architecture/overview.md) → [Implementation](docs/reference/architecture/implementation-details.md) |
-| **Security Team**   | [Security Requirements](docs/reference/security/requirements.md) → [Threat Model](docs/reference/security/threat-model.md)        |
-| **Operations**      | [Slack Setup](docs/reference/operations/slack-setup.md) → [Monitoring](docs/reference/operations/monitoring.md)                   |
-| **Decision Makers** | [Non-Technical Overview](docs/presentation/non-technical-overview.md)                                                             |
+| **Getting Started** | [Quick Start](docs/developer/quickstart.md)                                                                                         |
+| **Developers**      | [Architecture](docs/developer/architecture.md)                                                                                      |
+| **Security Team**   | [Security](docs/developer/security.md)                                                                                             |
+| **Operations**      | [Runbook](docs/developer/runbook.md)                                                                                               |
+| **Decision Makers** | [Proposal](docs/decision-maker/proposal.md)                                                                                        |
 
 **Full Documentation**: [docs/README.md](docs/README.md)
 
@@ -502,11 +502,11 @@ For attacks using real `team_id`/`user_id`/`channel_id` (when both Signing Secre
    - When whitelist is empty (not configured): All requests are allowed (for flexible configuration)
    - **Recommendation**: Configure whitelist in production to allow only authorized entities
 
-For details, see [Authentication & Authorization Security Guide](docs/reference/security/authentication-authorization.md).
+For details, see [Security Guide](docs/developer/security.md).
 
 ## Troubleshooting
 
-See [Troubleshooting Guide](docs/how-to/troubleshooting.md).
+See [Troubleshooting Guide](docs/developer/troubleshooting.md).
 
 **Common Issues**:
 
@@ -524,7 +524,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 1. Read [CLAUDE.md](CLAUDE.md) for development policies
 2. Create feature branch
-3. Update documentation with code changes
+3. **Update documentation with code changes** — keep README, CHANGELOG, and relevant docs in sync; follow [Documentation Standards](docs/DOCUMENTATION_STANDARDS.md)
 4. Submit pull request
 
 ## License
@@ -534,7 +534,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 ## Support
 
 1. Check [Documentation](docs/README.md)
-2. Review [Troubleshooting Guide](docs/how-to/troubleshooting.md)
+2. Review [Troubleshooting Guide](docs/developer/troubleshooting.md)
 3. Create GitHub issue with logs and reproduction steps
 
 ---

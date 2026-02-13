@@ -36,3 +36,8 @@ Verification Agent (A2A)
 - **E1 スコープ定義**: 本 README に担当・非担当を明記
 - **計装**: Structured JSON ログ（event_type, correlation_id）、CloudWatch メトリクス
 - **マルチモーダル**: Bedrock Converse content block 形式（text, document, image）で渡す（024 実装済み）
+
+---
+
+Module README follows project [Documentation Standards](../../../../../docs/DOCUMENTATION_STANDARDS.md).  
+**Last updated**: 2026-02-13

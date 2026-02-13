@@ -327,5 +327,5 @@ def save_to_cache(cache_key: str, ttl: int):
 - [Slack API: conversations.info](https://api.slack.com/methods/conversations.info)
 - [Slack API Rate Limits](https://api.slack.com/docs/rate-limits)
 - [AWS DynamoDB TTL](https://docs.aws.amazon.com/amazon-dynamodb/latest/developerguide/TTL.html)
-- [ADR-004: Slack API Existence Check](../docs/adr/004-slack-api-existence-check.md)
+- [ADR-004: Slack API Existence Check](../../docs/developer/adr/004-slack-api-existence-check.md)
 

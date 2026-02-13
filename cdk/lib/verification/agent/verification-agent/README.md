@@ -37,3 +37,8 @@ agent-invoker (Lambda)
 - **E1 スコープ定義**: 本 README に担当・非担当を明記
 - **計装**: Structured JSON ログ（event_type, correlation_id）、CloudWatch メトリクス
 - **ツール戦略**: A2A の handle_message_tool 相当は Execution Agent 側で実装
+
+---
+
+Module README follows project [Documentation Standards](../../../../../docs/DOCUMENTATION_STANDARDS.md).  
+**Last updated**: 2026-02-13

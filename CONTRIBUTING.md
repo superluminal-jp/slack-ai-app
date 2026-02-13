@@ -46,7 +46,7 @@ By participating in this project, you agree to maintain a respectful and inclusi
 
 ## Development Setup
 
-See [docs/quickstart.md](docs/quickstart.md) for detailed setup instructions.
+See [docs/developer/quickstart.md](docs/developer/quickstart.md) for detailed setup instructions.
 
 ### Quick Start
 
@@ -65,7 +65,7 @@ cd ../../execution-stack/bedrock-processor && pytest
 
 ## Pull Request Process
 
-1. **Update documentation** if your changes affect user-facing features
+1. **Update documentation** if your changes affect user-facing features, setup, or behavior. Follow [Documentation Standards](docs/DOCUMENTATION_STANDARDS.md): update README/CHANGELOG/module docs in the same change; use plain language, inverted pyramid, and the quality checklist. Test any documented commands before committing.
 2. **Add tests** for new features or bug fixes
 3. **Ensure all tests pass** before submitting
 4. **Request review** from maintainers
@@ -103,6 +103,7 @@ Use conventional commit format:
 - Include language tags in code blocks
 - Use relative links for internal references
 - Keep line length reasonable for readability
+- Follow [Documentation Standards](docs/DOCUMENTATION_STANDARDS.md) for structure, style, CHANGELOG, and module READMEs; update docs in the same change as code
 
 ---
 
@@ -152,11 +153,11 @@ Slack Bedrock MVP への貢献に興味を持っていただきありがとう�
 
 ## 開発環境のセットアップ
 
-詳細なセットアップ手順については [docs/quickstart.md](docs/quickstart.md) を参照してください。
+詳細なセットアップ手順については [docs/developer/quickstart.md](docs/developer/quickstart.md) を参照してください。
 
 ## プルリクエストプロセス
 
-1. 変更がユーザー向け機能に影響する場合は**ドキュメントを更新**する
+1. 変更がユーザー向け機能・セットアップ・挙動に影響する場合は**ドキュメントを更新**する。[Documentation Standards](docs/DOCUMENTATION_STANDARDS.md) に従い、README/CHANGELOG/該当ドキュメントを同じ変更で更新し、記載したコマンドは実行して検証する。
 2. 新機能やバグ修正には**テストを追加**する
 3. 提出前に**すべてのテストが通る**ことを確認する
 4. メンテナーに**レビューをリクエスト**する
@@ -184,4 +185,5 @@ Slack Bedrock MVP への貢献に興味を持っていただきありがとう�
 - コードブロックに言語タグを含める
 - 内部参照には相対リンクを使用する
 - 読みやすさのために行の長さを適切に保つ
+- [Documentation Standards](docs/DOCUMENTATION_STANDARDS.md) に従う（構成・文体・CHANGELOG・モジュールREADME）。コード変更と同時にドキュメントを更新する
 

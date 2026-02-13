@@ -58,4 +58,4 @@ Verification Agent の AgentCore Runtime に環境変数を設定する:
 - **017 のように Lambda でエコーしてほしい**
   - 018 では Lambda 側の 017 エコー分岐は削除されている。Lambda のみでエコーする検証が必要な場合は、017 のタグまたはブランチでデプロイする。
 
-**関連ドキュメント**: [トラブルシューティング（018）](../../docs/how-to/troubleshooting.md#018-echo-at-verification-agent-runtime)。
+**関連ドキュメント**: [トラブルシューティング（018）](../../docs/developer/troubleshooting.md#018-echo-at-verification-agent-runtime)。

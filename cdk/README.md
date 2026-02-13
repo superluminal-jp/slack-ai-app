@@ -463,3 +463,9 @@ These conventions define how we log lifecycle events and document code (FR-006) 
 - **Module level**: Every top-level stack and construct module should have a short JSDoc block describing (1) **purpose** (what this unit does and why it exists) and (2) **main responsibilities**. Optionally list key inputs/outputs.
 - **Function/API level**: Public APIs (constructs, props interfaces, notable functions) should have JSDoc with a summary and, where relevant, `@param` and `@returns`. Document non-obvious configuration choices, ordering, and constraints at the point of use.
 - **Style**: Use a single, consistent style across the CDK codebase so that maintainers know where to find explanations (module vs. function level).
+
+CDK documentation conventions align with the project [Documentation Standards](../docs/DOCUMENTATION_STANDARDS.md) (structure, plain language, single source of truth).
+
+---
+
+**Last updated**: 2026-02-13
