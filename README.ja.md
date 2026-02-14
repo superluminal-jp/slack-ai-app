@@ -65,7 +65,7 @@ export DEPLOYMENT_ENV=dev  # 本番環境の場合は 'prod' を使用
 
 # 3. デプロイスクリプトを実行（AWSプロファイルはオプション）
 export AWS_PROFILE=your-profile-name  # オプション: AWSプロファイルを使用する場合
-./scripts/deploy-split-stacks.sh
+./scripts/deploy.sh
 ```
 
 **注意**: Slack 認証情報は`cdk.config.{env}.json`ファイルに直接設定できます。環境変数として設定することも可能ですが、設定ファイルの方が管理しやすくなります。
@@ -89,11 +89,11 @@ export AWS_PROFILE=your-profile-name  # オプション: AWSプロファイル�
 ```bash
 # 開発環境にデプロイ
 export DEPLOYMENT_ENV=dev
-./scripts/deploy-split-stacks.sh
+./scripts/deploy.sh
 
 # 本番環境にデプロイ
 export DEPLOYMENT_ENV=prod
-./scripts/deploy-split-stacks.sh
+./scripts/deploy.sh
 ```
 
 **注意**: `DEPLOYMENT_ENV` が設定されていない場合、スクリプトは警告を表示してデフォルトで `dev` 環境を使用します。セキュリティのため、各環境では別々の Slack アプリ/ワークスペースを使用するか、異なるシークレットを設定することを推奨します。

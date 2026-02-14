@@ -181,8 +181,8 @@ export DEPLOYMENT_ENV=dev  # or 'prod' for production
 export AWS_PROFILE=your-profile-name
 
 # Run deployment script
-chmod +x scripts/deploy-split-stacks.sh
-./scripts/deploy-split-stacks.sh
+chmod +x scripts/deploy.sh
+./scripts/deploy.sh
 ```
 
 **Note**: The deployment script loads Slack credentials from `cdk.config.{env}.json` when not set in the environment. Cross-stack values (e.g. `executionAgentArn`) are taken from stack outputs during deploy.
@@ -221,7 +221,7 @@ npx cdk deploy SlackAI-Execution-Dev \
   --context executionAccountId=222222222222
 ```
 
-Then follow the same steps as above. The deployment script (`scripts/deploy-split-stacks.sh`) supports cross-account deployment.
+Then follow the same steps as above. The deployment script (`scripts/deploy.sh`) supports cross-account deployment.
 
 ### Verification flow and access checks
 
@@ -229,8 +229,8 @@ When Slack mentions return "AIサービスへのアクセスが拒否されま�
 
 | Script | Purpose |
 |--------|--------|
-| `./scripts/check-verification-logs.sh [--since 30m] [--env dev]` | Tail logs at each stage (Slack Event Handler → Agent Invoker → Verification Runtime → Slack Poster) to see where the flow stops. |
-| `./scripts/check-execution-access.sh [--region ap-northeast-1] [--env dev]` | Check (1) Execution Agent resource policy Principal, (2) Verification Agent IAM (Runtime + Endpoint), (3) Verification Runtime log for `invoke_execution_agent_failed`. |
+| `./scripts/deploy.sh logs --latest [--since 1h]` | Trace a Slack request across all stages (Slack Event Handler → Agent Invoker → Verification Agent → Execution Agent → Slack Poster) by correlation_id. |
+| `./scripts/deploy.sh check-access` | Check (1) Execution Agent resource policy Principal, (2) Verification Agent IAM (Runtime + Endpoint), (3) Verification Runtime log for `invoke_execution_agent_failed`. |
 
 See [docs/developer/troubleshooting.md](../docs/developer/troubleshooting.md) for full troubleshooting steps.
 
@@ -312,11 +312,11 @@ This project supports environment separation for development (`dev`) and product
 ```bash
 # Deploy to development environment
 export DEPLOYMENT_ENV=dev
-./scripts/deploy-split-stacks.sh
+./scripts/deploy.sh
 
 # Deploy to production environment
 export DEPLOYMENT_ENV=prod
-./scripts/deploy-split-stacks.sh
+./scripts/deploy.sh
 ```
 
 **Note**: If `DEPLOYMENT_ENV` is not set, defaults to `dev` with a warning. Each environment should use separate Slack apps/workspaces or different secrets for security.

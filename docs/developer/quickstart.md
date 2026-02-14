@@ -71,7 +71,7 @@ macOS では Docker Desktop の代わりに [Colima](https://github.com/abiosoft
    docker info         # Server が表示されれば OK
    ```
 
-   CDK デプロイ（`./scripts/deploy-split-stacks.sh`）や CDK Jest テスト（`cd cdk && npx jest`）実行時は、先に `colima start` しておいてください。Lambda のローカル pip バンドルが失敗した場合に Docker にフォールバックするため、Colima が動いている必要があります。
+   CDK デプロイ（`./scripts/deploy.sh`）や CDK Jest テスト（`cd cdk && npx jest`）実行時は、先に `colima start` しておいてください。Lambda のローカル pip バンドルが失敗した場合に Docker にフォールバックするため、Colima が動いている必要があります。
 
 ### AWS サービス要件
 
@@ -245,8 +245,8 @@ export DEPLOYMENT_ENV=dev  # 本番環境の場合は 'prod' を使用
 export AWS_PROFILE=your-profile-name
 
 # デプロイスクリプトを実行
-chmod +x scripts/deploy-split-stacks.sh
-./scripts/deploy-split-stacks.sh
+chmod +x scripts/deploy.sh
+./scripts/deploy.sh
 ```
 
 **注意**: デプロイスクリプトは`cdk.config.{env}.json`ファイルから設定を自動的に読み込みます。環境変数（`SLACK_BOT_TOKEN`、`SLACK_SIGNING_SECRET`）もサポートされていますが、設定ファイルの方が推奨されます。

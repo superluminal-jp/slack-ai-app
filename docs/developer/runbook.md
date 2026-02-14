@@ -675,7 +675,7 @@ aws logs tail /aws/agentcore/execution-agent --follow
 
 ### 4.1 PutResourcePolicy 要件
 
-`deploy-split-stacks.sh` が Execution Agent の Runtime へ `PutResourcePolicy` を適用します（Endpoint は `PutResourcePolicy` 非対応）。**デプロイ用 IAM に `PutResourcePolicy` 権限が必要**です。
+`deploy.sh` が Execution Agent の Runtime へ `PutResourcePolicy` を適用します（Endpoint は `PutResourcePolicy` 非対応）。**デプロイ用 IAM に `PutResourcePolicy` 権限が必要**です。
 
 次の警告が出る場合は、下記の IAM 権限を追加してください。
 

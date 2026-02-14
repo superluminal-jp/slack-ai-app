@@ -158,7 +158,7 @@ aws secretsmanager create-secret \
 1. **呼び出し元 IAM に Runtime と Endpoint の両方を許可する**  
    AWS の評価では、呼び出し元の **identity-based ポリシー** が `bedrock-agentcore:InvokeAgentRuntime` を **Runtime と Endpoint の両方**のリソースに対して許可している必要がある。CDK の Verification Agent Runtime 構築では、`executionAgentArn` から DEFAULT エンドポイント ARN（`...:runtime-endpoint/<Name>/DEFAULT`）を導出し、両方を IAM の `resources` に含めている。再デプロイでこの変更が入っていることを確認する。
 2. **デプロイスクリプトでリソースポリシーを適用**  
-   `scripts/deploy-split-stacks.sh` を実行し、Phase 2.5 の「Apply Execution Agent resource policy」が成功していることを確認する。ログに表示される Principal（`SlackAI-Verification-Dev-ExecutionRole` など）が、実際の Verification 実行ロール名と一致しているか確認する。失敗している場合は、実行している IAM ユーザー/ロールに `bedrock-agentcore-control:PutResourcePolicy` 権限があるか確認する。
+   `scripts/deploy.sh` を実行し、Phase 2.5 の「Apply Execution Agent resource policy」が成功していることを確認する。ログに表示される Principal（`SlackAI-Verification-Dev-ExecutionRole` など）が、実際の Verification 実行ロール名と一致しているか確認する。失敗している場合は、実行している IAM ユーザー/ロールに `bedrock-agentcore-control:PutResourcePolicy` 権限があるか確認する。あるいは `./scripts/deploy.sh policy` でリソースポリシーのみ適用することも可能。
 3. **リソースポリシーの Principal を確認**  
    Execution Agent Runtime に設定されているリソースポリシーの Principal が、Verification Agent の **実行ロール ARN**（`arn:aws:iam::<account>:role/<VerificationStack名>-ExecutionRole`）と一致しているか確認する。スタック名は例: `SlackAI-Verification-Dev`。
 4. **CloudWatch ログでエラーを確認**  
@@ -516,22 +516,22 @@ aws logs filter-log-events --region ap-northeast-1 \
 
 ### ログの確認方法
 
-#### 各段階のログを一括取得（trace-slack-request-logs.sh）
+#### 各段階のログを一括取得（deploy.sh logs）
 
-Slack からのリクエストについて、**各段階（Slack Event Handler → Agent Invoker → Verification Agent → Execution Agent → Slack Poster）の AWS CloudWatch ログを取得し一覧**するスクリプトがあります。
+Slack からのリクエストについて、**各段階（Slack Event Handler → Agent Invoker → Verification Agent → Execution Agent → Slack Poster）の AWS CloudWatch ログを取得し一覧**するサブコマンドがあります。
 
 ```bash
 # 最新のリクエストのログを取得（過去1時間以内）
-./scripts/trace-slack-request-logs.sh --latest
+./scripts/deploy.sh logs --latest
 
 # 特定の correlation_id でログを取得
-./scripts/trace-slack-request-logs.sh --correlation-id "abc-123-def"
+./scripts/deploy.sh logs --correlation-id "abc-123-def"
 
 # 過去2時間の範囲で最新リクエストを取得
-./scripts/trace-slack-request-logs.sh --latest --since 2h
+./scripts/deploy.sh logs --latest --since 2h
 
 # ロググループ一覧を表示（探索モード）
-./scripts/trace-slack-request-logs.sh --list-log-groups
+./scripts/deploy.sh logs --list-log-groups
 ```
 
 **前提条件**: AWS CLI が設定済み、jq がインストール済み（`brew install jq`）。
@@ -691,11 +691,11 @@ https://gzqk7e3d5nxyzy5k2cinwjzjrm0icnak.lambda-url.ap-northeast-1.on.aws/
 メンションから返信までの**各段階**でログをまとめて確認するには、次のスクリプトを実行します。どこで処理が止まっているか・どのエラーが出ているかを切り分けできます。
 
 ```bash
-# 直近 30 分のログを [A]〜[D] の順に表示（dev・ap-northeast-1）
-./scripts/check-verification-logs.sh
+# 最新のリクエストログを各段階で表示（dev・ap-northeast-1）
+./scripts/deploy.sh logs --latest
 
-# 直近 1 時間・リージョン指定・prod
-./scripts/check-verification-logs.sh --since 1h --region ap-northeast-1 --env prod
+# 過去1時間・prod
+DEPLOYMENT_ENV=prod ./scripts/deploy.sh logs --latest --since 1h
 ```
 
 | 段階 | ログの場所 | 見るイベント | 意味 |
@@ -717,12 +717,12 @@ https://gzqk7e3d5nxyzy5k2cinwjzjrm0icnak.lambda-url.ap-northeast-1.on.aws/
 **Execution 側の設定をまとめて確認する場合**は、次のスクリプトを実行する（リソースポリシーの Principal・Verification の IAM・Runtime ログの生エラーを順に表示）。
 
 ```bash
-./scripts/check-execution-access.sh [--region ap-northeast-1] [--env dev]
+./scripts/deploy.sh check-access
 ```
 
 ### 「access_denied」の原因と次の確認手順
 
-**現象**: `check-verification-logs.sh` の [C] で `execution_agent_error_response` に `error_code: "access_denied"` が出ており、`check-execution-access.sh` では [1] リソースポリシーと [2] IAM がどちらも OK と表示される。
+**現象**: `deploy.sh logs` の [3] Verification Agent で `execution_agent_error_response` に `error_code: "access_denied"` が出ており、`deploy.sh check-access` では [1] リソースポリシーと [2] IAM がどちらも OK と表示される。
 
 **原因**: エラーは **Verification Agent が Execution Agent を呼ぶとき**、AWS の `InvokeAgentRuntime` API が **AccessDeniedException** を返した結果です。Verification 側の `a2a_client.py` がこれを捕捉し、ユーザー向けに `access_denied` /「AI サービスへのアクセスが拒否されました」にマッピングして errors ログと Slack に出力しています。
 
@@ -741,7 +741,7 @@ https://gzqk7e3d5nxyzy5k2cinwjzjrm0icnak.lambda-url.ap-northeast-1.on.aws/
    - Execution スタックの出力: `aws cloudformation describe-stacks --stack-name SlackAI-Execution-Dev --query 'Stacks[0].Outputs[?OutputKey==\`ExecutionAgentRuntimeArn\`].OutputValue' --output text`  
    - Verification デプロイ時に渡している `executionAgentArn`（`cdk.config.*.json` や `--context`）および、実行中の Verification Runtime に渡っている `EXECUTION_AGENT_ARN` が上記と **同一** か確認する。
 2. **Phase 2.5 の再実行**  
-   `./scripts/deploy-split-stacks.sh` の Phase 2.5 を再実行し、Execution Agent Runtime にリソースポリシーが適用されることを確認する。失敗する場合は `bedrock-agentcore-control:PutResourcePolicy` の権限を確認する。
+   `./scripts/deploy.sh policy` を実行し、Execution Agent Runtime にリソースポリシーが適用されることを確認する。失敗する場合は `bedrock-agentcore-control:PutResourcePolicy` の権限を確認する。
 3. **Verification Runtime の本体ログで AWS エラー確認**  
    ロググループ `/aws/bedrock-agentcore/runtimes/SlackAI_VerificationAgent_Dev-*-DEFAULT` で `invoke_execution_agent_failed` を検索し、同じイベントの `error_message` と `execution_agent_arn` を確認する。ここに AWS が返した生のメッセージと、実際に呼び出している ARN が記録される。
 

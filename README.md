@@ -65,7 +65,7 @@ export DEPLOYMENT_ENV=dev  # Use 'prod' for production
 
 # 3. Run deployment script (with optional AWS profile)
 export AWS_PROFILE=your-profile-name  # Optional: if using AWS profiles
-./scripts/deploy-split-stacks.sh
+./scripts/deploy.sh
 ```
 
 **Note**: Slack credentials can be set directly in `cdk.config.{env}.json` file. Environment variables are also supported, but configuration files are easier to manage.
@@ -89,11 +89,11 @@ This project supports environment separation for development (`dev`) and product
 ```bash
 # Deploy to development environment
 export DEPLOYMENT_ENV=dev
-./scripts/deploy-split-stacks.sh
+./scripts/deploy.sh
 
 # Deploy to production environment
 export DEPLOYMENT_ENV=prod
-./scripts/deploy-split-stacks.sh
+./scripts/deploy.sh
 ```
 
 **Note**: If `DEPLOYMENT_ENV` is not set, the script defaults to `dev` environment with a warning. Each environment should use separate Slack apps/workspaces or different secrets for security.
