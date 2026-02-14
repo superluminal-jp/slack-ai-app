@@ -1,0 +1,94 @@
+# JSON-RPC 2.0 contract: Verification Zone <-> Execution Zone
+# Feature: 032-jsonrpc-zone-connection
+# CSP-independent A2A: transport (e.g. InvokeAgentRuntime, direct HTTPS) is an implementation detail.
+# Single method: execute_task
+
+jsonrpc: "2.0"
+
+methods:
+  execute_task:
+    description: |
+      Execute the AI task (Bedrock, attachments, etc.) and return the result
+      or an async acceptance (task_id) for polling.
+    params:
+      type: object
+      required: [channel, text, bot_token]
+      properties:
+        channel: { type: string, description: Slack channel id }
+        text: { type: string, description: User message text }
+        bot_token: { type: string, description: Slack bot token }
+        correlation_id: { type: string, description: Trace id }
+        thread_ts: { type: string, description: Slack thread timestamp }
+        attachments: { type: array, description: Attachment descriptors }
+        team_id: { type: string }
+        user_id: { type: string }
+    result:
+      description: On success, result carries status and response payload.
+      oneOf:
+        - type: object
+          properties:
+            status: { const: "success" }
+            response_text: { type: string }
+          required: [status]
+        - type: object
+          properties:
+            status: { const: "accepted" }
+            task_id: { type: string }
+          required: [status, task_id]
+    errors:
+      - code: -32602
+        message: "Invalid params"
+        when: Missing or invalid required params (channel, text, bot_token)
+      - code: -32603
+        message: "Internal error"
+        when: Unhandled exception or processing failure
+      - code: -32001
+        message: "Timeout"
+        when: Processing exceeded allowed time (optional server error)
+      - code: -32000
+        message: "Server error"
+        when: Other server-defined errors; details in error.data
+
+# Standard JSON-RPC 2.0 errors (applies to all methods)
+standard_errors:
+  - code: -32700
+    message: "Parse error"
+    when: Request body is not valid JSON; response id MUST be null
+  - code: -32600
+    message: "Invalid Request"
+    when: Valid JSON but not a valid Request (e.g. missing method); response id MUST be null
+  - code: -32601
+    message: "Method not found"
+    when: method is not execute_task or unknown
+
+# Request/Response envelope (JSON-RPC 2.0)
+request:
+  type: object
+  required: [jsonrpc, method, id]
+  properties:
+    jsonrpc: { const: "2.0" }
+    method: { type: string }
+    params: { type: object }
+    id: { type: [string, number, "null"] }
+
+response_success:
+  type: object
+  required: [jsonrpc, result, id]
+  properties:
+    jsonrpc: { const: "2.0" }
+    result: {}
+    id: { type: [string, number, "null"] }
+
+response_error:
+  type: object
+  required: [jsonrpc, error, id]
+  properties:
+    jsonrpc: { const: "2.0" }
+    error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: integer }
+        message: { type: string }
+        data: {}
+    id: { type: [string, number, "null"] }

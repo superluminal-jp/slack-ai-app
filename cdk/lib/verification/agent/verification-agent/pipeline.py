@@ -323,6 +323,8 @@ def run(payload: dict) -> str:
         }
 
         try:
+            # 032 US3: invoke_execution_agent returns unwrapped payload only (result or error body).
+            # No JSON-RPC envelope (jsonrpc/id) is exposed; Slack sees only status, response_text, or user-facing error.
             execution_result = invoke_execution_agent(execution_payload)
             try:
                 result_data = json.loads(execution_result) if isinstance(execution_result, str) else execution_result

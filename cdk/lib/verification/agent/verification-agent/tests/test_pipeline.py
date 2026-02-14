@@ -453,3 +453,73 @@ class TestPipelineSmallFileArtifactInline:
                     assert fa is not None
                     assert "contentBase64" in fa
                     assert "s3PresignedUrl" not in fa
+
+
+class Test032E2EFlowUnchanged:
+    """032 US3: End-to-end user flow unchanged; no JSON-RPC envelope exposed to Slack."""
+
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_success_path_passes_response_text_only_no_envelope(
+        self, mock_existence, mock_auth, mock_invoke, mock_slack_post
+    ):
+        """T032: Success path uses only result payload (response_text); no jsonrpc/id sent to Slack."""
+        mock_existence.return_value = MagicMock(exists=True)
+        mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
+        mock_invoke.return_value = json.dumps({
+            "status": "success",
+            "response_text": "AI reply content only",
+        })
+        mock_slack_post.return_value = None
+
+        with patch("pipeline.check_rate_limit") as mock_rate:
+            mock_rate.return_value = (True, None)
+            from pipeline import run
+
+            run({"prompt": json.dumps(_payload())})
+
+            mock_slack_post.assert_called_once()
+            slack_kw = mock_slack_post.call_args[1]
+            assert slack_kw.get("text") == "AI reply content only"
+            assert "jsonrpc" not in str(slack_kw)
+            assert slack_kw.get("file_artifact") is None
+
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_error_path_passes_user_friendly_message_only_no_raw_envelope(
+        self, mock_existence, mock_auth, mock_invoke, mock_slack_post
+    ):
+        """T032: Error path uses mapped user-facing message only; no raw JSON-RPC error to Slack."""
+        mock_existence.return_value = MagicMock(exists=True)
+        mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
+        mock_invoke.return_value = json.dumps({
+            "status": "error",
+            "error_code": "throttling",
+            "error_message": "Rate exceeded",
+            "correlation_id": "corr-err",
+        })
+        mock_slack_post.return_value = None
+
+        with patch("pipeline.check_rate_limit") as mock_rate:
+            mock_rate.return_value = (True, None)
+            with patch("pipeline.log_execution_agent_error_response"):
+                from pipeline import run, ERROR_MESSAGE_MAP
+
+                run({"prompt": json.dumps(_payload())})
+
+                mock_slack_post.assert_called_once()
+                slack_kw = mock_slack_post.call_args[1]
+                expected_text = ERROR_MESSAGE_MAP.get("throttling")
+                assert slack_kw.get("text") == expected_text
+                assert "jsonrpc" not in str(slack_kw)
+                assert "id" not in str(slack_kw.get("text", ""))
+
+
+@pytest.mark.skip(reason="要検証: E2E. Slack → Verification → Execution (JSON-RPC) → Verification → Slack. Run manually or in integration env.")
+def test_e2e_slack_verification_execution_slack_unchanged():
+    """T031/T033: E2E flow unchanged. Reply content and error messages equivalent to pre-JSON-RPC baseline."""
+    pass

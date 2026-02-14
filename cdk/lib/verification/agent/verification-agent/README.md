@@ -32,6 +32,10 @@ agent-invoker (Lambda)
         → SQS enqueue → slack-event-handler
 ```
 
+## Zone-to-zone protocol (032)
+
+Verification → Execution 間のアプリケーション層プロトコルは **JSON-RPC 2.0**（CSP 非依存 A2A）です。トランスポート（例: InvokeAgentRuntime）は実装詳細であり、単一メソッド `execute_task` で channel / text / bot_token 等を params として送受信します。成功時は `result`、エラー時は `error`（code, message）で返却し、Slack にはアンラップされたペイロードのみ渡します。
+
 ## 026 Best Practices
 
 - **E1 スコープ定義**: 本 README に担当・非担当を明記
@@ -41,4 +45,4 @@ agent-invoker (Lambda)
 ---
 
 Module README follows project [Documentation Standards](../../../../../docs/DOCUMENTATION_STANDARDS.md).  
-**Last updated**: 2026-02-13
+**Last updated**: 2026-02-14

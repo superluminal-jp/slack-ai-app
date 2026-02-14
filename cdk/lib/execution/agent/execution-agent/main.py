@@ -638,6 +638,84 @@ def handle_message(payload):
     )
 
 
+# ─── JSON-RPC 2.0 (032: CSP-independent A2A) ───
+
+def handle_invocation_body(body: bytes) -> dict:
+    """
+    Parse request body as JSON-RPC 2.0 Request and return JSON-RPC 2.0 Response.
+
+    - Invalid JSON → error -32700 (Parse error), id null
+    - Valid JSON but not a valid Request → error -32600 (Invalid Request), id null
+    - method != "execute_task" → error -32601 (Method not found), request id
+    - method == "execute_task" → call handle_message_tool with params, wrap in result, request id
+    """
+    # Parse JSON
+    try:
+        data = json.loads(body.decode("utf-8") if isinstance(body, bytes) else body)
+    except (json.JSONDecodeError, TypeError, ValueError) as e:
+        _log("ERROR", "jsonrpc_parse_error", {"error": str(e)})
+        return {
+            "jsonrpc": "2.0",
+            "error": {"code": -32700, "message": "Parse error"},
+            "id": None,
+        }
+
+    if not isinstance(data, dict):
+        return {
+            "jsonrpc": "2.0",
+            "error": {"code": -32600, "message": "Invalid Request"},
+            "id": None,
+        }
+
+    # Required: jsonrpc, method, id (per JSON-RPC 2.0 and contract)
+    if data.get("jsonrpc") != "2.0" or "method" not in data or "id" not in data:
+        return {
+            "jsonrpc": "2.0",
+            "error": {"code": -32600, "message": "Invalid Request"},
+            "id": None,
+        }
+
+    req_id = data.get("id")
+    method = data.get("method")
+
+    if method != "execute_task":
+        return {
+            "jsonrpc": "2.0",
+            "error": {"code": -32601, "message": "Method not found"},
+            "id": req_id,
+        }
+
+    # execute_task: params as task payload (032 US2: validate required params before calling)
+    params = data.get("params") if isinstance(data.get("params"), dict) else {}
+    _REQUIRED_PARAMS = ("channel", "text", "bot_token")
+    missing = [k for k in _REQUIRED_PARAMS if not (params.get(k) and str(params.get(k)).strip())]
+    if missing:
+        return {
+            "jsonrpc": "2.0",
+            "error": {
+                "code": -32602,
+                "message": "Invalid params",
+                "data": {"missing": missing},
+            },
+            "id": req_id,
+        }
+    payload = {"prompt": json.dumps(params)}
+    try:
+        result_str = handle_message_tool(json.dumps(payload))
+    except Exception as e:
+        _log("ERROR", "jsonrpc_execute_task_error", {"error": str(e)})
+        return {
+            "jsonrpc": "2.0",
+            "error": {"code": -32603, "message": "Internal error", "data": {"detail": str(e)}},
+            "id": req_id,
+        }
+    try:
+        result_data = json.loads(result_str) if isinstance(result_str, str) else result_str
+    except (json.JSONDecodeError, TypeError):
+        result_data = {"status": "error", "error_message": "Invalid response"}
+    return {"jsonrpc": "2.0", "result": result_data, "id": req_id}
+
+
 # ─── FastAPI app ───
 
 app = FastAPI()
@@ -659,58 +737,10 @@ def agent_card_endpoint():
 
 @app.post("/")
 async def handle_invocation(request: Request):
-    """Handle invoke_agent_runtime payload — parse and process."""
-    start_time = time.time()
+    """Handle invoke_agent_runtime payload as JSON-RPC 2.0 (032: CSP-independent A2A)."""
     body = await request.body()
-
-    try:
-        payload = json.loads(body)
-    except (json.JSONDecodeError, TypeError) as e:
-        _log("ERROR", "request_parse_error", {
-            "error": str(e),
-            "body_preview": body[:200].decode("utf-8", errors="replace") if body else "",
-        })
-        return JSONResponse(
-            status_code=400,
-            content={"status": "error", "error_code": "invalid_json", "error_message": "Invalid JSON payload"},
-        )
-
-    # Extract correlation_id from nested prompt for tracing
-    raw_prompt = payload.get("prompt", "{}")
-    try:
-        task_payload = json.loads(raw_prompt) if isinstance(raw_prompt, str) else raw_prompt
-    except (json.JSONDecodeError, TypeError):
-        task_payload = {}
-    correlation_id = task_payload.get("correlation_id", "")
-
-    _log(
-        "INFO",
-        "request_received",
-        {
-            "correlation_id": correlation_id,
-            "channel": task_payload.get("channel", ""),
-            "text_length": len(task_payload.get("text", "")),
-            "has_thread_ts": bool(task_payload.get("thread_ts")),
-            "attachment_count": len(task_payload.get("attachments", [])),
-            "payload_bytes": len(body),
-        },
-    )
-
-    result = handle_message_tool(json.dumps(payload))
-    duration_ms = (time.time() - start_time) * 1000
-
-    result_data = json.loads(result) if isinstance(result, str) else result
-    _log(
-        "INFO",
-        "request_completed",
-        {
-            "correlation_id": correlation_id,
-            "status": result_data.get("status", ""),
-            "duration_ms": round(duration_ms, 2),
-        },
-    )
-
-    return JSONResponse(content=result_data)
+    content = handle_invocation_body(body)
+    return JSONResponse(content=content)
 
 
 if __name__ == "__main__":

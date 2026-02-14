@@ -540,3 +540,101 @@ class TestUS3VersionConstraints:
         assert "bedrock-agentcore" not in content, (
             "bedrock-agentcore should be removed from requirements.txt"
         )
+
+
+class Test032JsonRpcZoneConnection:
+    """032: JSON-RPC 2.0 zone connection (CSP-independent A2A)."""
+
+    def test_jsonrpc_invalid_json_returns_parse_error(self):
+        """POST body that is not valid JSON returns JSON-RPC 2.0 error -32700, id null."""
+        import main
+        body = b"not valid json"
+        resp = main.handle_invocation_body(body)
+        assert resp.get("jsonrpc") == "2.0"
+        assert "error" in resp
+        assert resp["error"]["code"] == -32700
+        assert resp["error"]["message"] == "Parse error"
+        assert resp.get("id") is None
+
+    def test_jsonrpc_valid_json_but_invalid_request_returns_32600(self):
+        """POST body valid JSON but missing method returns JSON-RPC 2.0 error -32600, id null."""
+        import main
+        body = b'{"foo": 1}'
+        resp = main.handle_invocation_body(body)
+        assert resp.get("jsonrpc") == "2.0"
+        assert "error" in resp
+        assert resp["error"]["code"] == -32600
+        assert resp["error"]["message"] == "Invalid Request"
+        assert resp.get("id") is None
+
+    def test_jsonrpc_unknown_method_returns_method_not_found(self):
+        """POST method 'foobar' with id returns JSON-RPC 2.0 error -32601 and same id."""
+        import main
+        body = b'{"jsonrpc": "2.0", "method": "foobar", "id": "1"}'
+        resp = main.handle_invocation_body(body)
+        assert resp.get("jsonrpc") == "2.0"
+        assert "error" in resp
+        assert resp["error"]["code"] == -32601
+        assert resp["error"]["message"] == "Method not found"
+        assert resp.get("id") == "1"
+
+    @patch("main.handle_message_tool")
+    def test_jsonrpc_execute_task_returns_result_with_id(self, mock_tool):
+        """POST valid JSON-RPC execute_task with params returns JSON-RPC 2.0 response with result or error and same id."""
+        import main
+        mock_tool.return_value = json.dumps({
+            "status": "success",
+            "response_text": "AI reply",
+        })
+        body = json.dumps({
+            "jsonrpc": "2.0",
+            "method": "execute_task",
+            "params": {
+                "channel": "C01234",
+                "text": "Hello",
+                "bot_token": "xoxb-test",
+            },
+            "id": "2",
+        }).encode("utf-8")
+        resp = main.handle_invocation_body(body)
+        assert resp.get("jsonrpc") == "2.0"
+        assert resp.get("id") == "2"
+        assert "result" in resp or "error" in resp
+        if "result" in resp:
+            assert resp["result"].get("status") == "success"
+            assert resp["result"].get("response_text") == "AI reply"
+
+    def test_jsonrpc_execute_task_missing_channel_returns_invalid_params(self):
+        """T023 [US2]: execute_task with params missing channel returns error.code -32602, request id preserved."""
+        import main
+        body = json.dumps({
+            "jsonrpc": "2.0",
+            "method": "execute_task",
+            "params": {"text": "Hi", "bot_token": "xoxb-test"},
+            "id": "req-32602",
+        }).encode("utf-8")
+        resp = main.handle_invocation_body(body)
+        assert resp.get("jsonrpc") == "2.0"
+        assert "error" in resp
+        assert resp["error"]["code"] == -32602
+        assert "Invalid params" in resp["error"].get("message", "")
+        assert resp.get("id") == "req-32602"
+        assert "result" not in resp
+
+    @patch("main.handle_message_tool")
+    def test_jsonrpc_execute_task_exception_returns_internal_error_with_id(self, mock_tool):
+        """T024 [US2]: When processing throws, response has error.code -32603 or -32001, request id preserved."""
+        import main
+        mock_tool.side_effect = RuntimeError("Simulated failure")
+        body = json.dumps({
+            "jsonrpc": "2.0",
+            "method": "execute_task",
+            "params": {"channel": "C01", "text": "Hi", "bot_token": "xoxb-test"},
+            "id": "req-32603",
+        }).encode("utf-8")
+        resp = main.handle_invocation_body(body)
+        assert resp.get("jsonrpc") == "2.0"
+        assert "error" in resp
+        assert resp["error"]["code"] in (-32603, -32001)
+        assert resp.get("id") == "req-32603"
+        assert "result" not in resp

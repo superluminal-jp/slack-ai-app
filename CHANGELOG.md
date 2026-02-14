@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Verification–Execution zone connection (032)**: Zone-to-zone protocol is now JSON-RPC 2.0 (method `execute_task`). Application layer is transport-agnostic; transport (e.g. InvokeAgentRuntime) remains an implementation detail. Execution Agent accepts JSON-RPC Request and returns JSON-RPC Response; Verification Agent builds Request and parses Response. Error contract unified (e.g. -32602 Invalid params, -32603 Internal error).
 - **Deploy script simplification**: Replaced two-phase synth/deploy with single `cdk deploy`, use `--outputs-file` for stack outputs instead of `describe-stacks` polling, deduplicated agent validation loop into `wait_for_agent_ready()`, removed config file mutation during deploy, and extracted inline Python resource policy into standalone `scripts/apply-resource-policy.py`
 - **Execution Agent system prompt**: Consolidated split prompts (`FILE_GEN_ONLY_SYSTEM_PROMPT` + `EXTENDED_SYSTEM_PROMPT_ADDON`) into single `FULL_SYSTEM_PROMPT` with all tools explicitly listed
 - **CDK outdir**: `cdk/bin/cdk.ts` reads `CDK_OUTDIR` env for cloud assembly output path; explicit `app.synth()` call
