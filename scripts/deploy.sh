@@ -3,7 +3,8 @@
 # deploy.sh — Unified CLI for Slack AI application deployment and diagnostics
 #
 # Subcommands:
-#   deploy [--force-rebuild]               Full deploy (default when no subcommand)
+#   (default) [--force-rebuild]             Full pipeline: deploy + status + check-access + logs
+#   deploy [--force-rebuild]               Deploy only (no diagnostics)
 #   status                                 Stack status + image tag
 #   check-access                           A2A authorization troubleshooting
 #   logs [--latest|--correlation-id ID]    Request tracing across all stages
@@ -729,7 +730,8 @@ cmd_help() {
 Usage: ./scripts/deploy.sh [SUBCOMMAND] [OPTIONS]
 
 Subcommands:
-  deploy [--force-rebuild]                Full deploy (default if no subcommand)
+  (none) [--force-rebuild]                Full pipeline: deploy + status + check-access + logs (default)
+  deploy [--force-rebuild]                Deploy only (no diagnostics)
   status                                  Stack status + image tag
   check-access                            A2A authorization troubleshooting
   logs [OPTIONS]                          Request tracing across all stages
@@ -763,9 +765,24 @@ EOF
 
 # ── Dispatch ─────────────────────────────────────────────────
 
-subcommand="${1:-deploy}"
+subcommand="${1:-all}"
 case "$subcommand" in
-    deploy)       shift 2>/dev/null || true; cmd_deploy "$@" ;;
+    all)
+        # Default: run full pipeline (deploy + diagnostics)
+        shift 2>/dev/null || true
+        cmd_deploy "$@"
+        echo ""
+        log_info "=========================================="
+        log_info "Post-deploy diagnostics"
+        log_info "=========================================="
+        echo ""
+        cmd_status
+        echo ""
+        cmd_check_access
+        echo ""
+        cmd_logs --latest --since 5m 2>/dev/null || log_warning "No recent logs found (expected if this is a fresh deploy)"
+        ;;
+    deploy)       shift; cmd_deploy "$@" ;;
     status)       shift; cmd_status "$@" ;;
     check-access) shift; cmd_check_access "$@" ;;
     logs)         shift; cmd_logs "$@" ;;
