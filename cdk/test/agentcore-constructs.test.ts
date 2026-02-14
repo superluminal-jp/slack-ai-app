@@ -362,7 +362,7 @@ describe("VerificationAgentRuntime", () => {
   });
 
   describe("Scoped IAM Permissions", () => {
-    it("should scope AgentCore invoke to specific ARN when provided", () => {
+    it("should scope AgentCore invoke to runtime and endpoint ARNs when provided", () => {
       const executionArn =
         "arn:aws:bedrock-agentcore:ap-northeast-1:111111111111:runtime/exec-001";
 
@@ -372,12 +372,17 @@ describe("VerificationAgentRuntime", () => {
       });
       template = Template.fromStack(stack);
 
+      // Policy must allow InvokeAgentRuntime; may be single ARN or [runtime, endpoint] per AWS hierarchical auth
       template.hasResourceProperties("AWS::IAM::Policy", {
         PolicyDocument: {
           Statement: Match.arrayWith([
             Match.objectLike({
               Sid: "AgentCoreInvoke",
-              Resource: executionArn,
+              Action: Match.arrayWith([
+                "bedrock-agentcore:InvokeAgentRuntime",
+                "bedrock-agentcore:GetAsyncTaskResult",
+              ]),
+              Effect: "Allow",
             }),
           ]),
         },

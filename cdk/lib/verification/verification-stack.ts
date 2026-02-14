@@ -1,9 +1,11 @@
+import * as crypto from "crypto";
 import * as cdk from "aws-cdk-lib";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as sqs from "aws-cdk-lib/aws-sqs";
 import { Construct } from "constructs";
+import { applyCostAllocationTags } from "../utils/cost-allocation-tags";
 import { SlackEventHandler } from "./constructs/slack-event-handler";
 import { TokenStorage } from "./constructs/token-storage";
 import { EventDedupe } from "./constructs/event-dedupe";
@@ -66,10 +68,7 @@ export class VerificationStack extends cdk.Stack {
       "dev";
     const deploymentEnv = deploymentEnvRaw.toLowerCase().trim();
 
-    cdk.Tags.of(this).add("Environment", deploymentEnv);
-    cdk.Tags.of(this).add("Project", "SlackAI");
-    cdk.Tags.of(this).add("ManagedBy", "CDK");
-    cdk.Tags.of(this).add("StackName", this.stackName);
+    applyCostAllocationTags(this, { deploymentEnv });
 
     const slackBotToken =
       process.env.SLACK_BOT_TOKEN ||
@@ -191,6 +190,13 @@ slackPostRequestQueue: slackPoster.queue,
     );
     this.verificationAgentRuntimeArn = this.verificationAgentRuntime.runtimeArn;
 
+    // Revision from signing secret so Lambda env changes when secret changes; warm instances then refetch from Secrets Manager
+    const configRevision = crypto
+      .createHash("sha256")
+      .update(slackSigningSecret)
+      .digest("hex")
+      .slice(0, 16);
+
     this.slackEventHandler = new SlackEventHandler(this, "SlackEventHandler", {
       slackSigningSecret: slackSigningSecretResource,
       slackBotTokenSecret: slackBotTokenSecret,
@@ -203,6 +209,7 @@ slackPostRequestQueue: slackPoster.queue,
       bedrockModelId,
       verificationAgentArn: this.verificationAgentRuntimeArn,
       agentInvocationQueue: this.agentInvocationQueue,
+      configRevision,
     });
 
     new AgentInvoker(this, "AgentInvoker", {

@@ -20,6 +20,10 @@ Auto-generated from all feature plans. Last updated: 2026-02-07
 - S3 (file-exchange バケット), 既存 `attachments/` に加え `generated_files/` プレフィックス追加 (028-s3-large-file-transfer)
 - TypeScript 5.x (cdk/), Node.js 18+ + aws-cdk-lib 2.215.x, constructs ^10.x, Jest (tests), zod (config validation) (029-cdk-logging-error-handling)
 - N/A (infrastructure definitions only; runtime state is in AWS) (029-cdk-logging-error-handling)
+- Documentation only — Markdown; no application language in scope. + None (file moves, link updates, optional link-checker tooling). (001-docs-restructure)
+- Filesystem — existing `docs/` directory (~32 markdown files, current top-level: explanation, how-to, implementation, presentation, reference, tutorials). (001-docs-restructure)
+- TypeScript 5.x (CDK app in `cdk/`) + aws-cdk-lib, constructs; Jest for CDK assertions (Template.fromStack) (031-cdk-cost-allocation-tags)
+- N/A (tags are template metadata; Cost Explorer uses tags from deployed resources) (031-cdk-cost-allocation-tags)
 
 - Python 3.11（エージェントコード）、TypeScript 5.x（CDK インフラ） (013-agentcore-a2a-zones)
 
@@ -39,9 +43,9 @@ cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLO
 Python 3.11（エージェントコード）、TypeScript 5.x（CDK インフラ）: Follow standard conventions
 
 ## Recent Changes
+- 031-cdk-cost-allocation-tags: Added TypeScript 5.x (CDK app in `cdk/`) + aws-cdk-lib, constructs; Jest for CDK assertions (Template.fromStack)
+- 001-docs-restructure: Added Documentation only — Markdown; no application language in scope. + None (file moves, link updates, optional link-checker tooling).
 - 029-cdk-logging-error-handling: Added TypeScript 5.x (cdk/), Node.js 18+ + aws-cdk-lib 2.215.x, constructs ^10.x, Jest (tests), zod (config validation)
-- 028-s3-large-file-transfer: Added Python 3.11 (Verification Agent, Slack Poster Lambda), TypeScript 5.x (CDK) + boto3, FastAPI, uvicorn, slack-sdk, aws-cdk-lib
-- 027-slack-file-generation-best-practices: Added Python 3.11 (agents), TypeScript 5.x (CDK) + strands-agents[a2a]~=1.25.0, bedrock-agentcore, boto3, openpyxl, python-docx, python-pptx, matplotlib, aws-cdk-lib
 
 
 <!-- MANUAL ADDITIONS START -->

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Documentation standards**: New [docs/DOCUMENTATION_STANDARDS.md](docs/DOCUMENTATION_STANDARDS.md) defining best practices for all project documentation (when to update, structure, writing style, CHANGELOG format, module README requirements, API docs, quality checklist). CLAUDE.md, docs/README.md, README.md, CONTRIBUTING.md, cdk/README.md, and agent READMEs updated to reference and apply these standards; CLAUDE.md Commands section corrected.
+
 ### Fixed
 
 - **IAM role name collision (Dev/Prod)**: Execution and Verification AgentCore runtime execution roles now use stack name in `roleName`; default AgentCore runtime names include env suffix (e.g. `SlackAI_ExecutionAgent_Prod`, `SlackAI_VerificationAgent_Dev`) so Dev and Prod stacks can coexist in the same account

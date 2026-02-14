@@ -35,6 +35,11 @@ export interface SlackEventHandlerProps {
   verificationAgentArn: string;
   /** SQS queue for async agent invocation (016). When set, handler sends requests here instead of invoking AgentCore directly. */
   agentInvocationQueue?: sqs.IQueue;
+  /**
+   * Revision token so Lambda config changes when secrets change (e.g. hash of signing secret).
+   * Ensures warm instances are retired and new ones fetch updated secrets from Secrets Manager.
+   */
+  configRevision?: string;
 }
 
 export class SlackEventHandler extends Construct {
@@ -114,6 +119,8 @@ export class SlackEventHandler extends Construct {
         ...(props.agentInvocationQueue && {
           AGENT_INVOCATION_QUEUE_URL: props.agentInvocationQueue.queueUrl,
         }),
+        // When secrets change, configRevision changes so Lambda gets new config and drops cached secrets
+        ...(props.configRevision && { CONFIG_REVISION: props.configRevision }),
       },
     });
 

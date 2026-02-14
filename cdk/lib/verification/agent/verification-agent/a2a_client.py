@@ -378,13 +378,14 @@ def invoke_execution_agent(
             "duration_ms": round(duration_ms, 2),
         })
 
-        # Map AWS errors to user-friendly responses
+        # Map AWS errors to user-friendly responses (include execution_agent_arn for errors log debugging)
         if error_code == "ThrottlingException":
             return json.dumps({
                 "status": "error",
                 "error_code": "throttling",
                 "error_message": "AI サービスが混雑しています。しばらくしてからお試しください。",
                 "correlation_id": correlation_id,
+                "execution_agent_arn": agent_arn,
             })
         elif error_code == "AccessDeniedException":
             return json.dumps({
@@ -392,6 +393,9 @@ def invoke_execution_agent(
                 "error_code": "access_denied",
                 "error_message": "AI サービスへのアクセスが拒否されました。管理者にお問い合わせください。",
                 "correlation_id": correlation_id,
+                "execution_agent_arn": agent_arn,
+                "aws_error_code": error_code,
+                "aws_error_message": error_message,
             })
         else:
             return json.dumps({
@@ -399,6 +403,7 @@ def invoke_execution_agent(
                 "error_code": error_code.lower(),
                 "error_message": "エラーが発生しました。しばらくしてからお試しください。",
                 "correlation_id": correlation_id,
+                "execution_agent_arn": agent_arn,
             })
 
     except Exception as e:
@@ -420,4 +425,5 @@ def invoke_execution_agent(
             "error_code": "internal_error",
             "error_message": "エラーが発生しました。しばらくしてからお試しください。",
             "correlation_id": correlation_id,
+            "execution_agent_arn": agent_arn,
         })

@@ -121,7 +121,7 @@ Thank you for your interest in contributing!
 
 ## Development Setup
 
-See [docs/quickstart.md](docs/quickstart.md)
+See [docs/developer/quickstart.md](docs/developer/quickstart.md)
 
 ## Code Style
 

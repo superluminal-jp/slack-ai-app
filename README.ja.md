@@ -29,7 +29,7 @@ Slack と Amazon Bedrock をセキュアに接続し、AI 生成レスポンス�
 
 ## クイックスタート
 
-> **📖 詳細ガイド**: [docs/quickstart.md](docs/quickstart.md)
+> **📖 詳細ガイド**: [docs/developer/quickstart.md](docs/developer/quickstart.md)
 
 ### 前提条件
 
@@ -70,7 +70,7 @@ export AWS_PROFILE=your-profile-name  # オプション: AWSプロファイル�
 
 **注意**: Slack 認証情報は`cdk.config.{env}.json`ファイルに直接設定できます。環境変数として設定することも可能ですが、設定ファイルの方が管理しやすくなります。
 
-**⚠️ 重要**: デプロイ後にホワイトリストを設定してください。[クイックスタートガイド](docs/quickstart.md)を参照。
+**⚠️ 重要**: デプロイ後にホワイトリストを設定してください。[クイックスタートガイド](docs/developer/quickstart.md)を参照。
 
 ### 環境分離
 
@@ -229,17 +229,17 @@ export DEPLOYMENT_ENV=prod
 - ✅ Agent Card (A2A 準拠) による Agent Discovery
 - ✅ 独立したライフサイクル管理
 
-技術的な詳細については、[アーキテクチャ概要](docs/reference/architecture/overview.md)を参照してください。
+技術的な詳細については、[アーキテクチャ概要](docs/developer/architecture.md)を参照してください。
 
 ## ドキュメント
 
 | 対象者                 | パス                                                                                                                          |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| **はじめに**           | [クイックスタート](docs/quickstart.md)                                                                                        |
-| **開発者**             | [アーキテクチャ](docs/reference/architecture/overview.md) → [実装詳細](docs/reference/architecture/implementation-details.md) |
-| **セキュリティチーム** | [セキュリティ要件](docs/reference/security/requirements.md) → [脅威モデル](docs/reference/security/threat-model.md)           |
-| **運用**               | [Slack 設定](docs/reference/operations/slack-setup.md) → [モニタリング](docs/reference/operations/monitoring.md)              |
-| **意思決定者**         | [非技術者向け概要](docs/presentation/non-technical-overview.md)                                                               |
+| **はじめに**           | [クイックスタート](docs/developer/quickstart.md)                                                                               |
+| **開発者**             | [アーキテクチャ](docs/developer/architecture.md)                                                                              |
+| **セキュリティチーム** | [セキュリティ](docs/developer/security.md)                                                                                    |
+| **運用**               | [運用ガイド](docs/developer/runbook.md)                                                                                       |
+| **意思決定者**         | [プロジェクト提案書](docs/decision-maker/proposal.md)                                                                         |
 
 **全ドキュメント**: [docs/README.md](docs/README.md)
 
@@ -512,11 +512,11 @@ Signing Secret + Bot Token の両方が漏洩した場合、攻撃者は：
    - ホワイトリストが空（未設定）の場合: すべてのリクエストが許可される（柔軟な設定のため）
    - **推奨**: 本番環境ではホワイトリストを設定し、認可済みのエンティティのみアクセス可能にする
 
-詳細は [認証・認可セキュリティ解説](docs/reference/security/authentication-authorization.md) を参照してください。
+詳細は [セキュリティ](docs/developer/security.md) を参照してください。
 
 ## トラブルシューティング
 
-[トラブルシューティングガイド](docs/how-to/troubleshooting.md)を参照。
+[トラブルシューティングガイド](docs/developer/troubleshooting.md)を参照。
 
 **よくある問題**:
 
@@ -543,7 +543,7 @@ Signing Secret + Bot Token の両方が漏洩した場合、攻撃者は：
 ## サポート
 
 1. [ドキュメント](docs/README.md)を確認
-2. [トラブルシューティングガイド](docs/how-to/troubleshooting.md)を確認
+2. [トラブルシューティングガイド](docs/developer/troubleshooting.md)を確認
 3. ログと再現手順を含めて GitHub Issue を作成
 
 ---

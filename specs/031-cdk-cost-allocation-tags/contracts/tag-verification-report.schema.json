@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TagVerificationReport",
+  "description": "Result of verifying cost allocation tags in synthesized CloudFormation template(s)",
+  "type": "object",
+  "required": ["ok", "requiredTagKeys"],
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "description": "True if every taggable resource has all required cost allocation tags"
+    },
+    "requiredTagKeys": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Tag keys that must be present on every taggable resource"
+    },
+    "stackName": {
+      "type": "string",
+      "description": "Stack name (when report is per-stack)"
+    },
+    "missingTags": {
+      "type": "array",
+      "description": "Resources that are taggable but missing one or more required tags",
+      "items": {
+        "type": "object",
+        "required": ["logicalId", "resourceType", "missingKeys"],
+        "properties": {
+          "logicalId": { "type": "string" },
+          "resourceType": { "type": "string" },
+          "missingKeys": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "nonTaggable": {
+      "type": "array",
+      "description": "Resource types or logical IDs that do not support Tags (informational)",
+      "items": {
+        "type": "object",
+        "properties": {
+          "logicalId": { "type": "string" },
+          "resourceType": { "type": "string" }
+        }
+      }
+    }
+  }
+}

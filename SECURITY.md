@@ -51,9 +51,7 @@ The following are in scope for security reports:
 
 For details on our security implementation, see:
 
-- [Security Requirements](docs/reference/security/requirements.md)
-- [Threat Model](docs/reference/security/threat-model.md)
-- [Security Implementation](docs/reference/security/implementation.md)
+- [Security](docs/developer/security.md) — requirements, threat model, implementation
 
 ## Security Best Practices
 
@@ -119,9 +117,7 @@ When deploying this application:
 
 セキュリティ実装の詳細については、以下を参照してください：
 
-- [セキュリティ要件](docs/reference/security/requirements.md)
-- [脅威モデル](docs/reference/security/threat-model.md)
-- [セキュリティ実装](docs/reference/security/implementation.md)
+- [セキュリティ](docs/developer/security.md) — 要件・脅威モデル・実装
 
 ## セキュリティのベストプラクティス
 

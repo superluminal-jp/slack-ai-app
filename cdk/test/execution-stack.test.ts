@@ -1,5 +1,6 @@
 import * as cdk from "aws-cdk-lib";
 import { Template, Match } from "aws-cdk-lib/assertions";
+import { REQUIRED_COST_ALLOCATION_TAG_KEYS } from "../lib/utils/cost-allocation-tags";
 import { ExecutionStack } from "../lib/execution/execution-stack";
 
 describe("ExecutionStack", () => {
@@ -49,6 +50,19 @@ describe("ExecutionStack", () => {
         AgentRuntimeName: Match.stringLikeRegexp("SlackAI_ExecutionAgent"),
         ProtocolConfiguration: Match.anyValue(), // A2A (string in template)
       });
+    });
+
+    it("should have cost allocation tags on AgentCore Runtime", () => {
+      const runtimes = template.findResources("AWS::BedrockAgentCore::Runtime");
+      expect(Object.keys(runtimes).length).toBeGreaterThanOrEqual(1);
+      for (const [, def] of Object.entries(runtimes)) {
+        const tags = (def as { Properties?: { Tags?: Record<string, string> } }).Properties?.Tags;
+        expect(tags).toBeDefined();
+        for (const key of REQUIRED_COST_ALLOCATION_TAG_KEYS) {
+          expect(tags![key]).toBeDefined();
+          expect(typeof tags![key]).toBe("string");
+        }
+      }
     });
 
     it("should create ECR repository for Execution Agent", () => {
