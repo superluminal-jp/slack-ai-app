@@ -127,26 +127,14 @@ aws secretsmanager create-secret \
 **考えられる原因**:
 
 1. Bedrock の処理が予想より長い
-2. Lambda のタイムアウト設定が短い
-3. ネットワーク接続の問題
+2. Execution Agent（AgentCore Runtime）のセッションタイムアウトやネットワーク問題
+3. Verification Agent から Execution Agent への A2A 呼び出しの遅延
 
 **解決手順**:
 
-1. Lambda のタイムアウト設定を確認（推奨: 60 秒以上）:
-
-```bash
-aws lambda get-function-configuration --function-name bedrock-processor
-```
-
-2. Bedrock のレスポンス時間を CloudWatch で確認
-
-3. 必要に応じてタイムアウトを延長:
-
-```bash
-aws lambda update-function-configuration \
-  --function-name bedrock-processor \
-  --timeout 120
-```
+1. Execution Agent はコンテナ（AgentCore Runtime）で動作する。タイムアウトは AgentCore のライフサイクル設定（idleRuntimeSessionTimeoutSeconds 等）や Bedrock の応答時間を確認する。
+2. Bedrock のレスポンス時間を CloudWatch で確認する。
+3. 長時間処理が必要な場合は、非同期タスク（ポーリング）経路が使われているか確認する。
 
 ---
 

@@ -58,9 +58,9 @@ cd slack-ai-app
 # Install dependencies
 cd src && npm install
 
-# Run tests
-cd ../lambda/verification-stack/slack-event-handler && pytest
-cd ../../execution-stack/bedrock-processor && pytest
+# Run tests (from project root; see docs/developer/quickstart.md)
+cd cdk/lib/verification/lambda/slack-event-handler && pytest
+cd cdk/lib/execution/agent/execution-agent && python -m pytest tests/
 ```
 
 ## Pull Request Process

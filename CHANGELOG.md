@@ -9,10 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Execution Agent**: Single system prompt source (`system_prompt.py`), tools `get_current_time`, `get_business_document_guidelines`, `get_presentation_slide_guidelines`, `search_docs`; docs for system prompt and docs access.
 - **Documentation standards**: New [docs/DOCUMENTATION_STANDARDS.md](docs/DOCUMENTATION_STANDARDS.md) defining best practices for all project documentation (when to update, structure, writing style, CHANGELOG format, module README requirements, API docs, quality checklist). CLAUDE.md, docs/README.md, README.md, CONTRIBUTING.md, cdk/README.md, and agent READMEs updated to reference and apply these standards; CLAUDE.md Commands section corrected.
+
+### Removed
+
+- **bedrock-processor Lambda**: Removed `cdk/lib/execution/lambda/bedrock-processor`; execution zone is A2A-only (Verification Agent invokes Execution Agent via AgentCore Runtime).
 
 ### Fixed
 
+- **Deploy Phase 2.5 resource policy**: Apply Execution Agent resource policy via Python/boto3 instead of `aws bedrock-agentcore-control put-resource-policy` (older AWS CLI may not support this operation). Script installs boto3 if missing and passes policy parameters via environment for safe quoting.
 - **IAM role name collision (Dev/Prod)**: Execution and Verification AgentCore runtime execution roles now use stack name in `roleName`; default AgentCore runtime names include env suffix (e.g. `SlackAI_ExecutionAgent_Prod`, `SlackAI_VerificationAgent_Dev`) so Dev and Prod stacks can coexist in the same account
 - **Verification Agent missing `import time`**: Restored `import time` in `authorization.py`, `rate_limiter.py`, `slack_poster.py` — dropped during logging refactor, causing `NameError` on every request and silent failure (no Slack response)
 - **Deploy script PutResourcePolicy**: Fixed `Resource: "*"` (must match specific ARN); removed unsupported endpoint policy; fixed empty `AWS_PROFILE` causing `ProfileNotFound`

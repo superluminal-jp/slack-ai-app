@@ -218,10 +218,25 @@ get_stack_output() {
         --output text 2>/dev/null || echo ""
 }
 
+# Copy repo docs/ into Execution Agent build context so the container image includes /app/docs (Pattern 1: bundle docs at build time).
+prepare_execution_agent_docs() {
+    local docs_src="${PROJECT_ROOT}/docs"
+    local agent_dir="${PROJECT_ROOT}/cdk/lib/execution/agent/execution-agent"
+    if [[ ! -d "${docs_src}" ]]; then
+        log_warning "docs/ not found at ${docs_src}; Execution Agent will not have bundled documentation."
+        return 0
+    fi
+    rm -rf "${agent_dir}/docs"
+    cp -r "${docs_src}" "${agent_dir}/docs"
+    log_info "Copied docs/ into Execution Agent build context (${agent_dir}/docs)"
+}
+
 deploy_execution_stack() {
     log_info "=========================================="
     log_info "Phase 1: Deploying Execution Stack"
     log_info "=========================================="
+
+    prepare_execution_agent_docs
 
     cd "${PROJECT_ROOT}"
     cd "${CDK_DIR}"
@@ -334,27 +349,25 @@ apply_execution_agent_resource_policy() {
     local verify_role_arn="arn:aws:iam::${verification_account}:role/${VERIFICATION_STACK_NAME}-ExecutionRole"
 
     log_info "Applying resource policy: Execution Agent allows Verification Agent role (Principal: ${verify_role_arn})"
-    # Only pass AWS_PROFILE to subprocess when non-empty (empty string causes ProfileNotFound)
-    local env_prefix="AWS_REGION=${AWS_REGION} VERIFICATION_ACCOUNT=${verification_account}"
-    if [[ -n "${AWS_PROFILE}" ]]; then
-        env_prefix="${env_prefix} AWS_PROFILE=${AWS_PROFILE}"
+    # Use boto3 (AWS CLI may not support bedrock-agentcore-control put-resource-policy in older versions).
+    # Policy: Sid, Condition aws:SourceAccount for confused deputy prevention.
+    if ! python3 -c "import boto3" 2>/dev/null; then
+        python3 -m pip install --user -q boto3 2>/dev/null || true
     fi
-    env ${env_prefix} python3 -c "
-import boto3
-import json
-import os
-
-region = os.environ.get('AWS_REGION', 'ap-northeast-1')
-verification_account = os.environ.get('VERIFICATION_ACCOUNT', '')
-profile = os.environ.get('AWS_PROFILE')
-session = boto3.Session(profile_name=profile, region_name=region) if profile else boto3.Session(region_name=region)
-client = session.client('bedrock-agentcore-control', region_name=region)
-
-runtime_arn = '${exec_agent_arn}'
-principal = '${verify_role_arn}'
-
-# Per AWS best practices: Sid, Condition aws:SourceAccount for confused deputy prevention.
-# Resource must match the resourceArn parameter exactly (wildcard '*' is rejected).
+    export _EXEC_AGENT_ARN="${exec_agent_arn}"
+    export _VERIFY_ROLE_ARN="${verify_role_arn}"
+    export _VERIFICATION_ACCOUNT="${verification_account}"
+    if ! python3 -c "
+import json, os, sys
+try:
+    import boto3
+except ImportError:
+    sys.exit(1)
+arn = os.environ.get('_EXEC_AGENT_ARN', '')
+principal = os.environ.get('_VERIFY_ROLE_ARN', '')
+account = os.environ.get('_VERIFICATION_ACCOUNT', '')
+if not arn or not principal:
+    sys.exit(1)
 policy = {
     'Version': '2012-10-17',
     'Statement': [{
@@ -362,15 +375,20 @@ policy = {
         'Effect': 'Allow',
         'Principal': {'AWS': principal},
         'Action': 'bedrock-agentcore:InvokeAgentRuntime',
-        'Resource': runtime_arn,
-        'Condition': {'StringEquals': {'aws:SourceAccount': verification_account}}
+        'Resource': arn,
+        'Condition': {'StringEquals': {'aws:SourceAccount': account}}
     }]
 }
-policy_json = json.dumps(policy)
-
-client.put_resource_policy(resourceArn=runtime_arn, policy=policy_json)
-print('  Runtime policy applied')
-" 2>&1 && log_success "Execution Agent resource policy applied" || log_warning "Could not apply resource policy (check bedrock-agentcore-control PutResourcePolicy permissions)"
+region = os.environ.get('AWS_REGION', '')
+session = boto3.Session(region_name=region or None)
+client = session.client('bedrock-agentcore-control')
+client.put_resource_policy(resourceArn=arn, policy=json.dumps(policy))
+"; then
+        log_warning "Could not apply resource policy (install boto3: pip install boto3, or check PutResourcePolicy permissions)"
+    else
+        log_success "Execution Agent resource policy applied"
+    fi
+    unset _EXEC_AGENT_ARN _VERIFY_ROLE_ARN _VERIFICATION_ACCOUNT 2>/dev/null || true
 }
 
 # Extract AgentCore Runtime ID from ARN (arn:...:runtime/Name-xxxxx -> Name-xxxxx)

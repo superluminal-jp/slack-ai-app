@@ -1,6 +1,8 @@
 ---
 name: document-assistant
 description: Generates McKinsey-style structured business documents with logical rigor and executive-level communication standards. Applies Pyramid Principle, MECE, and SCQA frameworks to create decision-enabling content. Use when creating business documents, strategic analyses, executive summaries, or structured recommendations without slide formatting.
+allowed-tools: Read, Write
+user-invocable: true
 ---
 
 # Document Assistant

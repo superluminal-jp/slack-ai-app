@@ -62,3 +62,6 @@ coverage.xml
 
 # Lambda deployment packages
 *.zip
+
+# Execution Agent: copied docs/ at deploy time (Pattern 1); do not commit copy
+cdk/lib/execution/agent/execution-agent/docs/
