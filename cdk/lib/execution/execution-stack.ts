@@ -1,5 +1,6 @@
 import * as cdk from "aws-cdk-lib";
 import { Construct } from "constructs";
+import { applyCostAllocationTags } from "../utils/cost-allocation-tags";
 import { ExecutionAgentRuntime } from "./constructs/execution-agent-runtime";
 import { ExecutionAgentEcr } from "./constructs/execution-agent-ecr";
 import { ExecutionStackProps } from "../types/stack-config";
@@ -39,10 +40,7 @@ export class ExecutionStack extends cdk.Stack {
       "dev";
     const deploymentEnv = deploymentEnvRaw.toLowerCase().trim();
 
-    cdk.Tags.of(this).add("Environment", deploymentEnv);
-    cdk.Tags.of(this).add("Project", "SlackAI");
-    cdk.Tags.of(this).add("ManagedBy", "CDK");
-    cdk.Tags.of(this).add("StackName", this.stackName);
+    applyCostAllocationTags(this, { deploymentEnv });
 
     const awsRegion =
       props?.awsRegion ||

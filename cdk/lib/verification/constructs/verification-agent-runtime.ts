@@ -23,6 +23,7 @@ import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as sqs from "aws-cdk-lib/aws-sqs";
 import { Construct } from "constructs";
+import { getCostAllocationTagValues } from "../../utils/cost-allocation-tags";
 
 /** Lifecycle configuration for AgentCore Runtime (optional). See research.md §2. */
 export interface AgentCoreLifecycleConfig {
@@ -182,9 +183,19 @@ export class VerificationAgentRuntime extends Construct {
     );
 
     // AgentCore InvokeAgentRuntime permission (for calling Execution Agent).
-    // 026 US1 (T007): Least privilege — scope to executionAgentArn when provided (same-account
-    // or cross-account). cdk.ts passes executionAgentArn from ExecutionStack when both deployed.
-    // See audit-iam-bedrock.md §2.3.
+    // AWS requires identity-based policy to allow the action on BOTH the agent runtime and
+    // the agent endpoint (see resource-based-policies.html "Hierarchical authorization").
+    // Include both endpoint ARN forms: ...:runtime-endpoint/Name/DEFAULT and
+    // ...:runtime/Name/runtime-endpoint/DEFAULT (latter is used at evaluation per AccessDenied message).
+    const invokeResources = props.executionAgentArn
+      ? (() => {
+          const runtimeArn = props.executionAgentArn;
+          const endpointArnDoc =
+            runtimeArn.replace(/:runtime\//, ":runtime-endpoint/") + "/DEFAULT";
+          const endpointArnAlt = `${runtimeArn}/runtime-endpoint/DEFAULT`;
+          return [runtimeArn, endpointArnDoc, endpointArnAlt];
+        })()
+      : [`arn:aws:bedrock-agentcore:${stack.region}:*:runtime/*`];
     this.executionRole.addToPolicy(
       new iam.PolicyStatement({
         sid: "AgentCoreInvoke",
@@ -193,9 +204,7 @@ export class VerificationAgentRuntime extends Construct {
           "bedrock-agentcore:InvokeAgentRuntime",
           "bedrock-agentcore:GetAsyncTaskResult",
         ],
-        resources: props.executionAgentArn
-          ? [props.executionAgentArn]
-          : [`arn:aws:bedrock-agentcore:${stack.region}:*:runtime/*`],
+        resources: invokeResources,
       })
     );
 
@@ -250,6 +259,18 @@ if (props.slackPostRequestQueue) {
         },
       },
     });
+    // L1 CfnResource does not receive stack-level Tags from CDK aspect; set explicitly for cost allocation
+    const deploymentEnv =
+      (this.node.tryGetContext("deploymentEnv") as string | undefined) ??
+      process.env.DEPLOYMENT_ENV ??
+      "dev";
+    this.runtime.addPropertyOverride(
+      "Tags",
+      getCostAllocationTagValues({
+        deploymentEnv: String(deploymentEnv).toLowerCase().trim(),
+        stackName: stack.stackName,
+      })
+    );
     if (props.lifecycleConfiguration) {
       const lc = props.lifecycleConfiguration;
       const idle = lc.idleRuntimeSessionTimeoutSeconds ?? 900;

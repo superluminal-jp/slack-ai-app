@@ -31,6 +31,7 @@ import {
   CdkConfig,
 } from "../lib/types/cdk-config";
 import { LogRetentionAspect } from "../lib/aspects/log-retention-aspect";
+import { CostAllocationTagAspect } from "../lib/utils/cost-allocation-tags";
 import { logInfo, logWarn } from "../lib/utils/cdk-logger";
 import { CdkError } from "../lib/utils/cdk-error";
 
@@ -47,6 +48,8 @@ logInfo("CDK app starting", { phase: "config" });
 
 // Apply synthesis-time validation aspects (e.g. log retention, naming)
 Aspects.of(app).add(new LogRetentionAspect());
+// Ensure cost allocation tags on app-level constructs (e.g. S3 auto-delete custom resource provider)
+Aspects.of(app).add(new CostAllocationTagAspect());
 
 /**
  * Get and validate deployment environment.

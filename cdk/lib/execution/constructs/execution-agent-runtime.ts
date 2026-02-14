@@ -18,6 +18,7 @@
 import * as cdk from "aws-cdk-lib";
 import * as iam from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
+import { getCostAllocationTagValues } from "../../utils/cost-allocation-tags";
 
 /** Lifecycle configuration for AgentCore Runtime (optional). See specs/026 research.md §2. */
 export interface AgentCoreLifecycleConfig {
@@ -173,6 +174,18 @@ export class ExecutionAgentRuntime extends Construct {
         // Omit AuthorizerConfiguration: default is SigV4 for A2A
       },
     });
+    // L1 CfnResource does not receive stack-level Tags from CDK aspect; set explicitly for cost allocation
+    const deploymentEnv =
+      (this.node.tryGetContext("deploymentEnv") as string | undefined) ??
+      process.env.DEPLOYMENT_ENV ??
+      "dev";
+    this.runtime.addPropertyOverride(
+      "Tags",
+      getCostAllocationTagValues({
+        deploymentEnv: String(deploymentEnv).toLowerCase().trim(),
+        stackName: stack.stackName,
+      })
+    );
     if (props.lifecycleConfiguration) {
       const lc = props.lifecycleConfiguration;
       const idle = lc.idleRuntimeSessionTimeoutSeconds ?? 900;

@@ -3,9 +3,18 @@
 # deploy-split-stacks.sh
 #
 # Deploys the Slack AI application using two independent stacks.
-# This script handles the A2A-only deployment process:
-#   1. Deploy ExecutionStack (get ExecutionAgentRuntimeArn)
-#   2. Deploy VerificationStack with executionAgentArn (A2A)
+#
+# Deploy order (fixed; no Execution stack re-deploy):
+#   1. Phase 1: Deploy Execution Stack
+#   2. Phase 2: Deploy Verification Stack (receives executionAgentArn from Execution output)
+#   3. Phase 2.5: Apply resource policy on Execution Agent Runtime (Control Plane API; not a stack deploy)
+#   4. Phase 3: Validate AgentCore runtimes
+#
+# Cross-stack values: All values passed from Execution to Verification are taken from
+# CloudFormation stack outputs (get_stack_output). None are read from config as the
+# source of truth during full deploy. Phase 2 and Phase 2.5 both call get_stack_output
+# for ExecutionAgentRuntimeArn so that Verification and the resource policy use the
+# current Execution runtime ARN.
 #
 # Usage:
 #   export DEPLOYMENT_ENV=dev  # or 'prod'
@@ -238,7 +247,7 @@ deploy_execution_stack() {
     log_info "Waiting for stack outputs to be available..."
     sleep 5
 
-    # Get Execution Agent Runtime ARN from stack outputs (A2A)
+    # Get Execution Agent Runtime ARN from stack outputs (passed to Verification in Phase 2)
     local exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn")
 
     if [[ -z "${exec_agent_arn}" ]]; then
@@ -248,9 +257,9 @@ deploy_execution_stack() {
     fi
 
     log_success "Execution Stack deployed successfully"
-    log_info "Execution Agent Runtime ARN: ${exec_agent_arn}"
+    log_info "Execution Agent Runtime ARN (from stack output): ${exec_agent_arn}"
 
-    # Update config with executionAgentArn for Verification Stack deployment
+    # Persist to config so Phase 2 and manual cdk deploy can use it; Phase 2 re-reads from output.
     update_cdk_context "executionAgentArn" "${exec_agent_arn}"
 
     echo "${exec_agent_arn}"
@@ -260,6 +269,16 @@ deploy_verification_stack() {
     log_info "=========================================="
     log_info "Phase 2: Deploying Verification Stack"
     log_info "=========================================="
+
+    # Get executionAgentArn from Execution stack output only (cross-stack value from CFn output).
+    local exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn" 2>/dev/null || echo "")
+    if [[ -n "${exec_agent_arn}" ]]; then
+        log_info "Using Execution Agent Runtime ARN from stack output: ${exec_agent_arn}"
+        update_cdk_context "executionAgentArn" "${exec_agent_arn}"
+    else
+        log_warning "Could not get ExecutionAgentRuntimeArn from ${EXECUTION_STACK_NAME}. Using existing cdk.config.${DEPLOYMENT_ENV}.json value."
+        log_warning "For correct A2A, deploy Execution Stack first so this script can pass the ARN from stack output."
+    fi
 
     cd "${PROJECT_ROOT}"
     cd "${CDK_DIR}"
@@ -271,6 +290,9 @@ deploy_verification_stack() {
     fi
     
     local context_args="--context deploymentEnv=${DEPLOYMENT_ENV}"
+    if [[ -n "${exec_agent_arn}" ]]; then
+        context_args="${context_args} --context executionAgentArn=${exec_agent_arn}"
+    fi
 
     log_info "Deploying ${VERIFICATION_STACK_NAME}..."
     if ! npx cdk deploy "${VERIFICATION_STACK_NAME}" ${profile_args} --require-approval never ${context_args}; then
@@ -293,9 +315,8 @@ deploy_verification_stack() {
 }
 
 # Apply resource policy on Execution Agent Runtime so Verification Agent can invoke it.
+# Uses Execution stack output (ExecutionAgentRuntimeArn); not an Execution stack re-deploy.
 # CloudFormation does not support RuntimeResourcePolicy; use Control Plane API.
-# Deploy IAM needs bedrock-agentcore-control:PutResourcePolicy.
-# Note: PutResourcePolicy is only supported on Runtime resources, not Endpoint resources.
 apply_execution_agent_resource_policy() {
     local exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn" 2>/dev/null || echo "")
     [[ -z "${exec_agent_arn}" ]] && return 0
@@ -307,12 +328,12 @@ apply_execution_agent_resource_policy() {
     local account_id=$(aws sts get-caller-identity ${profile_args} --query Account --output text 2>/dev/null || echo "")
     [[ -z "${account_id}" ]] && return 0
 
-    # Principal: Verification Agent role (verification account for cross-account; caller account for same-account)
+    # Principal: Verification Agent Runtime execution role (must match verification-agent-runtime.ts roleName: ${stack.stackName}-ExecutionRole)
     local verification_account=$(get_config_value "verificationAccountId" || echo "")
     [[ -z "${verification_account}" ]] && verification_account="${account_id}"
-    local verify_role_arn="arn:aws:iam::${verification_account}:role/SlackAI_VerificationAgent-ExecutionRole"
+    local verify_role_arn="arn:aws:iam::${verification_account}:role/${VERIFICATION_STACK_NAME}-ExecutionRole"
 
-    log_info "Applying resource policy: Execution Agent allows Verification Agent role"
+    log_info "Applying resource policy: Execution Agent allows Verification Agent role (Principal: ${verify_role_arn})"
     # Only pass AWS_PROFILE to subprocess when non-empty (empty string causes ProfileNotFound)
     local env_prefix="AWS_REGION=${AWS_REGION} VERIFICATION_ACCOUNT=${verification_account}"
     if [[ -n "${AWS_PROFILE}" ]]; then
@@ -471,22 +492,24 @@ print_summary() {
 }
 
 # Main execution
+# Order: Execution deploy → Verification deploy → Execution runtime resource policy (API). No Execution re-deploy.
 main() {
     log_info "Starting deployment with two independent stacks..."
     echo ""
 
     check_prerequisites
 
-    # Phase 1: Deploy Execution Stack (get ExecutionAgentRuntimeArn)
+    # Phase 1: Deploy Execution Stack. Output ExecutionAgentRuntimeArn is fetched and passed to Phase 2.
     deploy_execution_stack
 
-    # Phase 2: Deploy Verification Stack (uses executionAgentArn from config)
+    # Phase 2: Deploy Verification Stack. executionAgentArn is taken from Execution stack output (get_stack_output), not from config.
     deploy_verification_stack
 
-    # Phase 2.5: Apply Execution Agent resource policy (allows Verification Agent to invoke)
+    # Phase 2.5: Apply resource policy on Execution Agent Runtime via Control Plane API (not a stack re-deploy).
+    # Uses Execution stack output ExecutionAgentRuntimeArn and Verification role name.
     apply_execution_agent_resource_policy
 
-    # Phase 3: Validate AgentCore runtimes
+    # Phase 3: Validate AgentCore runtimes (status READY)
     validate_agentcore
 
     # Print summary

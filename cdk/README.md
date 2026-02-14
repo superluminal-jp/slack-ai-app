@@ -185,17 +185,16 @@ chmod +x scripts/deploy-split-stacks.sh
 ./scripts/deploy-split-stacks.sh
 ```
 
-**Note**: The deployment script automatically loads configuration from `cdk.config.{env}.json`. Make sure you have created and configured the appropriate configuration file before running the script.
+**Note**: The deployment script loads Slack credentials from `cdk.config.{env}.json` when not set in the environment. Cross-stack values (e.g. `executionAgentArn`) are taken from stack outputs during deploy.
 
-**Note**: The deployment script automatically loads configuration from `cdk.config.{env}.json`. Make sure you have created and configured the appropriate configuration file before running the script.
+**Deploy order** (Execution → Verification; no Execution stack re-deploy):
 
-This script automatically:
+1. **Phase 1**: Deploy Execution Stack.
+2. **Phase 2**: Deploy Verification Stack. The value `executionAgentArn` is taken **only from Execution stack output** (`get_stack_output`), then passed via `--context executionAgentArn=...` and config.
+3. **Phase 2.5**: Apply resource policy on Execution Agent Runtime (Control Plane API; not a stack deploy).
+4. **Phase 3**: Validate AgentCore runtimes (READY).
 
-1. Validates deployment environment (`dev` or `prod`)
-2. Sets stack names with environment suffix (`-Dev` or `-Prod`)
-3. Deploys Execution Stack
-4. Gets ExecutionAgentRuntimeArn and updates `cdk.config.{env}.json`
-5. Deploys Verification Stack with executionAgentArn (A2A-only)
+All cross-stack values (e.g. `ExecutionAgentRuntimeArn`) are read from CloudFormation stack outputs; the script does not rely on config as the source of truth for these during deploy.
 
 **Note**:
 
@@ -224,6 +223,17 @@ npx cdk deploy SlackAI-Execution-Dev \
 
 Then follow the same steps as above. The deployment script (`scripts/deploy-split-stacks.sh`) supports cross-account deployment.
 
+### Verification flow and access checks
+
+When Slack mentions return "AIサービスへのアクセスが拒否されました" or no reply, use these scripts from the project root:
+
+| Script | Purpose |
+|--------|--------|
+| `./scripts/check-verification-logs.sh [--since 30m] [--env dev]` | Tail logs at each stage (Slack Event Handler → Agent Invoker → Verification Runtime → Slack Poster) to see where the flow stops. |
+| `./scripts/check-execution-access.sh [--region ap-northeast-1] [--env dev]` | Check (1) Execution Agent resource policy Principal, (2) Verification Agent IAM (Runtime + Endpoint), (3) Verification Runtime log for `invoke_execution_agent_failed`. |
+
+See [docs/developer/troubleshooting.md](../docs/developer/troubleshooting.md) for full troubleshooting steps.
+
 ## Stack Outputs
 
 ### ExecutionStack
@@ -240,6 +250,21 @@ Then follow the same steps as above. The deployment script (`scripts/deploy-spli
 | VerificationLambdaRoleArn   | Lambda role ARN                            |
 | SlackEventHandlerArn        | Lambda function ARN                        |
 | VerificationAgentRuntimeArn | AgentCore Runtime ARN                      |
+
+## Cost allocation tags
+
+All taggable resources receive the same cost allocation tag set so billing can be separated by project, environment, or component.
+
+**Tag keys**: `Environment`, `Project`, `ManagedBy`, `StackName`. Values are set from stack context (e.g. `deploymentEnv` for Environment, stack name for StackName). The set is defined and applied from `cdk/lib/utils/cost-allocation-tags.ts`; both stacks call `applyCostAllocationTags(this, { deploymentEnv })` at stack level so tags apply recursively to all taggable children.
+
+**How to verify**:
+
+- **Jest (recommended)**: Run the cost allocation tag verification test:  
+  `npm test -- --testPathPattern="cost-allocation-tags"`  
+  This synthesizes Execution and Verification stacks and asserts every taggable resource has all four tag keys in the template.
+- **Optional**: A script under `cdk/scripts/` that runs synth and checks tags (see [quickstart](../specs/031-cdk-cost-allocation-tags/quickstart.md)) may be added for CI or local use.
+
+**Details and exceptions**: Resource types that do not support Tags in CloudFormation (e.g. `AWS::IAM::Policy`, `AWS::S3::BucketPolicy`), resources that required special handling (e.g. S3 auto-delete provider, BedrockAgentCore::Runtime), and cost attribution alternatives are documented in [specs/031-cdk-cost-allocation-tags/quickstart.md](../specs/031-cdk-cost-allocation-tags/quickstart.md).
 
 ## Useful Commands
 

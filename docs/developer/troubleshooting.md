@@ -150,6 +150,34 @@ aws lambda update-function-configuration \
 
 ---
 
+### A2A / Execution Agent 呼び出しエラー
+
+#### 症状: 「AIサービスへのアクセスが拒否されました。管理者にお問い合わせください。」
+
+このメッセージは、Verification Agent が Execution Agent を **InvokeAgentRuntime** で呼び出す際に、AWS から **AccessDeniedException** が返ったときに表示されます。
+
+**考えられる原因**:
+
+1. **Execution Agent のリソースポリシー未適用・不整合**  
+   デプロイスクリプトの `apply_execution_agent_resource_policy` が実行されていない、または失敗している。または、リソースポリシーに記載されている **Principal（IAM ロール ARN）** が、実際に InvokeAgentRuntime を呼んでいる **Verification Agent Runtime の実行ロール** と一致していない。
+2. **ロール名の不一致（よくある原因）**  
+   リソースポリシーで許可するロール名が誤っている。正しいロール名は **`${VerificationStack名}-ExecutionRole`**（例: `SlackAI-Verification-Dev-ExecutionRole`）。古いスクリプトで `SlackAI_VerificationAgent-ExecutionRole` のように固定名を使っていると拒否される。
+3. **Verification に EXECUTION_AGENT_ARN が渡っていない**  
+   Verification Stack の環境変数 `EXECUTION_AGENT_ARN` が未設定または誤っていると、別の Runtime を呼ぼうとするか呼び出しに失敗する。
+
+**解決手順**:
+
+1. **呼び出し元 IAM に Runtime と Endpoint の両方を許可する**  
+   AWS の評価では、呼び出し元の **identity-based ポリシー** が `bedrock-agentcore:InvokeAgentRuntime` を **Runtime と Endpoint の両方**のリソースに対して許可している必要がある。CDK の Verification Agent Runtime 構築では、`executionAgentArn` から DEFAULT エンドポイント ARN（`...:runtime-endpoint/<Name>/DEFAULT`）を導出し、両方を IAM の `resources` に含めている。再デプロイでこの変更が入っていることを確認する。
+2. **デプロイスクリプトでリソースポリシーを適用**  
+   `scripts/deploy-split-stacks.sh` を実行し、Phase 2.5 の「Apply Execution Agent resource policy」が成功していることを確認する。ログに表示される Principal（`SlackAI-Verification-Dev-ExecutionRole` など）が、実際の Verification 実行ロール名と一致しているか確認する。失敗している場合は、実行している IAM ユーザー/ロールに `bedrock-agentcore-control:PutResourcePolicy` 権限があるか確認する。
+3. **リソースポリシーの Principal を確認**  
+   Execution Agent Runtime に設定されているリソースポリシーの Principal が、Verification Agent の **実行ロール ARN**（`arn:aws:iam::<account>:role/<VerificationStack名>-ExecutionRole`）と一致しているか確認する。スタック名は例: `SlackAI-Verification-Dev`。
+4. **CloudWatch ログでエラーを確認**  
+   Verification Agent（AgentCore Runtime）のログで `invoke_execution_agent_failed` と `error_code: AccessDeniedException` が出ていないか確認する。
+
+---
+
 ### Bedrock エラー
 
 #### 症状: "Model access denied" エラー
@@ -667,6 +695,121 @@ https://gzqk7e3d5nxyzy5k2cinwjzjrm0icnak.lambda-url.ap-northeast-1.on.aws/
 2. **Lambda** → ログに `event_callback_received` と `sqs_enqueue_success` が出ていれば、Lambda は正常に SQS まで送れている。
 3. **Agent Invoker** → ログに `agent_invocation_failed` と **424** が出ている場合は、**Verification Agent Runtime の起動待ち**の可能性が高い。数分待ってから再試行する。
 4. **Runtime** → ログに `delegating_to_execution_agent` 等が出ていれば、Runtime はリクエストを受け付けている。出ていなければ Runtime がまだ受け付けていないか、ペイロードの不備を疑う。
+
+---
+
+### 各段階のログ確認（スクリプト）
+
+メンションから返信までの**各段階**でログをまとめて確認するには、次のスクリプトを実行します。どこで処理が止まっているか・どのエラーが出ているかを切り分けできます。
+
+```bash
+# 直近 30 分のログを [A]〜[D] の順に表示（dev・ap-northeast-1）
+./scripts/check-verification-logs.sh
+
+# 直近 1 時間・リージョン指定・prod
+./scripts/check-verification-logs.sh --since 1h --region ap-northeast-1 --env prod
+```
+
+| 段階 | ログの場所 | 見るイベント | 意味 |
+|------|------------|--------------|------|
+| **[A] Slack Event Handler** | `/aws/lambda/SlackAI-Verification-Dev-SlackEventHandler*` | `event_received`, `event_callback_received`, `sqs_enqueue_success` | メンション受信・署名 OK・SQS 送信まで成功 |
+| | | `whitelist_authorization_failed`, `existence_check_failed` | 認可または実在性チェックで拒否 |
+| **[B] Agent Invoker** | `/aws/lambda/SlackAI-Verification-Dev-AgentInvoker*` | `agent_invocation_success` | Verification Agent Runtime の呼び出し成功 |
+| | | `agent_invocation_failed` | Runtime 呼び出し失敗（424 等） |
+| **[C] Verification Agent Runtime** | `/aws/bedrock-agentcore/runtimes/SlackAI_VerificationAgent_Dev-*-DEFAULT`（本体）<br>`/aws/bedrock-agentcore/SlackAI-Verification-Dev-verification-agent-errors`（エラー要約） | `delegating_to_execution_agent` | Execution 呼び出しを開始した |
+| | | `invoke_execution_agent_started` | Execution 側 API を呼び出し開始 |
+| | | **`invoke_execution_agent_failed`** + **`error_code: AccessDeniedException`** | **Execution 側でアクセス拒否（「AIサービスへのアクセスが拒否されました」の原因）。本体 Runtime ログに AWS の error_message が出る** |
+| | | `execution_agent_error_response`（errors ログ） | Execution が返したエラーをユーザー向けに記録（access_denied 等） |
+| | | `execution_result_received` | Execution から正常応答を受信 |
+| | | `execution_agent_error` | Execution 呼び出し前後の予期しない例外 |
+| **[D] Slack Poster** | `/aws/lambda/SlackAI-Verification-Dev-SlackPoster*` | `slack_post_success` | Slack 投稿まで完了 |
+
+**「アクセスが拒否されました」のとき**: [C] のログで `invoke_execution_agent_failed` を探し、`error_code` が `AccessDeniedException` か確認する。同じログ行に `error_message` や `execution_agent_arn` が出ていれば、Execution のリソースポリシー・IAM（Runtime/Endpoint 両方の許可）を再確認する。
+
+**Execution 側の設定をまとめて確認する場合**は、次のスクリプトを実行する（リソースポリシーの Principal・Verification の IAM・Runtime ログの生エラーを順に表示）。
+
+```bash
+./scripts/check-execution-access.sh [--region ap-northeast-1] [--env dev]
+```
+
+### 「access_denied」の原因と次の確認手順
+
+**現象**: `check-verification-logs.sh` の [C] で `execution_agent_error_response` に `error_code: "access_denied"` が出ており、`check-execution-access.sh` では [1] リソースポリシーと [2] IAM がどちらも OK と表示される。
+
+**原因**: エラーは **Verification Agent が Execution Agent を呼ぶとき**、AWS の `InvokeAgentRuntime` API が **AccessDeniedException** を返した結果です。Verification 側の `a2a_client.py` がこれを捕捉し、ユーザー向けに `access_denied` /「AI サービスへのアクセスが拒否されました」にマッピングして errors ログと Slack に出力しています。
+
+**考えられる要因**（スクリプトで OK でも発生しうるもの）:
+
+1. **呼び出し先 ARN の不一致**  
+   Verification Runtime の環境変数 `EXECUTION_AGENT_ARN` が、リソースポリシーを付与した Execution Runtime と **異なる** ARN（例: 別スタック・旧ランタイム）を指している。その別ランタイムには Principal が設定されていないため AccessDenied になる。
+2. **リソースポリシー未適用・上書き**  
+   デプロイスクリプトの **Phase 2.5**（`apply_execution_agent_resource_policy`）を実行していない、または失敗している。CloudFormation ではリソースポリシーを管理しないため、手動またはスクリプトで毎回適用する必要がある。
+3. **Condition `aws:SourceAccount` の不一致**  
+   リソースポリシーの `Condition` で `verificationAccountId` を使っている場合、実際に Verification が動いている AWS アカウントと一致しているか確認する。
+
+**推奨する確認手順**:
+
+1. **Execution の ARN 一致確認**  
+   - Execution スタックの出力: `aws cloudformation describe-stacks --stack-name SlackAI-Execution-Dev --query 'Stacks[0].Outputs[?OutputKey==\`ExecutionAgentRuntimeArn\`].OutputValue' --output text`  
+   - Verification デプロイ時に渡している `executionAgentArn`（`cdk.config.*.json` や `--context`）および、実行中の Verification Runtime に渡っている `EXECUTION_AGENT_ARN` が上記と **同一** か確認する。
+2. **Phase 2.5 の再実行**  
+   `./scripts/deploy-split-stacks.sh` の Phase 2.5 を再実行し、Execution Agent Runtime にリソースポリシーが適用されることを確認する。失敗する場合は `bedrock-agentcore-control:PutResourcePolicy` の権限を確認する。
+3. **Verification Runtime の本体ログで AWS エラー確認**  
+   ロググループ `/aws/bedrock-agentcore/runtimes/SlackAI_VerificationAgent_Dev-*-DEFAULT` で `invoke_execution_agent_failed` を検索し、同じイベントの `error_message` と `execution_agent_arn` を確認する。ここに AWS が返した生のメッセージと、実際に呼び出している ARN が記録される。
+
+```bash
+# 例: Verification Runtime 本体ログで AccessDenied の詳細を確認
+aws logs filter-log-events --region ap-northeast-1 \
+  --log-group-name "/aws/bedrock-agentcore/runtimes/SlackAI_VerificationAgent_Dev-SvSqoQ4xo8-DEFAULT" \
+  --filter-pattern "invoke_execution_agent_failed" \
+  --start-time $(($(date +%s) - 3600))000 \
+  --query 'events[*].message' --output text
+```
+
+### 各要因の調査方法と判定
+
+以下は、上記 3 要因を実際に確認する手順と、調査時の判定例です。
+
+| 要因 | 調査方法 | 判定の目安 |
+|------|----------|------------|
+| **1. 呼び出し先 ARN の不一致** | (1) Execution スタックの `ExecutionAgentRuntimeArn` 出力値を取得する。<br>(2) `cdk/cdk.config.{dev,prod}.json` の `executionAgentArn` と比較する。<br>(3) 同一アカウントの場合、Verification デプロイ時にこの値がそのまま Runtime の `EXECUTION_AGENT_ARN` になる。 | **一致**: 両者が同じ Runtime ARN（例: `.../runtime/SlackAI_ExecutionAgent_Dev-xxxxx`）を指していれば、この要因は否定的。<br>**不一致**: 設定が別のランタイム（旧スタック・別環境）を指していると、そのランタイムにリソースポリシーが無く AccessDenied になり得る。 |
+| **2. Phase 2.5 未実行・失敗** | (1) Execution Runtime の現在のリソースポリシーを取得する。<br><br>`EXEC_ARN="arn:aws:bedrock-agentcore:ap-northeast-1:ACCOUNT:runtime/SlackAI_ExecutionAgent_Dev-xxxxx"`<br>`aws bedrock-agentcore-control get-resource-policy --region ap-northeast-1 --resource-arn "$EXEC_ARN"`<br><br>(2) `Sid: AllowVerificationAgentInvoke`、`Principal.AWS` に Verification の Execution ロール、`Action: bedrock-agentcore:InvokeAgentRuntime`、`Resource` が上記 ARN と一致するか確認する。 | **適用済み**: 上記の内容でポリシーが存在し、Principal が `SlackAI-Verification-{Env}-ExecutionRole` なら、Phase 2.5 は少なくとも一度は成功している。<br>**未適用**: ポリシーが無い・取得できない場合は Phase 2.5 を再実行する。 |
+| **3. Condition（aws:SourceAccount）の不一致** | (1) 上記で取得したリソースポリシーの `Condition.StringEquals.aws:SourceAccount` の値を確認する。<br>(2) Verification が動いている AWS アカウント（`aws sts get-caller-identity --query Account` でデプロイに使うアカウント、または Runtime が稼働するアカウント）と一致するか確認する。<br>(3) Phase 2.5 では `verificationAccountId`（`cdk.config.*.json`）が未設定の場合は `get-caller-identity` の Account が使われる。 | **一致**: `aws:SourceAccount` が Verification のアカウント ID と同一なら、この要因は否定的。<br>**不一致**: クロスアカウント構成で設定を誤っていると、Condition で拒否され得る。 |
+
+**補足（AWS ドキュメント）**: InvokeAgentRuntime の認可では、**ランタイム**と**エンドポイント**の両方のリソースポリシーが評価される。現状、`PutResourcePolicy` は Runtime にのみ対応しているため、本プロジェクトでは Runtime 側のポリシーのみを適用している。同一アカウントでは、エンドポイントにポリシーが無い場合は「ポリシーが存在する場合のみ」評価されるため、Runtime 側のみの設定で許可される運用を想定している。
+
+#### 調査結果サマリ（実施例）
+
+ある時点で上記 3 要因を確認した結果の例は以下のとおり。
+
+- **要因 1（ARN 一致）**  
+  - Execution スタック出力: `arn:aws:bedrock-agentcore:ap-northeast-1:471112852670:runtime/SlackAI_ExecutionAgent_Dev-L18WWD50sq`  
+  - `cdk.config.dev.json` の `executionAgentArn`: 上記と同一。  
+  - **判定**: 不一致なし（dev では同一 ARN を参照）。
+
+- **要因 2（Phase 2.5）**  
+  - 上記 Runtime ARN で `get-resource-policy` を実行したところ、`AllowVerificationAgentInvoke` が存在し、Principal が `SlackAI-Verification-Dev-ExecutionRole`、Resource が当該 Runtime ARN と一致。  
+  - **判定**: リソースポリシーは適用済み。
+
+- **要因 3（Condition）**  
+  - リソースポリシーの `aws:SourceAccount`: `"471112852670"`。  
+  - `aws sts get-caller-identity` の Account: `471112852670`。  
+  - **判定**: 一致。
+
+3 要因いずれも問題なしと判断できる場合、AccessDenied の原因は別にある可能性がある（呼び出し時の Principal の相違、組織ポリシー・SCP、一時的な伝播遅延など）。その場合は Verification Runtime の本体ログの `invoke_execution_agent_failed` で AWS が返した `error_message` を確認し、必要に応じて AWS サポートまたはドキュメントの [Troubleshooting - Access denied errors](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/resource-based-policies.html#resource-based-policies-troubleshooting) を参照する。
+
+#### 推奨アクション実施結果（実施例）
+
+1. **Verification Runtime の本体ログ**  
+   `/aws/bedrock-agentcore/runtimes/SlackAI_VerificationAgent_Dev-*-DEFAULT` で `invoke_execution_agent_failed` を検索したが、直近では該当イベントが取得できなかった（ログストリーム・保持期間の影響の可能性あり）。
+
+2. **errors ログの確認**  
+   `/aws/bedrock-agentcore/SlackAI-Verification-Dev-verification-agent-errors` を確認したところ、過去ログに **呼び出し先 URL に `SlackAI_ExecutionAgent-QQDzjl2E45` が含まれる** 記録（ReadTimeoutError）があった。これは **prod 用** の Execution Runtime ARN（`cdk.config.prod.json` の `executionAgentArn`）であり、**dev 用** の正しい ARN は `SlackAI_ExecutionAgent_Dev-L18WWD50sq`。  
+   → **Dev の Verification が誤って prod 用 ARN を参照していた可能性**がある。その場合、リソースポリシーは Dev 用 Runtime（L18WWD50sq）にのみ付与されているため、QQDzjl2E45 への呼び出しは AccessDenied になる。
+
+3. **対応**  
+   - **Verification-Dev の再デプロイ**: `cdk.config.dev.json` の `executionAgentArn` が `.../SlackAI_ExecutionAgent_Dev-L18WWD50sq` であることを確認したうえで、Verification スタック（Dev）を再デプロイし、Runtime の環境変数 `EXECUTION_AGENT_ARN` が正しく設定されるようにする。  
+   - **今後の切り分けのため**: `a2a_client` の変更により、AccessDenied 等で返す JSON に `execution_agent_arn` および `aws_error_code` / `aws_error_message` を含めるようにした。errors ログの `raw_response` で「実際に呼び出した ARN」と AWS の生エラーを確認できる。
 
 ---
 

@@ -4,6 +4,7 @@ import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as sqs from "aws-cdk-lib/aws-sqs";
 import { Construct } from "constructs";
+import { applyCostAllocationTags } from "../utils/cost-allocation-tags";
 import { SlackEventHandler } from "./constructs/slack-event-handler";
 import { TokenStorage } from "./constructs/token-storage";
 import { EventDedupe } from "./constructs/event-dedupe";
@@ -66,10 +67,7 @@ export class VerificationStack extends cdk.Stack {
       "dev";
     const deploymentEnv = deploymentEnvRaw.toLowerCase().trim();
 
-    cdk.Tags.of(this).add("Environment", deploymentEnv);
-    cdk.Tags.of(this).add("Project", "SlackAI");
-    cdk.Tags.of(this).add("ManagedBy", "CDK");
-    cdk.Tags.of(this).add("StackName", this.stackName);
+    applyCostAllocationTags(this, { deploymentEnv });
 
     const slackBotToken =
       process.env.SLACK_BOT_TOKEN ||
