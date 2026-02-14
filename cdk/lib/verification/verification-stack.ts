@@ -1,3 +1,4 @@
+import * as crypto from "crypto";
 import * as cdk from "aws-cdk-lib";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
@@ -189,6 +190,13 @@ slackPostRequestQueue: slackPoster.queue,
     );
     this.verificationAgentRuntimeArn = this.verificationAgentRuntime.runtimeArn;
 
+    // Revision from signing secret so Lambda env changes when secret changes; warm instances then refetch from Secrets Manager
+    const configRevision = crypto
+      .createHash("sha256")
+      .update(slackSigningSecret)
+      .digest("hex")
+      .slice(0, 16);
+
     this.slackEventHandler = new SlackEventHandler(this, "SlackEventHandler", {
       slackSigningSecret: slackSigningSecretResource,
       slackBotTokenSecret: slackBotTokenSecret,
@@ -201,6 +209,7 @@ slackPostRequestQueue: slackPoster.queue,
       bedrockModelId,
       verificationAgentArn: this.verificationAgentRuntimeArn,
       agentInvocationQueue: this.agentInvocationQueue,
+      configRevision,
     });
 
     new AgentInvoker(this, "AgentInvoker", {
