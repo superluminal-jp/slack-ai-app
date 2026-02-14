@@ -10,8 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Deploy script simplification**: Replaced two-phase synth/deploy with single `cdk deploy`, use `--outputs-file` for stack outputs instead of `describe-stacks` polling, deduplicated agent validation loop into `wait_for_agent_ready()`, removed config file mutation during deploy, and extracted inline Python resource policy into standalone `scripts/apply-resource-policy.py`
+- **Execution Agent system prompt**: Consolidated split prompts (`FILE_GEN_ONLY_SYSTEM_PROMPT` + `EXTENDED_SYSTEM_PROMPT_ADDON`) into single `FULL_SYSTEM_PROMPT` with all tools explicitly listed
+- **CDK outdir**: `cdk/bin/cdk.ts` reads `CDK_OUTDIR` env for cloud assembly output path; explicit `app.synth()` call
+- **Force image rebuild**: `execution-agent-ecr.ts` accepts `extraHash` prop; `execution-stack.ts` passes `forceExecutionImageRebuild` context value to change Docker asset hash
 
 ### Added
+
+- **Utility scripts**: `scripts/force-execution-redeploy.sh` (quick single-stack image rebuild), `scripts/check-execution-deploy-status.sh` (runtime status check)
+
 
 - **Execution Agent**: Single system prompt source (`system_prompt.py`), tools `get_current_time`, `get_business_document_guidelines`, `get_presentation_slide_guidelines`, `search_docs`; docs for system prompt and docs access.
 - **Documentation standards**: New [docs/DOCUMENTATION_STANDARDS.md](docs/DOCUMENTATION_STANDARDS.md) defining best practices for all project documentation (when to update, structure, writing style, CHANGELOG format, module README requirements, API docs, quality checklist). CLAUDE.md, docs/README.md, README.md, CONTRIBUTING.md, cdk/README.md, and agent READMEs updated to reference and apply these standards; CLAUDE.md Commands section corrected.

@@ -42,7 +42,11 @@ const DEFAULT_REGION = "ap-northeast-1";
 
 type DeploymentEnvironment = (typeof VALID_ENVIRONMENTS)[number];
 
-const app = new cdk.App();
+// Outdir for cloud assembly (CLI sets CDK_OUTDIR; else default cdk.out)
+const outdir =
+  process.env.CDK_OUTDIR ||
+  path.join(path.dirname(__dirname), "cdk.out");
+const app = new cdk.App({ outdir });
 
 logInfo("CDK app starting", { phase: "config" });
 
@@ -300,3 +304,6 @@ new VerificationStack(app, verificationStackName, {
   executionAgentArn: resolvedExecutionAgentArn || undefined,
 });
 logInfo("Verification stack created.", { phase: "stack", context: { stackName: verificationStackName } });
+
+// Emit cloud assembly (outdir set on App constructor above).
+app.synth();
