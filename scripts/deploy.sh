@@ -3,7 +3,7 @@
 # deploy.sh — Unified CLI for Slack AI application deployment and diagnostics
 #
 # Subcommands:
-#   (default) [--force-rebuild]             Full pipeline: deploy + status + check-access + logs
+#   (default)                               Full pipeline: deploy --force-rebuild + status + check-access + logs
 #   deploy [--force-rebuild]               Deploy only (no diagnostics)
 #   status                                 Stack status + image tag
 #   check-access                           A2A authorization troubleshooting
@@ -730,7 +730,7 @@ cmd_help() {
 Usage: ./scripts/deploy.sh [SUBCOMMAND] [OPTIONS]
 
 Subcommands:
-  (none) [--force-rebuild]                Full pipeline: deploy + status + check-access + logs (default)
+  (none)                                   Full pipeline: deploy --force-rebuild + diagnostics (default)
   deploy [--force-rebuild]                Deploy only (no diagnostics)
   status                                  Stack status + image tag
   check-access                            A2A authorization troubleshooting
@@ -770,7 +770,7 @@ case "$subcommand" in
     all)
         # Default: run full pipeline (deploy + diagnostics)
         shift 2>/dev/null || true
-        cmd_deploy "$@"
+        cmd_deploy --force-rebuild "$@"
         echo ""
         log_info "=========================================="
         log_info "Post-deploy diagnostics"
