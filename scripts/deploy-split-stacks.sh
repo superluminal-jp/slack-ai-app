@@ -11,14 +11,13 @@
 #   4. Phase 3: Validate AgentCore runtimes
 #
 # Cross-stack values: All values passed from Execution to Verification are taken from
-# CloudFormation stack outputs (get_stack_output). None are read from config as the
-# source of truth during full deploy. Phase 2 and Phase 2.5 both call get_stack_output
-# for ExecutionAgentRuntimeArn so that Verification and the resource policy use the
-# current Execution runtime ARN.
+# CloudFormation stack outputs via --outputs-file JSON. None are read from config as the
+# source of truth during full deploy.
 #
 # Usage:
 #   export DEPLOYMENT_ENV=dev  # or 'prod'
-#   ./scripts/deploy-split-stacks.sh
+#   ./scripts/deploy-split-stacks.sh [--force-rebuild]
+#   --force-rebuild: force Execution Agent container image rebuild (use when tools/code changed)
 #
 # Prerequisites:
 #   - AWS CLI configured with appropriate credentials
@@ -37,32 +36,30 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Logging functions (defined early so config block can use them)
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
+# Logging functions
+log_info()    { echo -e "${BLUE}[INFO]${NC} $1"; }
+log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+log_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
+log_error()   { echo -e "${RED}[ERROR]${NC} $1"; }
 
-# Configuration
-# Get script directory and project root
+# ── Configuration ──────────────────────────────────────────────
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CDK_DIR="${PROJECT_ROOT}/cdk"
+CDK_CLI="${CDK_DIR}/node_modules/aws-cdk/bin/cdk"
 AWS_REGION="${AWS_REGION:-ap-northeast-1}"
 AWS_PROFILE="${AWS_PROFILE:-}"
 
-# Get deployment environment
+# Temp files cleaned up on exit
+EXEC_OUTPUTS_FILE="$(mktemp)"
+VERIFY_OUTPUTS_FILE="$(mktemp)"
+cleanup() { rm -f "${EXEC_OUTPUTS_FILE}" "${VERIFY_OUTPUTS_FILE}"; }
+trap cleanup EXIT
+
+# Deployment environment
 DEPLOYMENT_ENV="${DEPLOYMENT_ENV:-}"
 if [[ -z "${DEPLOYMENT_ENV}" ]]; then
-    # Try to get from cdk.json context
     if command -v jq &> /dev/null; then
         DEPLOYMENT_ENV=$(jq -r '.context.deploymentEnv // "dev"' "${CDK_DIR}/cdk.json" 2>/dev/null || echo "dev")
     else
@@ -70,47 +67,87 @@ if [[ -z "${DEPLOYMENT_ENV}" ]]; then
     fi
     log_warning "DEPLOYMENT_ENV not set. Using default: ${DEPLOYMENT_ENV}"
 fi
-
-# Normalize environment name (lowercase, trim)
 DEPLOYMENT_ENV=$(echo "${DEPLOYMENT_ENV}" | tr '[:upper:]' '[:lower:]' | xargs)
 
-# Validate deployment environment
 VALID_ENVIRONMENTS=("dev" "prod")
 if [[ ! " ${VALID_ENVIRONMENTS[@]} " =~ " ${DEPLOYMENT_ENV} " ]]; then
     log_error "Invalid deployment environment '${DEPLOYMENT_ENV}'. Must be one of: ${VALID_ENVIRONMENTS[*]}"
     exit 1
 fi
 
-# Set stack names based on environment
-ENVIRONMENT_SUFFIX=""
-if [[ "${DEPLOYMENT_ENV}" == "prod" ]]; then
-    ENVIRONMENT_SUFFIX="Prod"
-else
-    ENVIRONMENT_SUFFIX="Dev"
-fi
+# Stack names
+ENVIRONMENT_SUFFIX=$([[ "${DEPLOYMENT_ENV}" == "prod" ]] && echo "Prod" || echo "Dev")
+EXECUTION_STACK_NAME="${EXECUTION_STACK_NAME:-SlackAI-Execution}-${ENVIRONMENT_SUFFIX}"
+VERIFICATION_STACK_NAME="${VERIFICATION_STACK_NAME:-SlackAI-Verification}-${ENVIRONMENT_SUFFIX}"
 
-BASE_EXECUTION_STACK_NAME="${EXECUTION_STACK_NAME:-SlackAI-Execution}"
-BASE_VERIFICATION_STACK_NAME="${VERIFICATION_STACK_NAME:-SlackAI-Verification}"
-EXECUTION_STACK_NAME="${BASE_EXECUTION_STACK_NAME}-${ENVIRONMENT_SUFFIX}"
-VERIFICATION_STACK_NAME="${BASE_VERIFICATION_STACK_NAME}-${ENVIRONMENT_SUFFIX}"
+# ── Helper functions ───────────────────────────────────────────
 
-# Helper functions
 get_config_value() {
     local key=$1
     local config_file="${CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
-    
-    if [[ ! -f "${config_file}" ]]; then
-        echo ""
-        return
-    fi
-    
+    [[ ! -f "${config_file}" ]] && { echo ""; return; }
     if command -v jq &> /dev/null; then
         jq -r ".\"${key}\" // empty" "${config_file}" 2>/dev/null || echo ""
     else
-        # Fallback to grep/sed (less reliable)
         grep -o "\"${key}\": \"[^\"]*\"" "${config_file}" 2>/dev/null | sed 's/.*": "\([^"]*\)".*/\1/' || echo ""
     fi
 }
+
+profile_args() {
+    [[ -n "${AWS_PROFILE}" ]] && echo "--profile ${AWS_PROFILE}" || echo ""
+}
+
+get_stack_output() {
+    local stack_name=$1 output_key=$2
+    aws cloudformation describe-stacks \
+        --stack-name "${stack_name}" \
+        --region "${AWS_REGION}" \
+        $(profile_args) \
+        --query "Stacks[0].Outputs[?OutputKey=='${output_key}'].OutputValue" \
+        --output text 2>/dev/null || echo ""
+}
+
+# Read a value from a CDK --outputs-file JSON.
+# Format: { "StackName": { "OutputKey": "value" } }
+read_output() {
+    local file=$1 stack=$2 key=$3
+    jq -r ".\"${stack}\".\"${key}\" // empty" "${file}" 2>/dev/null || echo ""
+}
+
+# Extract AgentCore Runtime ID from ARN (arn:...:runtime/Name-xxxxx -> Name-xxxxx)
+get_runtime_id() {
+    local arn="$1"
+    [[ -n "${arn}" ]] && echo "${arn##*/}" || echo ""
+}
+
+# Poll AgentCore runtime until it reaches READY (or timeout).
+wait_for_agent_ready() {
+    local label=$1 runtime_id=$2 max_wait=${3:-120}
+    local elapsed=0 interval=10 target="READY"
+
+    log_info "Checking ${label} Runtime status (id: ${runtime_id})..."
+    while [[ ${elapsed} -lt ${max_wait} ]]; do
+        local status
+        status=$(aws bedrock-agentcore-control get-agent-runtime \
+            --agent-runtime-id "${runtime_id}" \
+            --region "${AWS_REGION}" \
+            $(profile_args) \
+            --query 'status' --output text 2>/dev/null || echo "UNKNOWN")
+
+        if [[ "${status}" == "${target}" ]]; then
+            log_success "${label} Runtime is ${target}"
+            return 0
+        fi
+        log_info "${label} status: ${status}. Waiting ${interval}s... (${elapsed}/${max_wait}s)"
+        sleep ${interval}
+        elapsed=$((elapsed + interval))
+    done
+
+    log_warning "${label} did not reach ${target} within ${max_wait}s. Current: ${status:-UNKNOWN}"
+    return 1
+}
+
+# ── Prerequisites ──────────────────────────────────────────────
 
 check_prerequisites() {
     log_info "Checking prerequisites..."
@@ -118,107 +155,28 @@ check_prerequisites() {
     log_info "Execution Stack: ${EXECUTION_STACK_NAME}"
     log_info "Verification Stack: ${VERIFICATION_STACK_NAME}"
 
-    # Load Slack credentials from config file if not set as environment variables
+    # Load Slack credentials from config if not set as env vars
     if [[ -z "${SLACK_BOT_TOKEN:-}" ]]; then
-        log_info "SLACK_BOT_TOKEN not set, reading from config file..."
         SLACK_BOT_TOKEN=$(get_config_value "slackBotToken")
-        if [[ -n "${SLACK_BOT_TOKEN}" ]]; then
-            export SLACK_BOT_TOKEN
-            log_info "Loaded SLACK_BOT_TOKEN from config file"
-        fi
+        [[ -n "${SLACK_BOT_TOKEN}" ]] && export SLACK_BOT_TOKEN && log_info "Loaded SLACK_BOT_TOKEN from config"
     fi
-
     if [[ -z "${SLACK_SIGNING_SECRET:-}" ]]; then
-        log_info "SLACK_SIGNING_SECRET not set, reading from config file..."
         SLACK_SIGNING_SECRET=$(get_config_value "slackSigningSecret")
-        if [[ -n "${SLACK_SIGNING_SECRET}" ]]; then
-            export SLACK_SIGNING_SECRET
-            log_info "Loaded SLACK_SIGNING_SECRET from config file"
-        fi
+        [[ -n "${SLACK_SIGNING_SECRET}" ]] && export SLACK_SIGNING_SECRET && log_info "Loaded SLACK_SIGNING_SECRET from config"
     fi
 
-    # Check if credentials are available (from env var or config file)
-    if [[ -z "${SLACK_BOT_TOKEN:-}" ]]; then
-        log_error "SLACK_BOT_TOKEN is required. Set it as environment variable or in ${CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
-        exit 1
-    fi
-
-    if [[ -z "${SLACK_SIGNING_SECRET:-}" ]]; then
-        log_error "SLACK_SIGNING_SECRET is required. Set it as environment variable or in ${CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
-        exit 1
-    fi
-
-    # Check for AWS CLI
-    if ! command -v aws &> /dev/null; then
-        log_error "AWS CLI is not installed"
-        exit 1
-    fi
-
-    # Check for Node.js
-    if ! command -v node &> /dev/null; then
-        log_error "Node.js is not installed"
-        exit 1
-    fi
-
-    # Check for CDK
-    if ! command -v npx &> /dev/null; then
-        log_error "npx is not installed"
-        exit 1
-    fi
+    [[ -z "${SLACK_BOT_TOKEN:-}" ]]     && log_error "SLACK_BOT_TOKEN is required" && exit 1
+    [[ -z "${SLACK_SIGNING_SECRET:-}" ]] && log_error "SLACK_SIGNING_SECRET is required" && exit 1
+    command -v aws  &>/dev/null || { log_error "AWS CLI is not installed"; exit 1; }
+    command -v node &>/dev/null || { log_error "Node.js is not installed"; exit 1; }
+    command -v jq   &>/dev/null || { log_error "jq is required for --outputs-file parsing"; exit 1; }
+    [[ -x "${CDK_CLI}" ]]      || { log_error "CDK CLI not found at ${CDK_CLI}. Run: cd ${CDK_DIR} && npm install"; exit 1; }
 
     log_success "Prerequisites check passed"
 }
 
-update_cdk_context() {
-    local key=$1
-    local value=$2
-    local config_file="${CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
+# ── Copy docs into Execution Agent build context ───────────────
 
-    log_info "Updating ${config_file}: ${key}=${value}"
-
-    # Ensure config file exists
-    if [[ ! -f "${config_file}" ]]; then
-        log_error "Configuration file not found: ${config_file}"
-        log_info "Please create it using cdk.config.json.example as a template"
-        exit 1
-    fi
-
-    # Use jq if available, otherwise use sed
-    if command -v jq &> /dev/null; then
-        local tmp_file=$(mktemp)
-        jq ".\"${key}\" = \"${value}\"" "${config_file}" > "${tmp_file}"
-        mv "${tmp_file}" "${config_file}"
-    else
-        # Fallback to sed (less reliable)
-        if grep -q "\"${key}\"" "${config_file}"; then
-            sed -i.bak "s/\"${key}\": \"[^\"]*\"/\"${key}\": \"${value}\"/" "${config_file}"
-            rm -f "${config_file}.bak"
-        else
-            # Add new key if it doesn't exist (add before closing brace)
-            sed -i.bak "s/}$/  \"${key}\": \"${value}\"\n}/" "${config_file}"
-            rm -f "${config_file}.bak"
-        fi
-    fi
-}
-
-get_stack_output() {
-    local stack_name=$1
-    local output_key=$2
-
-    local profile_args=""
-    if [[ -n "${AWS_PROFILE}" ]]; then
-        profile_args="--profile ${AWS_PROFILE}"
-    fi
-
-    aws cloudformation describe-stacks \
-        --stack-name "${stack_name}" \
-        --region "${AWS_REGION}" \
-        ${profile_args} \
-        --query "Stacks[0].Outputs[?OutputKey=='${output_key}'].OutputValue" \
-        --output text 2>/dev/null || echo ""
-}
-
-# Copy repo docs/ into Execution Agent build context so the container image includes /app/docs (Pattern 1: bundle docs at build time).
 prepare_execution_agent_docs() {
     local docs_src="${PROJECT_ROOT}/docs"
     local agent_dir="${PROJECT_ROOT}/cdk/lib/execution/agent/execution-agent"
@@ -231,6 +189,8 @@ prepare_execution_agent_docs() {
     log_info "Copied docs/ into Execution Agent build context (${agent_dir}/docs)"
 }
 
+# ── Phase 1: Deploy Execution Stack ───────────────────────────
+
 deploy_execution_stack() {
     log_info "=========================================="
     log_info "Phase 1: Deploying Execution Stack"
@@ -238,257 +198,151 @@ deploy_execution_stack() {
 
     prepare_execution_agent_docs
 
-    cd "${PROJECT_ROOT}"
-    cd "${CDK_DIR}"
+    local context_args="--context deploymentEnv=${DEPLOYMENT_ENV}"
 
-    # Set deployment environment in context
-    update_cdk_context "deploymentEnv" "${DEPLOYMENT_ENV}"
-
-    # Deploy Execution Stack
-    local profile_args=""
-    if [[ -n "${AWS_PROFILE}" ]]; then
-        profile_args="--profile ${AWS_PROFILE}"
+    # Force container image rebuild if requested
+    if [[ -n "${FORCE_EXECUTION_IMAGE_REBUILD:-}" ]] || [[ "${1:-}" == "--force-rebuild" ]]; then
+        local rebuild_val="${FORCE_EXECUTION_IMAGE_REBUILD:-$(date +%s)}"
+        context_args="${context_args} --context forceExecutionImageRebuild=${rebuild_val}"
+        log_info "Forcing Execution Agent image rebuild (extraHash=${rebuild_val})"
+        [[ -d "${CDK_DIR}/cdk.out" ]] && rm -rf "${CDK_DIR}/cdk.out" && log_info "Cleared cdk.out for fresh build"
     fi
-    
+
     log_info "Deploying ${EXECUTION_STACK_NAME}..."
-    if ! npx cdk deploy "${EXECUTION_STACK_NAME}" ${profile_args} --require-approval never --context deploymentEnv="${DEPLOYMENT_ENV}"; then
+    cd "${CDK_DIR}"
+    if ! "${CDK_CLI}" deploy "${EXECUTION_STACK_NAME}" \
+        $(profile_args) \
+        --require-approval never \
+        --outputs-file "${EXEC_OUTPUTS_FILE}" \
+        ${context_args}; then
         log_error "Failed to deploy ${EXECUTION_STACK_NAME}"
         exit 1
     fi
-
     cd "${PROJECT_ROOT}"
 
-    # Wait a moment for CloudFormation to update stack outputs
-    log_info "Waiting for stack outputs to be available..."
-    sleep 5
-
-    # Get Execution Agent Runtime ARN from stack outputs (passed to Verification in Phase 2)
-    local exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn")
+    # Read outputs from --outputs-file JSON
+    local exec_agent_arn
+    exec_agent_arn=$(read_output "${EXEC_OUTPUTS_FILE}" "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn")
 
     if [[ -z "${exec_agent_arn}" ]]; then
         log_error "Failed to get ExecutionAgentRuntimeArn from stack outputs"
-        log_info "Stack may still be updating. Please check CloudFormation console."
         exit 1
     fi
 
     log_success "Execution Stack deployed successfully"
-    log_info "Execution Agent Runtime ARN (from stack output): ${exec_agent_arn}"
-
-    # Persist to config so Phase 2 and manual cdk deploy can use it; Phase 2 re-reads from output.
-    update_cdk_context "executionAgentArn" "${exec_agent_arn}"
-
+    log_info "Execution Agent Runtime ARN: ${exec_agent_arn}"
     echo "${exec_agent_arn}"
 }
+
+# ── Phase 2: Deploy Verification Stack ─────────────────────────
 
 deploy_verification_stack() {
     log_info "=========================================="
     log_info "Phase 2: Deploying Verification Stack"
     log_info "=========================================="
 
-    # Get executionAgentArn from Execution stack output only (cross-stack value from CFn output).
-    local exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn" 2>/dev/null || echo "")
-    if [[ -n "${exec_agent_arn}" ]]; then
-        log_info "Using Execution Agent Runtime ARN from stack output: ${exec_agent_arn}"
-        update_cdk_context "executionAgentArn" "${exec_agent_arn}"
-    else
-        log_warning "Could not get ExecutionAgentRuntimeArn from ${EXECUTION_STACK_NAME}. Using existing cdk.config.${DEPLOYMENT_ENV}.json value."
-        log_warning "For correct A2A, deploy Execution Stack first so this script can pass the ARN from stack output."
+    # Get executionAgentArn from Phase 1 outputs (preferred) or stack output (fallback)
+    local exec_agent_arn
+    exec_agent_arn=$(read_output "${EXEC_OUTPUTS_FILE}" "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn")
+    if [[ -z "${exec_agent_arn}" ]]; then
+        exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn")
     fi
 
-    cd "${PROJECT_ROOT}"
-    cd "${CDK_DIR}"
-
-    # Deploy Verification Stack
-    local profile_args=""
-    if [[ -n "${AWS_PROFILE}" ]]; then
-        profile_args="--profile ${AWS_PROFILE}"
-    fi
-    
     local context_args="--context deploymentEnv=${DEPLOYMENT_ENV}"
     if [[ -n "${exec_agent_arn}" ]]; then
         context_args="${context_args} --context executionAgentArn=${exec_agent_arn}"
+        log_info "Using Execution Agent ARN: ${exec_agent_arn}"
+    else
+        log_warning "ExecutionAgentRuntimeArn not available. Verification may not have A2A connectivity."
     fi
 
     log_info "Deploying ${VERIFICATION_STACK_NAME}..."
-    if ! npx cdk deploy "${VERIFICATION_STACK_NAME}" ${profile_args} --require-approval never ${context_args}; then
+    cd "${CDK_DIR}"
+    if ! "${CDK_CLI}" deploy "${VERIFICATION_STACK_NAME}" \
+        $(profile_args) \
+        --require-approval never \
+        --outputs-file "${VERIFY_OUTPUTS_FILE}" \
+        ${context_args}; then
         log_error "Failed to deploy ${VERIFICATION_STACK_NAME}"
         exit 1
     fi
-
     cd "${PROJECT_ROOT}"
 
-    # Wait a moment for CloudFormation to update stack outputs
-    log_info "Waiting for stack outputs to be available..."
-    sleep 5
-
-    local function_url=$(get_stack_output "${VERIFICATION_STACK_NAME}" "SlackEventHandlerUrl")
+    local function_url
+    function_url=$(read_output "${VERIFY_OUTPUTS_FILE}" "${VERIFICATION_STACK_NAME}" "SlackEventHandlerUrl")
 
     log_success "Verification Stack deployed successfully"
     log_info "Slack Event Handler URL: ${function_url}"
-
     echo "${function_url}"
 }
 
-# Apply resource policy on Execution Agent Runtime so Verification Agent can invoke it.
-# Uses Execution stack output (ExecutionAgentRuntimeArn); not an Execution stack re-deploy.
-# CloudFormation does not support RuntimeResourcePolicy; use Control Plane API.
+# ── Phase 2.5: Apply resource policy ──────────────────────────
+
 apply_execution_agent_resource_policy() {
-    local exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn" 2>/dev/null || echo "")
+    local exec_agent_arn
+    exec_agent_arn=$(read_output "${EXEC_OUTPUTS_FILE}" "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn")
     [[ -z "${exec_agent_arn}" ]] && return 0
 
-    local profile_args=""
-    if [[ -n "${AWS_PROFILE}" ]]; then
-        profile_args="--profile ${AWS_PROFILE}"
-    fi
-    local account_id=$(aws sts get-caller-identity ${profile_args} --query Account --output text 2>/dev/null || echo "")
+    local account_id
+    account_id=$(aws sts get-caller-identity $(profile_args) --query Account --output text 2>/dev/null || echo "")
     [[ -z "${account_id}" ]] && return 0
 
-    # Principal: Verification Agent Runtime execution role (must match verification-agent-runtime.ts roleName: ${stack.stackName}-ExecutionRole)
-    local verification_account=$(get_config_value "verificationAccountId" || echo "")
+    local verification_account
+    verification_account=$(get_config_value "verificationAccountId")
     [[ -z "${verification_account}" ]] && verification_account="${account_id}"
     local verify_role_arn="arn:aws:iam::${verification_account}:role/${VERIFICATION_STACK_NAME}-ExecutionRole"
 
-    log_info "Applying resource policy: Execution Agent allows Verification Agent role (Principal: ${verify_role_arn})"
-    # Use boto3 (AWS CLI may not support bedrock-agentcore-control put-resource-policy in older versions).
-    # Policy: Sid, Condition aws:SourceAccount for confused deputy prevention.
-    if ! python3 -c "import boto3" 2>/dev/null; then
-        python3 -m pip install --user -q boto3 2>/dev/null || true
-    fi
-    export _EXEC_AGENT_ARN="${exec_agent_arn}"
-    export _VERIFY_ROLE_ARN="${verify_role_arn}"
-    export _VERIFICATION_ACCOUNT="${verification_account}"
-    if ! python3 -c "
-import json, os, sys
-try:
-    import boto3
-except ImportError:
-    sys.exit(1)
-arn = os.environ.get('_EXEC_AGENT_ARN', '')
-principal = os.environ.get('_VERIFY_ROLE_ARN', '')
-account = os.environ.get('_VERIFICATION_ACCOUNT', '')
-if not arn or not principal:
-    sys.exit(1)
-policy = {
-    'Version': '2012-10-17',
-    'Statement': [{
-        'Sid': 'AllowVerificationAgentInvoke',
-        'Effect': 'Allow',
-        'Principal': {'AWS': principal},
-        'Action': 'bedrock-agentcore:InvokeAgentRuntime',
-        'Resource': arn,
-        'Condition': {'StringEquals': {'aws:SourceAccount': account}}
-    }]
-}
-region = os.environ.get('AWS_REGION', '')
-session = boto3.Session(region_name=region or None)
-client = session.client('bedrock-agentcore-control')
-client.put_resource_policy(resourceArn=arn, policy=json.dumps(policy))
-"; then
-        log_warning "Could not apply resource policy (install boto3: pip install boto3, or check PutResourcePolicy permissions)"
+    log_info "Applying resource policy (Principal: ${verify_role_arn})"
+    if ! python3 "${SCRIPT_DIR}/apply-resource-policy.py" \
+        --execution-agent-arn "${exec_agent_arn}" \
+        --verification-role-arn "${verify_role_arn}" \
+        --account-id "${verification_account}" \
+        --region "${AWS_REGION}"; then
+        log_warning "Could not apply resource policy (check boto3 install and PutResourcePolicy permissions)"
     else
         log_success "Execution Agent resource policy applied"
     fi
-    unset _EXEC_AGENT_ARN _VERIFY_ROLE_ARN _VERIFICATION_ACCOUNT 2>/dev/null || true
 }
 
-# Extract AgentCore Runtime ID from ARN (arn:...:runtime/Name-xxxxx -> Name-xxxxx)
-# Control Plane API uses agent-runtime-id, not ARN; status is READY (not ACTIVE).
-get_agent_runtime_id_from_arn() {
-    local arn="$1"
-    [[ -n "${arn}" ]] && echo "${arn##*/}" || echo ""
-}
+# ── Phase 3: Validate AgentCore runtimes ───────────────────────
 
 validate_agentcore() {
     log_info "=========================================="
     log_info "AgentCore Validation"
     log_info "=========================================="
 
-    local profile_args=""
-    if [[ -n "${AWS_PROFILE}" ]]; then
-        profile_args="--profile ${AWS_PROFILE}"
-    fi
+    local exec_agent_arn verify_agent_arn
 
-    # Control Plane: bedrock-agentcore-control get-agent-runtime --agent-runtime-id <id>
-    # Status values: CREATING, CREATE_FAILED, UPDATING, UPDATE_FAILED, READY, DELETING (console "Ready" = READY)
-    local target_status="READY"
+    # Read from outputs files first, fall back to describe-stacks
+    exec_agent_arn=$(read_output "${EXEC_OUTPUTS_FILE}" "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn")
+    [[ -z "${exec_agent_arn}" ]] && exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn")
 
-    # Check Execution Agent Runtime status
-    local exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn" 2>/dev/null || echo "")
-    if [[ -n "${exec_agent_arn}" ]]; then
-        local exec_id=$(get_agent_runtime_id_from_arn "${exec_agent_arn}")
-        if [[ -n "${exec_id}" ]]; then
-            log_info "Checking Execution Agent Runtime status (id: ${exec_id})..."
-            local max_wait=120
-            local elapsed=0
-            local interval=10
+    verify_agent_arn=$(read_output "${VERIFY_OUTPUTS_FILE}" "${VERIFICATION_STACK_NAME}" "VerificationAgentRuntimeArn")
+    [[ -z "${verify_agent_arn}" ]] && verify_agent_arn=$(get_stack_output "${VERIFICATION_STACK_NAME}" "VerificationAgentRuntimeArn")
 
-            while [[ ${elapsed} -lt ${max_wait} ]]; do
-                local status=$(aws bedrock-agentcore-control get-agent-runtime \
-                    --agent-runtime-id "${exec_id}" \
-                    --region "${AWS_REGION}" \
-                    ${profile_args} \
-                    --query 'status' --output text 2>/dev/null || echo "UNKNOWN")
+    local exec_id verify_id
+    exec_id=$(get_runtime_id "${exec_agent_arn}")
+    verify_id=$(get_runtime_id "${verify_agent_arn}")
 
-                if [[ "${status}" == "${target_status}" ]]; then
-                    log_success "Execution Agent Runtime is ${target_status}"
-                    break
-                fi
-
-                log_info "Execution Agent status: ${status}. Waiting ${interval}s... (${elapsed}/${max_wait}s)"
-                sleep ${interval}
-                elapsed=$((elapsed + interval))
-            done
-
-            if [[ ${elapsed} -ge ${max_wait} ]]; then
-                log_warning "Execution Agent did not reach ${target_status} within ${max_wait}s. Current: ${status}"
-            fi
-        else
-            log_warning "Could not extract Execution Agent runtime ID from ARN"
-        fi
-    fi
-
-    # Check Verification Agent Runtime status
-    local verify_agent_arn=$(get_stack_output "${VERIFICATION_STACK_NAME}" "VerificationAgentRuntimeArn" 2>/dev/null || echo "")
-    if [[ -n "${verify_agent_arn}" ]]; then
-        local verify_id=$(get_agent_runtime_id_from_arn "${verify_agent_arn}")
-        if [[ -n "${verify_id}" ]]; then
-            log_info "Checking Verification Agent Runtime status (id: ${verify_id})..."
-            local max_wait=120
-            local elapsed=0
-            local interval=10
-
-            while [[ ${elapsed} -lt ${max_wait} ]]; do
-                local status=$(aws bedrock-agentcore-control get-agent-runtime \
-                    --agent-runtime-id "${verify_id}" \
-                    --region "${AWS_REGION}" \
-                    ${profile_args} \
-                    --query 'status' --output text 2>/dev/null || echo "UNKNOWN")
-
-                if [[ "${status}" == "${target_status}" ]]; then
-                    log_success "Verification Agent Runtime is ${target_status}"
-                    break
-                fi
-
-                log_info "Verification Agent status: ${status}. Waiting ${interval}s... (${elapsed}/${max_wait}s)"
-                sleep ${interval}
-                elapsed=$((elapsed + interval))
-            done
-
-            if [[ ${elapsed} -ge ${max_wait} ]]; then
-                log_warning "Verification Agent did not reach ${target_status} within ${max_wait}s. Current: ${status}"
-            fi
-        else
-            log_warning "Could not extract Verification Agent runtime ID from ARN"
-        fi
-    fi
+    [[ -n "${exec_id}" ]]   && wait_for_agent_ready "Execution Agent" "${exec_id}" 120
+    [[ -n "${verify_id}" ]] && wait_for_agent_ready "Verification Agent" "${verify_id}" 120
 
     log_success "AgentCore validation complete."
 }
 
+# ── Summary ────────────────────────────────────────────────────
+
 print_summary() {
-    local function_url=$(get_stack_output "${VERIFICATION_STACK_NAME}" "SlackEventHandlerUrl")
-    local exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn" 2>/dev/null || echo "N/A")
-    local verify_agent_arn=$(get_stack_output "${VERIFICATION_STACK_NAME}" "VerificationAgentRuntimeArn" 2>/dev/null || echo "N/A")
+    local function_url exec_agent_arn verify_agent_arn
+
+    function_url=$(read_output "${VERIFY_OUTPUTS_FILE}" "${VERIFICATION_STACK_NAME}" "SlackEventHandlerUrl")
+    exec_agent_arn=$(read_output "${EXEC_OUTPUTS_FILE}" "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn")
+    verify_agent_arn=$(read_output "${VERIFY_OUTPUTS_FILE}" "${VERIFICATION_STACK_NAME}" "VerificationAgentRuntimeArn")
+
+    # Fall back to describe-stacks if outputs files are empty
+    [[ -z "${function_url}" ]]    && function_url=$(get_stack_output "${VERIFICATION_STACK_NAME}" "SlackEventHandlerUrl")
+    [[ -z "${exec_agent_arn}" ]]  && exec_agent_arn=$(get_stack_output "${EXECUTION_STACK_NAME}" "ExecutionAgentRuntimeArn")
+    [[ -z "${verify_agent_arn}" ]] && verify_agent_arn=$(get_stack_output "${VERIFICATION_STACK_NAME}" "VerificationAgentRuntimeArn")
 
     echo ""
     log_info "=========================================="
@@ -496,11 +350,11 @@ print_summary() {
     log_info "=========================================="
     echo ""
     echo "Slack Event Handler URL (for Slack Event Subscriptions):"
-    echo "  ${function_url}"
+    echo "  ${function_url:-N/A}"
     echo ""
     echo "AgentCore (A2A):"
-    echo "  Execution Agent ARN:     ${exec_agent_arn}"
-    echo "  Verification Agent ARN:  ${verify_agent_arn}"
+    echo "  Execution Agent ARN:     ${exec_agent_arn:-N/A}"
+    echo "  Verification Agent ARN:  ${verify_agent_arn:-N/A}"
     echo ""
     echo "Next steps:"
     echo "  1. Configure Slack app Event Subscriptions with the Function URL above"
@@ -509,31 +363,27 @@ print_summary() {
     echo ""
 }
 
-# Main execution
-# Order: Execution deploy → Verification deploy → Execution runtime resource policy (API). No Execution re-deploy.
+# ── Main ───────────────────────────────────────────────────────
+
 main() {
     log_info "Starting deployment with two independent stacks..."
     echo ""
 
     check_prerequisites
 
-    # Phase 1: Deploy Execution Stack. Output ExecutionAgentRuntimeArn is fetched and passed to Phase 2.
-    deploy_execution_stack
+    # Phase 1: Deploy Execution Stack
+    deploy_execution_stack "${1:-}"
 
-    # Phase 2: Deploy Verification Stack. executionAgentArn is taken from Execution stack output (get_stack_output), not from config.
+    # Phase 2: Deploy Verification Stack
     deploy_verification_stack
 
-    # Phase 2.5: Apply resource policy on Execution Agent Runtime via Control Plane API (not a stack re-deploy).
-    # Uses Execution stack output ExecutionAgentRuntimeArn and Verification role name.
+    # Phase 2.5: Apply resource policy via Control Plane API
     apply_execution_agent_resource_policy
 
-    # Phase 3: Validate AgentCore runtimes (status READY)
+    # Phase 3: Validate AgentCore runtimes
     validate_agentcore
 
-    # Print summary
     print_summary
 }
 
-# Run main function
 main "$@"
-

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Deploy script simplification**: Replaced two-phase synth/deploy with single `cdk deploy`, use `--outputs-file` for stack outputs instead of `describe-stacks` polling, deduplicated agent validation loop into `wait_for_agent_ready()`, removed config file mutation during deploy, and extracted inline Python resource policy into standalone `scripts/apply-resource-policy.py`
+
 ### Added
 
 - **Execution Agent**: Single system prompt source (`system_prompt.py`), tools `get_current_time`, `get_business_document_guidelines`, `get_presentation_slide_guidelines`, `search_docs`; docs for system prompt and docs access.
