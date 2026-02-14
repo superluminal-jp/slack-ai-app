@@ -7,12 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Verification–Execution zone connection (032)**: Zone-to-zone protocol is now JSON-RPC 2.0 (method `execute_task`). Application layer is transport-agnostic; transport (e.g. InvokeAgentRuntime) remains an implementation detail. Execution Agent accepts JSON-RPC Request and returns JSON-RPC Response; Verification Agent builds Request and parses Response. Error contract unified (e.g. -32602 Invalid params, -32603 Internal error).
+- **Deploy script simplification**: Replaced two-phase synth/deploy with single `cdk deploy`, use `--outputs-file` for stack outputs instead of `describe-stacks` polling, deduplicated agent validation loop into `wait_for_agent_ready()`, removed config file mutation during deploy, and extracted inline Python resource policy into standalone `scripts/apply-resource-policy.py`
+- **Execution Agent system prompt**: Consolidated split prompts (`FILE_GEN_ONLY_SYSTEM_PROMPT` + `EXTENDED_SYSTEM_PROMPT_ADDON`) into single `FULL_SYSTEM_PROMPT` with all tools explicitly listed
+- **CDK outdir**: `cdk/bin/cdk.ts` reads `CDK_OUTDIR` env for cloud assembly output path; explicit `app.synth()` call
+- **Force image rebuild**: `execution-agent-ecr.ts` accepts `extraHash` prop; `execution-stack.ts` passes `forceExecutionImageRebuild` context value to change Docker asset hash
+
 ### Added
 
+- **Utility scripts**: `scripts/force-execution-redeploy.sh` (quick single-stack image rebuild), `scripts/check-execution-deploy-status.sh` (runtime status check)
+
+
+- **Execution Agent**: Single system prompt source (`system_prompt.py`), tools `get_current_time`, `get_business_document_guidelines`, `get_presentation_slide_guidelines`, `search_docs`; docs for system prompt and docs access.
 - **Documentation standards**: New [docs/DOCUMENTATION_STANDARDS.md](docs/DOCUMENTATION_STANDARDS.md) defining best practices for all project documentation (when to update, structure, writing style, CHANGELOG format, module README requirements, API docs, quality checklist). CLAUDE.md, docs/README.md, README.md, CONTRIBUTING.md, cdk/README.md, and agent READMEs updated to reference and apply these standards; CLAUDE.md Commands section corrected.
+
+### Removed
+
+- **bedrock-processor Lambda**: Removed `cdk/lib/execution/lambda/bedrock-processor`; execution zone is A2A-only (Verification Agent invokes Execution Agent via AgentCore Runtime).
 
 ### Fixed
 
+- **Deploy Phase 2.5 resource policy**: Apply Execution Agent resource policy via Python/boto3 instead of `aws bedrock-agentcore-control put-resource-policy` (older AWS CLI may not support this operation). Script installs boto3 if missing and passes policy parameters via environment for safe quoting.
 - **IAM role name collision (Dev/Prod)**: Execution and Verification AgentCore runtime execution roles now use stack name in `roleName`; default AgentCore runtime names include env suffix (e.g. `SlackAI_ExecutionAgent_Prod`, `SlackAI_VerificationAgent_Dev`) so Dev and Prod stacks can coexist in the same account
 - **Verification Agent missing `import time`**: Restored `import time` in `authorization.py`, `rate_limiter.py`, `slack_poster.py` — dropped during logging refactor, causing `NameError` on every request and silent failure (no Slack response)
 - **Deploy script PutResourcePolicy**: Fixed `Resource: "*"` (must match specific ARN); removed unsupported endpoint policy; fixed empty `AWS_PROFILE` causing `ProfileNotFound`

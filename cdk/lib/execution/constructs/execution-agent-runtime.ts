@@ -222,7 +222,7 @@ export class ExecutionAgentRuntime extends Construct {
     // Do NOT create RuntimeEndpoint in CFn: Bedrock AgentCore auto-creates DEFAULT when Runtime is created.
     // Creating it here causes "An endpoint with the specified name already exists" (409).
 
-    // Resource-based policy: apply_execution_agent_resource_policy in deploy-split-stacks.sh
+    // Resource-based policy: apply_execution_agent_resource_policy in deploy.sh
     // applies PutResourcePolicy to Runtime only (Endpoint does not support PutResourcePolicy).
 
     // CfnOutput for cross-account (when verificationAccountId is set)

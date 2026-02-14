@@ -88,6 +88,76 @@ def _read_invoke_response(response: dict) -> str:
     return str(body)
 
 
+def build_jsonrpc_request(task_payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Build a JSON-RPC 2.0 Request for execute_task (032-jsonrpc-zone-connection).
+
+    Args:
+        task_payload: Task payload (channel, text, bot_token, correlation_id, etc.)
+
+    Returns:
+        dict: JSON-RPC 2.0 Request with jsonrpc "2.0", method "execute_task", params, id (string UUID).
+    """
+    return {
+        "jsonrpc": "2.0",
+        "method": "execute_task",
+        "params": task_payload,
+        "id": str(uuid.uuid4()),
+    }
+
+
+def parse_jsonrpc_response(response_body: str, correlation_id: str = "") -> str:
+    """
+    Parse JSON-RPC 2.0 Response body and return the same JSON string shape as before (for pipeline).
+
+    On success (result): returns json.dumps(result) so pipeline sees status, response_text, etc.
+    On error (error): returns json.dumps({ status "error", error_code, error_message, correlation_id }).
+
+    Args:
+        response_body: Raw response body string (JSON-RPC 2.0 Response).
+        correlation_id: Correlation ID to include in error payload when response has error.
+
+    Returns:
+        str: JSON string suitable for pipeline (result payload or error payload).
+    """
+    if not response_body or not response_body.strip():
+        return json.dumps({
+            "status": "error",
+            "error_code": "invalid_response",
+            "error_message": "空の応答を受信しました。",
+            "correlation_id": correlation_id,
+        })
+    try:
+        obj = json.loads(response_body)
+    except (json.JSONDecodeError, ValueError):
+        return json.dumps({
+            "status": "error",
+            "error_code": "invalid_response",
+            "error_message": "応答の解析に失敗しました。",
+            "correlation_id": correlation_id,
+        })
+    if "error" in obj:
+        err = obj["error"]
+        code = err.get("code", -32603)
+        message = err.get("message", "Internal error")
+        data = err.get("data") or {}
+        cid = correlation_id or (data.get("correlation_id") if isinstance(data, dict) else "") or ""
+        return json.dumps({
+            "status": "error",
+            "error_code": str(code),
+            "error_message": message,
+            "correlation_id": cid,
+        })
+    if "result" in obj:
+        return json.dumps(obj["result"])
+    return json.dumps({
+        "status": "error",
+        "error_code": "invalid_response",
+        "error_message": "応答に result も error も含まれません。",
+        "correlation_id": correlation_id,
+    })
+
+
 def _poll_async_task_result(
     agent_arn: str,
     task_id: str,
@@ -281,8 +351,8 @@ def invoke_execution_agent(
         # Unique session ID per invocation (UUID recommended by AWS for InvokeAgentRuntime)
         session_id = str(uuid.uuid4())
 
-        # Payload per InvokeAgentRuntime API: binary, JSON with "prompt" key (same as Agent Invoker)
-        payload_bytes = json.dumps({"prompt": json.dumps(task_payload)}).encode("utf-8")
+        # JSON-RPC 2.0 Request (032-jsonrpc-zone-connection): execute_task with task_payload as params
+        payload_bytes = json.dumps(build_jsonrpc_request(task_payload)).encode("utf-8")
 
         for attempt in range(1, INVOKE_RETRY_MAX_ATTEMPTS + 1):
             try:
@@ -327,14 +397,28 @@ def invoke_execution_agent(
                     "correlation_id": correlation_id,
                 })
 
-            # Check if response is async ("accepted" with task_id)
+            # Parse as JSON-RPC 2.0 Response (032-jsonrpc-zone-connection)
             try:
                 response_data = json.loads(response_body) if response_body else {}
             except (json.JSONDecodeError, ValueError):
                 response_data = {}
 
-            if response_data.get("status") == "accepted" and response_data.get("task_id"):
-                task_id = response_data["task_id"]
+            # JSON-RPC error → return user-facing error JSON via parse_jsonrpc_response
+            if "error" in response_data:
+                duration_ms = (time.time() - start_time) * 1000
+                _log("INFO", "invoke_execution_agent_completed", {
+                    "correlation_id": correlation_id,
+                    "execution_agent_arn": agent_arn,
+                    "duration_ms": round(duration_ms, 2),
+                    "response_mode": "sync",
+                    "jsonrpc_error": True,
+                })
+                return parse_jsonrpc_response(response_body, correlation_id=correlation_id)
+
+            # JSON-RPC result: check for async (status "accepted", task_id)
+            result = response_data.get("result") if isinstance(response_data.get("result"), dict) else {}
+            if result.get("status") == "accepted" and result.get("task_id"):
+                task_id = result["task_id"]
                 elapsed = time.time() - start_time
                 remaining_timeout = max(timeout_seconds - elapsed, 30)
 
@@ -344,7 +428,6 @@ def invoke_execution_agent(
                     "remaining_timeout": round(remaining_timeout, 2),
                 })
 
-                # Poll for the async task result
                 return _poll_async_task_result(
                     agent_arn=agent_arn,
                     task_id=task_id,
@@ -352,9 +435,8 @@ def invoke_execution_agent(
                     max_wait_seconds=remaining_timeout,
                 )
 
-            # Synchronous response — return directly
+            # Synchronous JSON-RPC result — return same shape as before (result payload only)
             duration_ms = (time.time() - start_time) * 1000
-
             _log("INFO", "invoke_execution_agent_completed", {
                 "correlation_id": correlation_id,
                 "execution_agent_arn": agent_arn,
@@ -362,8 +444,7 @@ def invoke_execution_agent(
                 "response_length": len(response_body),
                 "response_mode": "sync",
             })
-
-            return response_body
+            return parse_jsonrpc_response(response_body, correlation_id=correlation_id)
 
     except ClientError as e:
         error_code = e.response["Error"]["Code"]

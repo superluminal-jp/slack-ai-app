@@ -31,6 +31,10 @@ Verification Agent (A2A)
     → レスポンス返却
 ```
 
+## Zone-to-zone protocol (032)
+
+Verification からの受信は **JSON-RPC 2.0** で、単一メソッド `execute_task` を提供します。リクエストは `jsonrpc`, `method`, `params`（channel, text, bot_token 等）, `id` を持ち、レスポンスは `result`（status, response_text 等）または `error`（code, message）で返します。トランスポート（例: InvokeAgentRuntime）に依存しないアプリケーション層の契約です。
+
 ## 026 Best Practices
 
 - **E1 スコープ定義**: 本 README に担当・非担当を明記
@@ -40,4 +44,4 @@ Verification Agent (A2A)
 ---
 
 Module README follows project [Documentation Standards](../../../../../docs/DOCUMENTATION_STANDARDS.md).  
-**Last updated**: 2026-02-13
+**Last updated**: 2026-02-14

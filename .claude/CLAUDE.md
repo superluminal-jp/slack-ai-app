@@ -1,180 +1,103 @@
-# Claude Code: Professional Output Guidelines
+# Project Guidelines
 
-**Purpose**: Execute efficiently through systematic planning, appropriate model selection, context management, and adherence to international professional writing standards.
-
-**Audience**: Professionals requiring high-quality outputs for technical, business, and research contexts.
-
----
-
-## Planning & Execution
-
-**Create task lists before execution**:
-
-- Break work into atomic tasks
-- Mark dependencies explicitly
-- Assign complexity level (simple/medium/complex)
-- Justify model choice per task
-
-**Example**:
-
-```
-1. [Simple, Haiku] Parse input data
-2. [Medium, Sonnet] Generate implementation (depends on #1)
-3. [Simple, Haiku] Create tests (depends on #2)
-```
-
-**Parallelize when**: Tasks have no dependencies and operate on different files or datasets.
+**Purpose**: Core principles and references for AI coding assistants.
+**Philosophy**: Keep this file concise (<5KB). Details live in `rules/`, `skills/`, `docs/`.
 
 ---
 
-## Model Selection
+## Core Principles
 
-**Haiku** (fast, cheap): File ops, format conversion, validation, simple transformations
-
-**Sonnet** (balanced): Code development, analysis, documentation, debugging
-
-**Opus** (deep reasoning): Architecture decisions, complex algorithms, trade-off analysis
-
----
-
-## Output Standards
-
-### Structure
-
-- **Inverted pyramid**: Key message first, supporting details follow (Economist Style Guide, 2020)
-- **One paragraph = one idea**: Maintain focused paragraphs (APA 7th Ed.)
-- **Clear heading hierarchy**: Use consistent H1/H2/H3 structure (ISO 21500)
-
-### Language
-
-- **Plain language**: Avoid jargon; translate technical terms into analogies (Plain Writing Act, 2010)
-- **Active voice**: Prefer "Claude executes tasks" over "Tasks are executed by Claude" (Elements of Style)
-- **Consistent terminology**: Use same terms throughout for same concepts (Chicago Manual, 17th Ed.)
-
-### Evidence & Citations
-
-- **Primary sources**: Cite authoritative, peer-reviewed, or official documentation
-- **Citation style**: Apply APA, IEEE, or Chicago consistently
-- **Fact vs interpretation**: Distinguish clearly (COPE Guidelines, 2019)
-- **Express uncertainty**: Use frequencies ("1 in 10 cases") rather than vague terms
-
-### Visualization
-
-- **Data-ink ratio**: Maximize information, minimize decoration (Tufte)
-- **Required elements**: Captions, units, sources for all visuals (ISO 690)
-- **Highlight trends**: Show patterns, not raw data dumps (NNG, 2019)
+1. **Spec first** — Define what to build before deciding how (GitHub spec-kit)
+2. **TDD always** — For any code change, write/adjust tests first, watch them fail, then implement to pass
+3. **Code is source of truth** — Documentation reflects implementation, not aspirations
+4. **Quality first** — Professional standards, international best practices
+5. **Efficiency** — Targeted edits for large files, minimal changes, clear diffs
+6. **Maintainability** — Consistent patterns, clear structure, automated quality checks
 
 ---
 
-## Context Management
-
-**Use temporary files for state**:
+## Quick Reference
 
 ```bash
-/tmp/claude/project_context.json    # Decisions and progress
-/tmp/claude/task_state.json         # Current work status
-/tmp/claude/cache_{topic}.json      # Reusable results
-/tmp/claude/references.json         # Source tracking with citations
+npm run dev        # Start development server
+npm test           # Run all tests
+npm run lint       # Check code quality
+/speckit           # Spec-driven development workflow
+/update-readme     # Sync README
+/update-changelog  # Add CHANGELOG entry
+/quality-check     # Run quality validations
 ```
 
-**Cache static content**: Style guides, documentation, templates, requirements
-
-**Keep dynamic**: Current task parameters, specific inputs, target files
-
-**Reference tracking**:
-
-```json
-{
-  "output": "analysis_report",
-  "references": [
-    {
-      "id": "aws-2024",
-      "type": "documentation",
-      "source": "AWS CDK Developer Guide",
-      "url": "https://docs.aws.amazon.com/cdk/",
-      "accessed": "2025-12-27",
-      "citationStyle": "APA"
-    }
-  ],
-  "assumptions": ["Input data validated", "Network latency < 100ms"],
-  "limitations": ["Sample size n=100", "Single-region analysis"]
-}
-```
-
-**Token savings**: 60-80% for repeated operations
+**Structure**: `src/`, `tests/`, `docs/` (architecture, api, guides). Root: README.md, CHANGELOG.md, CLAUDE.md.
 
 ---
 
-## Quality Assurance
+## Rules (Always Applied)
 
-### Three-Stage Process
+Located in `rules/` — constraints loaded every session:
 
-1. **Revision**: Review structure, logic, completeness
-2. **Editing**: Refine language, consistency, clarity
-3. **Proofreading**: Check grammar, formatting, references
+- `spec-driven-development.md` — Spec-first workflow + mandatory TDD cycle for code changes
+- `output-standards.md` — McKinsey-style writing standards
+- `file-editing.md` — Targeted edits vs full rewrites
+- `model-selection.md` — Opus/Sonnet/Haiku selection
+- `context-management.md` — Token optimization
+- `memory-vs-repo-rules.md` — Memory vs repo rules taxonomy
+- `documentation.md` — Docs synchronized with code
 
-### Output Checklist
+## Skills (On-Demand)
 
-- [ ] Purpose and audience stated
-- [ ] Key message first (inverted pyramid)
-- [ ] Plain, active, consistent language
-- [ ] One idea per paragraph
-- [ ] Visuals include captions, units, sources
-- [ ] References cited with consistent style
-- [ ] Assumptions and limitations explicit
-- [ ] Facts distinguished from interpretations
+Located in `skills/` — activate by task match or `/name`:
 
-### Executive Deliverables
+- **document-assistant** — McKinsey-style business documents
+- **presentation-assistant** — McKinsey-style slide design
+- **speckit-workflow** — Spec-driven development procedure
+- **file-editing-strategy** — Large file editing guidance
+- **documentation-management** — README, CHANGELOG, API docs
 
-Follow sequence: **Impact → 3 Key Points → Visual → Action Options**
+## Subagents (Delegated Tasks)
 
----
+Located in `agents/` — each applies its corresponding rule:
 
-## Structured Output
+| Agent | Rule | Purpose |
+|-------|------|---------|
+| `doc-updater` | `documentation` | Update docs atomically |
+| `quality-checker` | `output-standards` | Validate against standards |
+| `architecture-reviewer` | — | Review system design |
+| `spec-compliance-reviewer` | `spec-driven-development` | Verify spec compliance |
+| `file-edit-reviewer` | `file-editing` | Review edit efficiency |
+| `context-optimizer` | `context-management` | Optimize context usage |
+| `model-selector` | `model-selection` | Recommend model assignments |
+| `rules-organizer` | `memory-vs-repo-rules` | Organize rules placement |
 
-**Specify JSON schemas**:
+## Hooks (Automated)
 
-```json
-{
-  "status": "completed|failed",
-  "summary": {
-    "impact": "Primary outcome or value",
-    "keyPoints": ["Point 1", "Point 2", "Point 3"]
-  },
-  "outputs": [],
-  "references": [],
-  "assumptions": [],
-  "limitations": [],
-  "errors": []
-}
-```
+Configured in `settings.json`:
 
-**Build template library**: Maintain reusable patterns (40-60% token reduction)
+- **PreToolUse** — Branch protection, safety checks, spec-kit nudges
+- **PostToolUse** — Auto-format after Edit/Write
+- **TeammateIdle** — Agent team: allow or block teammate going idle (exit 2 = keep working)
+- **SubagentStop** — Suggest next steps
+- **Stop** — Final validation checklist
+- **TaskCompleted** — Agent team: allow or block task completion (exit 2 = block with feedback)
 
----
+## Agent Teams
 
-## Master Checklist
-
-### Execution
-
-- [ ] Task list with dependencies created
-- [ ] Model justified per task
-- [ ] Parallel execution identified
-- [ ] State files defined
-- [ ] Cache strategy set
-
-### Quality
-
-- [ ] Purpose and audience stated
-- [ ] Key message first (inverted pyramid)
-- [ ] Plain language, active voice
-- [ ] Consistent terminology
-- [ ] Output format specified
-- [ ] References documented with citation style
-- [ ] Assumptions and limitations explicit
-- [ ] Three-stage editing completed
-- [ ] Visuals include captions, units, sources
+Agent teams are enabled (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`). Use for parallel review, competing-hypothesis debugging, and role-based work. Teammates load CLAUDE.md and project context; give task-specific context in spawn prompts. Size tasks so each teammate owns distinct files to avoid conflicts. Clean up via the lead: ask the lead to shut down teammates, then "Clean up the team." Details: https://code.claude.com/docs/en/agent-teams
 
 ---
 
-**Standards Applied**: Plain Writing Act (2010), APA 7th Ed., ISO 21500, Economist Style Guide (2020), Elements of Style, Chicago Manual 17th Ed., COPE Guidelines (2019), Tufte principles, ISO 690, NNG (2019)
+## Workflow
+
+Specify → Plan → Tasks → Execute. Update docs atomically. Quality-checker for three-stage review. Pre-commit validates.
+
+## Contributing
+
+Before commit: tests pass, docs updated, CHANGELOG entry, quality checks.
+
+## Context Compaction
+
+When compacting, always preserve: list of modified files, test/lint commands run, key decisions made.
+
+---
+
+**Last Updated**: 2026-02-10

@@ -1,8 +1,8 @@
 """
-Agent factory for Execution Agent with file generation tools (027).
+Agent factory for Execution Agent with file generation tools (027) and docs search.
 
-Creates a Strands Agent configured with Bedrock and file generation tools:
-generate_text_file, generate_excel, generate_word, generate_powerpoint, generate_chart_image.
+Creates a Strands Agent configured with Bedrock and tools:
+generate_text_file, generate_excel, generate_word, generate_powerpoint, generate_chart_image, search_docs, get_current_time, get_business_document_guidelines, get_presentation_slide_guidelines.
 """
 
 import os
@@ -11,21 +11,30 @@ from typing import Any, List
 from strands import Agent
 from strands.models.bedrock import BedrockModel
 
+from system_prompt import FULL_SYSTEM_PROMPT
 from tools.generate_text_file import generate_text_file
 from tools.generate_excel import generate_excel
 from tools.generate_word import generate_word
 from tools.generate_powerpoint import generate_powerpoint
 from tools.generate_chart_image import generate_chart_image
+from tools.search_docs import search_docs
+from tools.get_current_time import get_current_time
+from tools.get_business_document_guidelines import get_business_document_guidelines
+from tools.get_presentation_slide_guidelines import get_presentation_slide_guidelines
 
 
 def get_tools() -> List[Any]:
-    """Return list of @tool functions for file generation."""
+    """Return list of @tool functions for file generation, docs search, time, and document/presentation guidelines."""
     return [
         generate_text_file,
         generate_excel,
         generate_word,
         generate_powerpoint,
         generate_chart_image,
+        search_docs,
+        get_current_time,
+        get_business_document_guidelines,
+        get_presentation_slide_guidelines,
     ]
 
 
@@ -45,21 +54,8 @@ def create_agent(tools: List[Any] | None = None) -> Agent:
 
     model = BedrockModel(model_id=model_id, region_name=region)
 
-    system_prompt = (
-        "You are a helpful AI assistant. When the user asks you to create a file, you MUST call "
-        "the appropriate tool to generate the actual file. Do NOT respond with only a text description "
-        "of what the file would contain — the user will receive nothing if you do not call the tool.\n\n"
-        "Tools: generate_text_file (Markdown, CSV, plain text), generate_excel (Excel .xlsx), "
-        "generate_word (Word .docx), generate_powerpoint (PowerPoint .pptx), "
-        "generate_chart_image (bar/line/pie/scatter charts as PNG).\n\n"
-        "Rules: (1) Always invoke the tool with concrete data (e.g., for Excel: sheets with headers "
-        "and rows). (2) Keep your text response brief (e.g., 'Excelファイルを作成しました。'). "
-        "(3) The file is uploaded to Slack automatically as an attachment; do not describe file "
-        "contents in detail — the user will see the file."
-    )
-
     return Agent(
         model=model,
         tools=tool_list,
-        system_prompt=system_prompt,
+        system_prompt=FULL_SYSTEM_PROMPT,
     )

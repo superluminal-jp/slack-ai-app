@@ -20,6 +20,8 @@ import * as path from "path";
 export interface ExecutionAgentEcrProps {
   /** Optional: Override the path to the Dockerfile directory */
   readonly dockerfilePath?: string;
+  /** Optional: Force image rebuild by changing asset hash (e.g. timestamp or "1") */
+  readonly extraHash?: string;
 }
 
 export class ExecutionAgentEcr extends Construct {
@@ -42,6 +44,7 @@ export class ExecutionAgentEcr extends Construct {
       platform: Platform.LINUX_ARM64,
       // Exclude unnecessary files from Docker build context
       exclude: ["__pycache__", "*.pyc", ".pytest_cache", "tests"],
+      ...(props?.extraHash && { extraHash: props.extraHash }),
     });
 
     this.imageUri = this.imageAsset.imageUri;

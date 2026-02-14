@@ -1,6 +1,8 @@
 ---
 name: presentation-assistant
 description: Converts structured business documents into McKinsey-style presentation slides with professional visual design. Applies visual communication standards, chart selection, and slide formatting. Use when converting documents to slides, designing presentation visuals, or creating slide decks from structured content.
+allowed-tools: Read, Write
+user-invocable: true
 ---
 
 # Presentation Assistant

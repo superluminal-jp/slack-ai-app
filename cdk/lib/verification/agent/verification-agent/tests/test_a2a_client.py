@@ -26,13 +26,15 @@ class TestInvokeExecutionAgent:
 
     @patch("a2a_client._get_agentcore_client")
     def test_synchronous_response_returned_directly(self, mock_get_client):
-        """When Execution Agent returns immediate result, return it directly."""
+        """When Execution Agent returns immediate result (JSON-RPC result), return it directly."""
         mock_client = Mock()
         mock_get_client.return_value = mock_client
 
+        # 032: Execution returns JSON-RPC 2.0 Response with result
         success_body = json.dumps({
-            "status": "success",
-            "response_text": "Hello from AI",
+            "jsonrpc": "2.0",
+            "result": {"status": "success", "response_text": "Hello from AI"},
+            "id": "req-sync-1",
         })
 
         mock_client.invoke_agent_runtime.return_value = {
@@ -62,10 +64,11 @@ class TestInvokeExecutionAgent:
         mock_client = Mock()
         mock_get_client.return_value = mock_client
 
-        # Execution Agent returns accepted with task_id
+        # 032: Execution returns JSON-RPC 2.0 Response with result.status "accepted"
         accepted_body = json.dumps({
-            "status": "accepted",
-            "task_id": "async-task-789",
+            "jsonrpc": "2.0",
+            "result": {"status": "accepted", "task_id": "async-task-789"},
+            "id": "req-async-1",
         })
         mock_client.invoke_agent_runtime.return_value = {
             "response": accepted_body,
@@ -155,7 +158,11 @@ class TestInvokeExecutionAgent:
         mock_client = Mock()
         mock_get_client.return_value = mock_client
         mock_client.invoke_agent_runtime.return_value = {
-            "response": json.dumps({"status": "success", "response_text": "ok"})
+            "response": json.dumps({
+                "jsonrpc": "2.0",
+                "result": {"status": "success", "response_text": "ok"},
+                "id": "req-env-1",
+            })
         }
 
         from a2a_client import invoke_execution_agent
@@ -167,6 +174,12 @@ class TestInvokeExecutionAgent:
 
         call_kwargs = mock_client.invoke_agent_runtime.call_args[1]
         assert "env-agent" in call_kwargs.get("agentRuntimeArn", "")
+        # 032: payload must be JSON-RPC 2.0 Request
+        payload = json.loads(call_kwargs.get("payload", b"{}").decode("utf-8"))
+        assert payload.get("jsonrpc") == "2.0"
+        assert payload.get("method") == "execute_task"
+        assert "params" in payload
+        assert "id" in payload
 
     def test_missing_arn_raises_value_error(self):
         """Missing ARN (both arg and env) should raise ValueError."""
@@ -319,6 +332,88 @@ class TestPollAsyncTaskResult:
 
         result_data = json.loads(result)
         assert result_data["status"] == "error"
+
+
+class Test032JsonRpcZoneConnection:
+    """Phase 3 [US1]: JSON-RPC 2.0 Request build and Response parse (032-jsonrpc-zone-connection)."""
+
+    def test_build_jsonrpc_request_from_task_payload(self):
+        """T015: build_jsonrpc_request yields jsonrpc 2.0, method execute_task, params, string id."""
+        from a2a_client import build_jsonrpc_request
+
+        task_payload = {
+            "channel": "C01234567",
+            "text": "Hello",
+            "bot_token": "xoxb-test",
+            "correlation_id": "corr-001",
+            "thread_ts": "1234567890.123456",
+        }
+        req = build_jsonrpc_request(task_payload)
+        assert req.get("jsonrpc") == "2.0"
+        assert req.get("method") == "execute_task"
+        assert req.get("params") == task_payload
+        assert "id" in req
+        assert isinstance(req["id"], str)
+        assert len(req["id"]) > 0
+
+    def test_parse_jsonrpc_response_result_extracts_success_payload(self):
+        """T016: parse_jsonrpc_response with 'result' returns success payload (status, response_text)."""
+        from a2a_client import parse_jsonrpc_response
+
+        body = json.dumps({
+            "jsonrpc": "2.0",
+            "result": {"status": "success", "response_text": "AI reply here"},
+            "id": "req-1",
+        })
+        out = parse_jsonrpc_response(body, correlation_id="corr-1")
+        data = json.loads(out)
+        assert data.get("status") == "success"
+        assert data.get("response_text") == "AI reply here"
+
+    def test_parse_jsonrpc_response_error_extracts_error_info(self):
+        """T017: parse_jsonrpc_response with 'error' returns error payload (code, message)."""
+        from a2a_client import parse_jsonrpc_response
+
+        body = json.dumps({
+            "jsonrpc": "2.0",
+            "error": {"code": -32602, "message": "Invalid params"},
+            "id": "req-2",
+        })
+        out = parse_jsonrpc_response(body, correlation_id="corr-2")
+        data = json.loads(out)
+        assert data.get("status") == "error"
+        assert data.get("error_code") is not None
+        assert data.get("error_message") == "Invalid params"
+        assert data.get("correlation_id") == "corr-2"
+
+    @patch("a2a_client._get_agentcore_client")
+    def test_invoke_execution_agent_jsonrpc_error_returns_user_facing_error_json(self, mock_get_client):
+        """T025 [US2]: When response contains JSON-RPC error, return user-facing JSON (status, error_code, error_message, correlation_id)."""
+        mock_client = Mock()
+        mock_get_client.return_value = mock_client
+        error_body = json.dumps({
+            "jsonrpc": "2.0",
+            "error": {"code": -32602, "message": "Invalid params", "data": {}},
+            "id": "req-err-1",
+        })
+        mock_client.invoke_agent_runtime.return_value = {"response": error_body}
+
+        from a2a_client import invoke_execution_agent
+
+        result = invoke_execution_agent(
+            task_payload={
+                "channel": "C01",
+                "text": "Hi",
+                "bot_token": "xoxb-test",
+                "correlation_id": "corr-t025",
+            },
+            execution_agent_arn="arn:aws:test",
+        )
+        data = json.loads(result)
+        assert data.get("status") == "error"
+        assert data.get("error_code") is not None
+        assert data.get("error_message") == "Invalid params"
+        assert data.get("correlation_id") == "corr-t025"
 
 
 class TestA2AClientSigV4:

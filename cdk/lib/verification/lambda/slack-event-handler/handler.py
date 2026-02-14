@@ -142,8 +142,7 @@ def lambda_handler(event, context):
     - Returns 200 OK immediately to Slack (<3 seconds)
     - Stores token in DynamoDB on first event, retrieves from DynamoDB for subsequent events
     - Validates message text (length, emptiness)
-    - Invokes Bedrock Processor (bedrock-processor) asynchronously for AI processing
-    - Bedrock Processor handles Bedrock API call and Slack posting
+    - Sends to Agent Invoker (SQS) or invokes Verification Agent (A2A); Verification Agent invokes Execution Agent (container) for AI processing
     """
     try:
         # Log event received

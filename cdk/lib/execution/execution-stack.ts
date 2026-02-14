@@ -58,7 +58,14 @@ export class ExecutionStack extends cdk.Stack {
       `SlackAI_ExecutionAgent_${this.stackName.includes("-Prod") ? "Prod" : "Dev"}`;
 
     // ECR must be created before Runtime (Runtime requires containerImageUri from ECR)
-    this.executionAgentEcr = new ExecutionAgentEcr(this, "ExecutionAgentEcr");
+    // Optional: forceExecutionImageRebuild (e.g. timestamp) forces new image build for tool/code updates
+    const forceRebuild =
+      this.node.tryGetContext("forceExecutionImageRebuild") as
+        | string
+        | undefined;
+    this.executionAgentEcr = new ExecutionAgentEcr(this, "ExecutionAgentEcr", {
+      ...(forceRebuild && { extraHash: forceRebuild }),
+    });
 
     const bedrockModelId =
       props?.bedrockModelId ||
