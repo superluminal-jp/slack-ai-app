@@ -21,6 +21,7 @@ from a2a_client import invoke_execution_agent
 from slack_post_request import send_slack_post_request, build_file_artifact, build_file_artifact_s3
 from error_debug import log_execution_error, log_execution_agent_error_response
 from logger_util import get_logger, log
+from slack_url_resolver import resolve_slack_urls
 from s3_file_manager import (
     upload_file_to_s3,
     generate_presigned_url,
@@ -257,6 +258,18 @@ def run(payload: dict) -> str:
                 "error": str(e),
                 "error_type": type(e).__name__,
             })
+
+        # 3.5. Resolve Slack message URLs in text
+        if text and bot_token:
+            try:
+                text = resolve_slack_urls(text, bot_token, correlation_id)
+            except Exception as e:
+                _log("WARN", "slack_url_resolution_error", {
+                    "correlation_id": correlation_id,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                })
+                # Fail-open: continue with original text
 
         # Enrich attachments with S3 pre-signed URLs (US4): download from Slack, upload to S3
         # US3 (FR-012): max 5 files per request; excess are skipped with warning
