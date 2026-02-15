@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Execution Agent `fetch_url` tool**: Fetches and extracts text content from URLs so users can ask the agent to summarize web pages. Includes SSRF prevention (private IP blocking, scheme validation), HTML text extraction via BeautifulSoup, and size/truncation limits.
 - **Utility scripts**: `scripts/force-execution-redeploy.sh` (quick single-stack image rebuild), `scripts/check-execution-deploy-status.sh` (runtime status check)
 
 

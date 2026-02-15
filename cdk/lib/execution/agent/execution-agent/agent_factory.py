@@ -2,7 +2,7 @@
 Agent factory for Execution Agent with file generation tools (027) and docs search.
 
 Creates a Strands Agent configured with Bedrock and tools:
-generate_text_file, generate_excel, generate_word, generate_powerpoint, generate_chart_image, search_docs, get_current_time, get_business_document_guidelines, get_presentation_slide_guidelines.
+generate_text_file, generate_excel, generate_word, generate_powerpoint, generate_chart_image, search_docs, get_current_time, get_business_document_guidelines, get_presentation_slide_guidelines, fetch_url.
 """
 
 import os
@@ -21,10 +21,11 @@ from tools.search_docs import search_docs
 from tools.get_current_time import get_current_time
 from tools.get_business_document_guidelines import get_business_document_guidelines
 from tools.get_presentation_slide_guidelines import get_presentation_slide_guidelines
+from tools.fetch_url import fetch_url
 
 
 def get_tools() -> List[Any]:
-    """Return list of @tool functions for file generation, docs search, time, and document/presentation guidelines."""
+    """Return list of @tool functions for file generation, docs search, time, guidelines, and URL fetch."""
     return [
         generate_text_file,
         generate_excel,
@@ -35,6 +36,7 @@ def get_tools() -> List[Any]:
         get_current_time,
         get_business_document_guidelines,
         get_presentation_slide_guidelines,
+        fetch_url,
     ]
 
 
