@@ -37,6 +37,12 @@ export interface ExecutionStackProps extends cdk.StackProps {
    * @default "SlackAI_ExecutionAgent"
    */
   readonly executionAgentName?: string;
+
+  /**
+   * Name for the Doc Search Agent AgentCore Runtime
+   * @default "SlackAI_DocSearchAgent"
+   */
+  readonly docSearchAgentName?: string;
 }
 
 /**
@@ -72,6 +78,10 @@ export interface VerificationStackProps extends cdk.StackProps {
    */
   readonly executionAgentArn?: string;
 
+  /**
+   * ARN of the Doc Search Agent Runtime (for A2A cross-account invocation)
+   */
+  readonly docSearchAgentArn?: string;
 }
 
 /**
@@ -80,6 +90,7 @@ export interface VerificationStackProps extends cdk.StackProps {
 export interface ExecutionStackOutputs {
   readonly stackName: string;
   readonly executionAgentArn: string;
+  readonly docSearchAgentArn: string;
 }
 
 /**

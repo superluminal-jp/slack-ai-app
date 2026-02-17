@@ -152,6 +152,10 @@ const slackSigningSecretResource = new secretsmanager.Secret(
       props.executionAgentArn ||
       this.node.tryGetContext("executionAgentArn") ||
       "";
+    const docSearchAgentArn =
+      props.docSearchAgentArn ||
+      this.node.tryGetContext("docSearchAgentArn") ||
+      "";
 
     // ECR before Runtime (Runtime needs containerImageUri). SlackPoster and LogGroup before Runtime (optional queue and log group).
     this.verificationAgentEcr = new VerificationAgentEcr(
@@ -183,7 +187,8 @@ const slackSigningSecretResource = new secretsmanager.Secret(
         slackSigningSecret: slackSigningSecretResource,
         slackBotTokenSecret: slackBotTokenSecret,
         executionAgentArn: executionAgentArn || undefined,
-slackPostRequestQueue: slackPoster.queue,
+        docSearchAgentArn: docSearchAgentArn || undefined,
+        slackPostRequestQueue: slackPoster.queue,
         errorDebugLogGroup: errorDebugLogGroup,
         fileExchangeBucket: fileExchangeBucket.bucket,
       }

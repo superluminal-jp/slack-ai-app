@@ -51,7 +51,9 @@ export interface VerificationAgentRuntimeProps {
   readonly slackBotTokenSecret: secretsmanager.ISecret;
   /** ARN of the Execution Agent Runtime (for A2A invocation) */
   readonly executionAgentArn?: string;
-/** 019: SQS queue for Slack post requests; Agent sends here instead of calling Slack API */
+  /** ARN of the Doc Search Agent Runtime (for A2A invocation) */
+  readonly docSearchAgentArn?: string;
+  /** 019: SQS queue for Slack post requests; Agent sends here instead of calling Slack API */
   readonly slackPostRequestQueue?: sqs.IQueue;
   /** CloudWatch Log group for execution error debug (troubleshooting) */
   readonly errorDebugLogGroup?: logs.ILogGroup;
@@ -182,20 +184,24 @@ export class VerificationAgentRuntime extends Construct {
       })
     );
 
-    // AgentCore InvokeAgentRuntime permission (for calling Execution Agent).
+    // AgentCore InvokeAgentRuntime permission (for calling Execution Agent and Doc Search Agent).
     // AWS requires identity-based policy to allow the action on BOTH the agent runtime and
     // the agent endpoint (see resource-based-policies.html "Hierarchical authorization").
     // Include both endpoint ARN forms: ...:runtime-endpoint/Name/DEFAULT and
     // ...:runtime/Name/runtime-endpoint/DEFAULT (latter is used at evaluation per AccessDenied message).
-    const invokeResources = props.executionAgentArn
-      ? (() => {
-          const runtimeArn = props.executionAgentArn;
-          const endpointArnDoc =
-            runtimeArn.replace(/:runtime\//, ":runtime-endpoint/") + "/DEFAULT";
-          const endpointArnAlt = `${runtimeArn}/runtime-endpoint/DEFAULT`;
-          return [runtimeArn, endpointArnDoc, endpointArnAlt];
-        })()
-      : [`arn:aws:bedrock-agentcore:${stack.region}:*:runtime/*`];
+    const agentArns = [props.executionAgentArn, props.docSearchAgentArn].filter(
+      (arn): arn is string => !!arn
+    );
+    const invokeResources =
+      agentArns.length > 0
+        ? agentArns.flatMap((runtimeArn) => {
+            const endpointArnDoc =
+              runtimeArn.replace(/:runtime\//, ":runtime-endpoint/") +
+              "/DEFAULT";
+            const endpointArnAlt = `${runtimeArn}/runtime-endpoint/DEFAULT`;
+            return [runtimeArn, endpointArnDoc, endpointArnAlt];
+          })
+        : [`arn:aws:bedrock-agentcore:${stack.region}:*:runtime/*`];
     this.executionRole.addToPolicy(
       new iam.PolicyStatement({
         sid: "AgentCoreInvoke",
@@ -205,6 +211,21 @@ export class VerificationAgentRuntime extends Construct {
           "bedrock-agentcore:GetAsyncTaskResult",
         ],
         resources: invokeResources,
+      })
+    );
+
+    // Bedrock InvokeModel permission for the Strands routing agent (Claude Haiku 4.5).
+    // The Verification Agent uses a lightweight Strands Agent to classify requests
+    // and automatically select the appropriate Execution Agent (general vs doc-search).
+    this.executionRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: "BedrockInvokeModelRouter",
+        effect: iam.Effect.ALLOW,
+        actions: [
+          "bedrock:InvokeModel",
+          "bedrock:InvokeModelWithResponseStream",
+        ],
+        resources: ["*"],
       })
     );
 
@@ -222,7 +243,10 @@ export class VerificationAgentRuntime extends Construct {
     if (props.executionAgentArn) {
       environmentVariables.EXECUTION_AGENT_ARN = props.executionAgentArn;
     }
-if (props.slackPostRequestQueue) {
+    if (props.docSearchAgentArn) {
+      environmentVariables.DOC_SEARCH_AGENT_ARN = props.docSearchAgentArn;
+    }
+    if (props.slackPostRequestQueue) {
       environmentVariables.SLACK_POST_REQUEST_QUEUE_URL =
         props.slackPostRequestQueue.queueUrl;
       props.slackPostRequestQueue.grantSendMessages(this.executionRole);

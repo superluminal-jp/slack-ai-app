@@ -18,6 +18,7 @@ from existence_check import check_entity_existence, ExistenceCheckError
 from authorization import authorize_request
 from rate_limiter import check_rate_limit, RateLimitExceededError
 from a2a_client import invoke_execution_agent
+from agent_router import route_request, AGENT_DOC_SEARCH
 from slack_post_request import send_slack_post_request, build_file_artifact, build_file_artifact_s3
 from error_debug import log_execution_error, log_execution_agent_error_response
 from logger_util import get_logger, log
@@ -320,9 +321,21 @@ def run(payload: dict) -> str:
                 execution_attachments = enriched
                 did_s3_upload = True
 
-        # Delegate to Execution Agent (bot_token required for response formatting; attachments use presigned_url)
+        # Route to appropriate Execution Agent using Strands Agent (Claude Haiku 4.5)
+        import os
+        selected_agent = route_request(text, correlation_id=correlation_id)
+        if selected_agent == AGENT_DOC_SEARCH:
+            agent_arn = os.environ.get("DOC_SEARCH_AGENT_ARN", "")
+        else:
+            agent_arn = os.environ.get("EXECUTION_AGENT_ARN", "")
+
+        # Delegate to selected Execution Agent (bot_token required for response formatting; attachments use presigned_url)
         is_processing = True
-        _log("INFO", "delegating_to_execution_agent", {"correlation_id": correlation_id, "channel": channel})
+        _log("INFO", "delegating_to_execution_agent", {
+            "correlation_id": correlation_id,
+            "channel": channel,
+            "selected_agent": selected_agent,
+        })
 
         execution_payload = {
             "channel": channel,
@@ -338,7 +351,7 @@ def run(payload: dict) -> str:
         try:
             # 032 US3: invoke_execution_agent returns unwrapped payload only (result or error body).
             # No JSON-RPC envelope (jsonrpc/id) is exposed; Slack sees only status, response_text, or user-facing error.
-            execution_result = invoke_execution_agent(execution_payload)
+            execution_result = invoke_execution_agent(execution_payload, execution_agent_arn=agent_arn)
             try:
                 result_data = json.loads(execution_result) if isinstance(execution_result, str) else execution_result
             except (json.JSONDecodeError, TypeError) as e:
