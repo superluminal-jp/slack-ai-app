@@ -21,7 +21,7 @@ import { z } from "zod";
 
 /**
  * Validated CDK configuration shape. All required fields are enforced by CdkConfigSchema (Zod).
- * Optional fields (e.g. slackBotToken, executionAgentArn) may be set via env or config file.
+ * Optional fields (e.g. slackBotToken, executionAgentArns) may be set via env or config file.
  */
 export interface CdkConfig {
   /** AWS Region for deployment */
@@ -34,6 +34,10 @@ export interface CdkConfig {
   verificationStackName: string;
   /** Base name for Execution Stack (without environment suffix) */
   executionStackName: string;
+  /** Base name for Docs Execution Stack (without environment suffix) */
+  docsExecutionStackName?: string;
+  /** Base name for Time Execution Stack (without environment suffix) */
+  timeExecutionStackName?: string;
   /** AWS Account ID for Verification Stack */
   verificationAccountId: string;
   /** AWS Account ID for Execution Stack */
@@ -46,8 +50,12 @@ export interface CdkConfig {
   executionAgentName?: string;
   /** Name for the Verification Agent AgentCore Runtime (optional) */
   verificationAgentName?: string;
-  /** ARN of the Execution Agent Runtime for A2A (optional; from Execution Stack output or config) */
-  executionAgentArn?: string;
+  /** Name for the Docs Agent AgentCore Runtime (optional) */
+  docsAgentName?: string;
+  /** Name for the Time Agent AgentCore Runtime (optional) */
+  timeAgentName?: string;
+  /** Map of execution agent IDs to runtime ARNs for A2A (optional; from stack outputs or config) */
+  executionAgentArns?: Record<string, string>;
 }
 
 /**
@@ -63,6 +71,8 @@ const CdkConfigSchema = z.object({
   }),
   verificationStackName: z.string().min(1, "verificationStackName is required"),
   executionStackName: z.string().min(1, "executionStackName is required"),
+  docsExecutionStackName: z.string().min(1).optional(),
+  timeExecutionStackName: z.string().min(1).optional(),
   verificationAccountId: z
     .string()
     .regex(
@@ -91,11 +101,27 @@ const CdkConfigSchema = z.object({
       "verificationAgentName must match pattern [a-zA-Z][a-zA-Z0-9_]{0,47}"
     )
     .optional(),
-  executionAgentArn: z
+  docsAgentName: z
     .string()
     .regex(
-      /^arn:aws:bedrock-agentcore:.+:\d{12}:runtime\/.+/,
-      "executionAgentArn must be a valid AgentCore Runtime ARN"
+      /^[a-zA-Z][a-zA-Z0-9_]{0,47}$/,
+      "docsAgentName must match pattern [a-zA-Z][a-zA-Z0-9_]{0,47}"
+    )
+    .optional(),
+  timeAgentName: z
+    .string()
+    .regex(
+      /^[a-zA-Z][a-zA-Z0-9_]{0,47}$/,
+      "timeAgentName must match pattern [a-zA-Z][a-zA-Z0-9_]{0,47}"
+    )
+    .optional(),
+  executionAgentArns: z
+    .record(
+      z.string(),
+      z.string().regex(
+        /^arn:aws:bedrock-agentcore:.+:\d{12}:runtime\/.+/,
+        "executionAgentArns values must be valid AgentCore Runtime ARNs"
+      )
     )
     .optional(),
 });
@@ -121,7 +147,10 @@ function loadJsonFile(filePath: string): PartialCdkConfig | null {
     const cleaned: PartialCdkConfig = {};
     for (const [key, value] of Object.entries(parsed)) {
       // Skip empty strings for optional fields
-      if (value === "" && key === "executionAgentArn") {
+      if (
+        value === "" &&
+        key === "executionAgentArns"
+      ) {
         continue; // Skip empty optional field
       }
       // Type-safe assignment
@@ -243,6 +272,55 @@ export function applyEnvOverrides(config: CdkConfig): CdkConfig {
     return value && value !== "" ? value : undefined;
   };
 
+  const parseExecutionAgentArns = (
+    raw: string | undefined
+  ): Record<string, string> | undefined => {
+    const value = raw?.trim();
+    if (!value) {
+      return undefined;
+    }
+    try {
+      const parsed = JSON.parse(value) as Record<string, unknown>;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return undefined;
+      }
+      const out: Record<string, string> = {};
+      for (const [key, arn] of Object.entries(parsed)) {
+        if (typeof arn === "string" && arn.trim() !== "") {
+          out[key] = arn.trim();
+        }
+      }
+      return Object.keys(out).length > 0 ? out : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const mergedExecutionAgentArns = (
+    config.executionAgentArns && Object.keys(config.executionAgentArns).length > 0
+      ? { ...config.executionAgentArns }
+      : undefined
+  );
+  const fromJson = parseExecutionAgentArns(process.env.EXECUTION_AGENT_ARNS);
+  const fromSingles: Record<string, string> = {};
+  const fileCreatorArn = process.env.FILE_CREATOR_AGENT_ARN?.trim();
+  if (fileCreatorArn) {
+    fromSingles["file-creator"] = fileCreatorArn;
+  }
+  const docsArn = process.env.DOCS_AGENT_ARN?.trim();
+  if (docsArn) {
+    fromSingles.docs = docsArn;
+  }
+  const timeArn = process.env.TIME_AGENT_ARN?.trim();
+  if (timeArn) {
+    fromSingles.time = timeArn;
+  }
+  const fromSingleMap =
+    Object.keys(fromSingles).length > 0 ? fromSingles : undefined;
+
+  const resolvedExecutionAgentArns =
+    fromJson ?? fromSingleMap ?? mergedExecutionAgentArns;
+
   return {
     ...config,
     awsRegion: process.env.AWS_REGION || config.awsRegion,
@@ -260,9 +338,6 @@ export function applyEnvOverrides(config: CdkConfig): CdkConfig {
       process.env.SLACK_SIGNING_SECRET,
       config.slackSigningSecret
     ),
-    executionAgentArn: envOrConfig(
-      process.env.EXECUTION_AGENT_ARN,
-      config.executionAgentArn
-    ),
+    executionAgentArns: resolvedExecutionAgentArns,
   };
 }

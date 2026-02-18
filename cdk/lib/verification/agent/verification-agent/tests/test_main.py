@@ -21,6 +21,16 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
+@pytest.fixture(autouse=True)
+def mock_routing_defaults():
+    """Keep tests focused on pipeline behavior, not router selection outcomes."""
+    with patch("pipeline.route_request", return_value="file-creator"), patch(
+        "pipeline.get_agent_arn",
+        return_value="arn:aws:bedrock-agentcore:ap-northeast-1:111111111111:runtime/file-creator",
+    ):
+        yield
+
+
 class TestHandleMessageParsing:
     """Test A2A entrypoint payload parsing."""
 

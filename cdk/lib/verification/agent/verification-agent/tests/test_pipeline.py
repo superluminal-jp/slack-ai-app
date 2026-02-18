@@ -20,6 +20,16 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
+@pytest.fixture(autouse=True)
+def mock_routing_defaults():
+    """Keep tests focused on pipeline behavior, not router selection outcomes."""
+    with patch("pipeline.route_request", return_value="file-creator"), patch(
+        "pipeline.get_agent_arn",
+        return_value="arn:aws:bedrock-agentcore:ap-northeast-1:111111111111:runtime/file-creator",
+    ):
+        yield
+
+
 def _payload(
     correlation_id="corr-001",
     channel="C01234",
@@ -517,6 +527,44 @@ class Test032E2EFlowUnchanged:
                 assert slack_kw.get("text") == expected_text
                 assert "jsonrpc" not in str(slack_kw)
                 assert "id" not in str(slack_kw.get("text", ""))
+
+
+class Test033RoutingIntegration:
+    """Multi-agent routing integration in pipeline."""
+
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.get_agent_arn", return_value="arn:aws:bedrock-agentcore:ap-northeast-1:111111111111:runtime/docs")
+    @patch("pipeline.route_request", return_value="docs")
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_route_selected_agent_arn_is_passed_to_invoke_execution_agent(
+        self,
+        mock_existence,
+        mock_auth,
+        mock_invoke,
+        _mock_route_request,
+        _mock_get_agent_arn,
+        mock_slack_post,
+    ):
+        """When router selects docs, invoke_execution_agent receives docs runtime ARN."""
+        mock_existence.return_value = MagicMock(exists=True)
+        mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
+        mock_invoke.return_value = json.dumps({
+            "status": "success",
+            "response_text": "docs response",
+        })
+        mock_slack_post.return_value = None
+
+        with patch("pipeline.check_rate_limit") as mock_rate:
+            mock_rate.return_value = (True, None)
+            from pipeline import run
+
+            run({"prompt": json.dumps(_payload(text="docs question"))})
+
+            assert mock_invoke.call_count == 1
+            kwargs = mock_invoke.call_args[1]
+            assert kwargs.get("execution_agent_arn", "").endswith("/docs")
 
 
 @pytest.mark.skip(reason="要検証: E2E. Slack → Verification → Execution (JSON-RPC) → Verification → Slack. Run manually or in integration env.")

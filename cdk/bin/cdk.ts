@@ -10,9 +10,9 @@
  * (2) Command-line context (--context key=value), (3) Environment-specific config file (cdk.config.{env}.json),
  * (4) Defaults in code. See getConfigValue / getConfigString and loadConfiguration.
  *
- * Stack creation flow: (1) ExecutionStack is created first and exposes executionAgentArn.
- * (2) VerificationStack is created with executionAgentArn from Execution Stack output or config.
- * Deploy order: deploy ExecutionStack, then set executionAgentArn and deploy VerificationStack.
+ * Stack creation flow: (1) Execution stacks are created and expose runtime ARNs.
+ * (2) VerificationStack is created with executionAgentArns from stack outputs or config.
+ * Deploy order: deploy execution stacks, then deploy VerificationStack.
  *
  * Audit (FR-005, SC-004): Log and CdkError messages in this file and in lib/utils (cdk-logger,
  * cdk-error) do not include secrets, tokens, or PII; config load failure does not log raw error.
@@ -24,6 +24,8 @@ import * as cdk from "aws-cdk-lib";
 import { Aspects } from "aws-cdk-lib";
 import * as path from "path";
 import { ExecutionStack } from "../lib/execution/execution-stack";
+import { DocsExecutionStack } from "../lib/docs-execution/docs-execution-stack";
+import { TimeExecutionStack } from "../lib/time-execution/time-execution-stack";
 import { VerificationStack } from "../lib/verification/verification-stack";
 import {
   loadCdkConfig,
@@ -159,6 +161,14 @@ function getConfigString(key: string, defaultValue = ""): string {
   return value || "";
 }
 
+/**
+ * Get configuration value as object.
+ */
+function getConfigObject<T extends object>(key: string, defaultValue: T): T {
+  const value = getConfigValue<T>(key, defaultValue);
+  return value || defaultValue;
+}
+
 // Get configuration values with priority: context > config file > defaults (see module JSDoc for full priority)
 const region = getConfigValue("awsRegion", DEFAULT_REGION);
 
@@ -171,11 +181,21 @@ const baseExecutionStackName = getConfigValue(
   "executionStackName",
   "SlackAI-Execution"
 );
+const baseDocsExecutionStackName = getConfigValue(
+  "docsExecutionStackName",
+  "SlackAI-DocsExecution"
+);
+const baseTimeExecutionStackName = getConfigValue(
+  "timeExecutionStackName",
+  "SlackAI-TimeExecution"
+);
 
 // Add environment suffix to stack names
 const environmentSuffix = deploymentEnv === "prod" ? "Prod" : "Dev";
 const verificationStackName = `${baseVerificationStackName}-${environmentSuffix}`;
 const executionStackName = `${baseExecutionStackName}-${environmentSuffix}`;
+const docsExecutionStackName = `${baseDocsExecutionStackName}-${environmentSuffix}`;
+const timeExecutionStackName = `${baseTimeExecutionStackName}-${environmentSuffix}`;
 
 // Cross-account configuration (optional)
 const verificationAccountId = getConfigString("verificationAccountId");
@@ -190,7 +210,18 @@ const verificationAgentName = getConfigString(
   "verificationAgentName",
   `SlackAI_VerificationAgent_${environmentSuffix}`
 );
-const executionAgentArn = getConfigString("executionAgentArn");
+const docsAgentName = getConfigString(
+  "docsAgentName",
+  `SlackAI_DocsAgent_${environmentSuffix}`
+);
+const timeAgentName = getConfigString(
+  "timeAgentName",
+  `SlackAI_TimeAgent_${environmentSuffix}`
+);
+const executionAgentArns = getConfigObject<Record<string, string>>(
+  "executionAgentArns",
+  {}
+);
 
 /**
  * Set loaded config values to CDK context for backward compatibility
@@ -209,6 +240,8 @@ function setContextFromConfig(config: CdkConfig | null): void {
   app.node.setContext("deploymentEnv", deploymentEnv);
   app.node.setContext("verificationStackName", baseVerificationStackName);
   app.node.setContext("executionStackName", baseExecutionStackName);
+  app.node.setContext("docsExecutionStackName", baseDocsExecutionStackName);
+  app.node.setContext("timeExecutionStackName", baseTimeExecutionStackName);
   app.node.setContext("verificationAccountId", verificationAccountId);
   app.node.setContext("executionAccountId", executionAccountId);
 
@@ -219,9 +252,11 @@ function setContextFromConfig(config: CdkConfig | null): void {
     app.node.setContext("slackSigningSecret", config.slackSigningSecret);
   }
   app.node.setContext("executionAgentName", executionAgentName);
+  app.node.setContext("docsAgentName", docsAgentName);
+  app.node.setContext("timeAgentName", timeAgentName);
   app.node.setContext("verificationAgentName", verificationAgentName);
-  if (executionAgentArn) {
-    app.node.setContext("executionAgentArn", executionAgentArn);
+  if (Object.keys(executionAgentArns).length > 0) {
+    app.node.setContext("executionAgentArns", executionAgentArns);
   }
 }
 
@@ -246,10 +281,12 @@ const defaultEnv = getDefaultEnv(region);
  * Deployment Architecture (A2A only):
  *
  * - ExecutionStack: Execution Agent AgentCore Runtime (A2A)
+ * - DocsExecutionStack: Docs Agent AgentCore Runtime (A2A)
+ * - TimeExecutionStack: Time Agent AgentCore Runtime (A2A)
  * - VerificationStack: SlackEventHandler + Verification Agent + DynamoDB + Secrets
  *
- * Deploy order: 1) ExecutionStack → get ExecutionAgentRuntimeArn
- *               2) VerificationStack with executionAgentArn (and executionAccountId if cross-account)
+ * Deploy order: 1) ExecutionStack + DocsExecutionStack + TimeExecutionStack → get runtime ARNs
+ *               2) VerificationStack with executionAgentArns
  */
 
 /**
@@ -293,15 +330,48 @@ const executionStack = new ExecutionStack(app, executionStackName, {
 });
 logInfo("Execution stack created.", { phase: "stack", context: { stackName: executionStackName } });
 
-// Create Verification Stack (A2A only; needs executionAgentArn from Execution Stack or config)
-const resolvedExecutionAgentArn =
-  executionAgentArn || executionStack.executionAgentArn;
+// Create Docs Execution Stack (A2A only)
+const docsExecutionStack = new DocsExecutionStack(app, docsExecutionStackName, {
+  env: executionEnv,
+  awsRegion: region,
+  bedrockModelId: bedrockModelId || undefined,
+  verificationAccountId: verificationAccountId || undefined,
+  docsAgentName: docsAgentName || undefined,
+});
+logInfo("Docs execution stack created.", {
+  phase: "stack",
+  context: { stackName: docsExecutionStackName },
+});
+
+// Create Time Execution Stack (A2A only)
+const timeExecutionStack = new TimeExecutionStack(app, timeExecutionStackName, {
+  env: executionEnv,
+  awsRegion: region,
+  bedrockModelId: bedrockModelId || undefined,
+  verificationAccountId: verificationAccountId || undefined,
+  timeAgentName: timeAgentName || undefined,
+});
+logInfo("Time execution stack created.", {
+  phase: "stack",
+  context: { stackName: timeExecutionStackName },
+});
+
+// Create Verification Stack (A2A only; needs execution runtime ARNs map)
+const resolvedExecutionAgentArns: Record<string, string> = {
+  "file-creator":
+    executionAgentArns["file-creator"] || executionStack.executionAgentArn,
+  docs: executionAgentArns.docs || docsExecutionStack.docsAgentArn,
+  time: executionAgentArns.time || timeExecutionStack.timeAgentArn,
+};
 
 new VerificationStack(app, verificationStackName, {
   env: verificationEnv,
   executionAccountId: executionAccountId || undefined,
   verificationAgentName: verificationAgentName || undefined,
-  executionAgentArn: resolvedExecutionAgentArn || undefined,
+  executionAgentArns:
+    Object.keys(resolvedExecutionAgentArns).length > 0
+      ? resolvedExecutionAgentArns
+      : undefined,
 });
 logInfo("Verification stack created.", { phase: "stack", context: { stackName: verificationStackName } });
 

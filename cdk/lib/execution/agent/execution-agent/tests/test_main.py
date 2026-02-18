@@ -578,6 +578,22 @@ class Test032JsonRpcZoneConnection:
         assert resp["error"]["message"] == "Method not found"
         assert resp.get("id") == "1"
 
+    @patch("main.get_agent_card")
+    def test_jsonrpc_get_agent_card_returns_card_with_id(self, mock_get_agent_card):
+        """POST get_agent_card returns JSON-RPC result with card and same id."""
+        import main
+
+        mock_get_agent_card.return_value = {
+            "name": "SlackAI-ExecutionAgent",
+            "protocol": "A2A",
+        }
+        body = b'{"jsonrpc":"2.0","method":"get_agent_card","id":"card-1"}'
+        resp = main.handle_invocation_body(body)
+        assert resp.get("jsonrpc") == "2.0"
+        assert resp.get("id") == "card-1"
+        assert resp.get("result", {}).get("name") == "SlackAI-ExecutionAgent"
+        assert "error" not in resp
+
     @patch("main.handle_message_tool")
     def test_jsonrpc_execute_task_returns_result_with_id(self, mock_tool):
         """POST valid JSON-RPC execute_task with params returns JSON-RPC 2.0 response with result or error and same id."""

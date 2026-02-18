@@ -40,8 +40,10 @@ describe("Independent Lifecycle Management (A2A)", () => {
       const app = new cdk.App();
       const stack = new VerificationStack(app, "TestVerification", {
         env: { account: "123456789012", region: "ap-northeast-1" },
-        executionAgentArn:
-          "arn:aws:bedrock-agentcore:ap-northeast-1:123456789012:runtime/exec",
+        executionAgentArns: {
+          "file-creator":
+            "arn:aws:bedrock-agentcore:ap-northeast-1:123456789012:runtime/exec",
+        },
       });
 
       const template = Template.fromStack(stack);
@@ -69,8 +71,10 @@ describe("Independent Lifecycle Management (A2A)", () => {
 
       const verificationStack = new VerificationStack(app, "VerifStack", {
         env: { account: "123456789012", region: "ap-northeast-1" },
-        executionAgentArn:
-          "arn:aws:bedrock-agentcore:ap-northeast-1:123456789012:runtime/exec",
+        executionAgentArns: {
+          "file-creator":
+            "arn:aws:bedrock-agentcore:ap-northeast-1:123456789012:runtime/exec",
+        },
       });
 
       const execTemplate = Template.fromStack(executionStack);
@@ -109,8 +113,10 @@ describe("Independent Lifecycle Management (A2A)", () => {
 
       const stack = new VerificationStack(app, "VerifParam", {
         env: { account: "123456789012", region: "ap-northeast-1" },
-        executionAgentArn:
-          "arn:aws:bedrock-agentcore:ap-northeast-1:123456789012:runtime/custom-exec",
+        executionAgentArns: {
+          "file-creator":
+            "arn:aws:bedrock-agentcore:ap-northeast-1:123456789012:runtime/custom-exec",
+        },
       });
 
       const template = Template.fromStack(stack);
@@ -142,8 +148,10 @@ describe("Independent Lifecycle Management (A2A)", () => {
 
       const verificationStack = new VerificationStack(app, "VerifOutputs", {
         env: { account: "123456789012", region: "ap-northeast-1" },
-        executionAgentArn:
-          "arn:aws:bedrock-agentcore:ap-northeast-1:123456789012:runtime/exec",
+        executionAgentArns: {
+          "file-creator":
+            "arn:aws:bedrock-agentcore:ap-northeast-1:123456789012:runtime/exec",
+        },
       });
 
       expect(verificationStack.lambdaRoleArn).toBeDefined();

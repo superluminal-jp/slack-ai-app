@@ -295,6 +295,63 @@ def _poll_async_task_result(
     })
 
 
+def discover_agent_card(agent_arn: str) -> Optional[Dict[str, Any]]:
+    """
+    Discover Agent Card from a target AgentCore Runtime via JSON-RPC get_agent_card.
+
+    Args:
+        agent_arn: Target agent runtime ARN.
+
+    Returns:
+        Agent Card dict on success, otherwise None.
+    """
+    if not agent_arn or not isinstance(agent_arn, str):
+        return None
+
+    try:
+        client = _get_agentcore_client()
+        session_id = str(uuid.uuid4())
+        request_body = {
+            "jsonrpc": "2.0",
+            "method": "get_agent_card",
+            "id": str(uuid.uuid4()),
+        }
+
+        response = client.invoke_agent_runtime(
+            agentRuntimeArn=agent_arn,
+            runtimeSessionId=session_id,
+            payload=json.dumps(request_body).encode("utf-8"),
+        )
+        response_body = _read_invoke_response(response)
+        response_data = json.loads(response_body) if response_body else {}
+
+        result = response_data.get("result")
+        if isinstance(result, dict):
+            return result
+
+        _log("WARN", "discover_agent_card_invalid_response", {
+            "agent_arn": agent_arn,
+            "has_result": "result" in response_data,
+            "has_error": "error" in response_data,
+        })
+        return None
+
+    except ClientError as e:
+        _log("WARN", "discover_agent_card_client_error", {
+            "agent_arn": agent_arn,
+            "error_code": e.response.get("Error", {}).get("Code", ""),
+            "error_message": e.response.get("Error", {}).get("Message", ""),
+        })
+        return None
+    except Exception as e:
+        _log("WARN", "discover_agent_card_unexpected_error", {
+            "agent_arn": agent_arn,
+            "error": str(e),
+            "error_type": type(e).__name__,
+        })
+        return None
+
+
 def invoke_execution_agent(
     task_payload: Dict[str, Any],
     execution_agent_arn: Optional[str] = None,

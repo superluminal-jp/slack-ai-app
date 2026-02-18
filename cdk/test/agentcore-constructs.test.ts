@@ -368,7 +368,7 @@ describe("VerificationAgentRuntime", () => {
 
       new VerificationAgentRuntime(stack, "VerifyAgentScoped", {
         ...testProps,
-        executionAgentArn: executionArn,
+        executionAgentArns: { "file-creator": executionArn },
       });
       template = Template.fromStack(stack);
 
@@ -389,7 +389,7 @@ describe("VerificationAgentRuntime", () => {
       });
     });
 
-    it("should use wildcard ARN when executionAgentArn is not provided", () => {
+    it("should use wildcard ARN when executionAgentArns is not provided", () => {
       new VerificationAgentRuntime(stack, "VerifyAgentWild", testProps);
       template = Template.fromStack(stack);
 

@@ -1,0 +1,42 @@
+# Slack App Manifest Template
+# Use this manifest when creating a new Slack App via manifest import
+# Reference: https://api.slack.com/reference/manifests
+
+display_information:
+  name: Bedrock AI Assistant
+  description: AI-powered Slack bot using AWS Bedrock for intelligent responses
+  background_color: "#2c2d30"
+
+features:
+  bot_user:
+    display_name: Bedrock AI Assistant
+    always_online: true
+
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+      - im:history
+      - app_mentions:read
+      - channels:history
+      - groups:history
+      - files:read # 024: Required for Slack file attachment downloads (S3 transfer)
+      - files:write # 014: Required for posting AI-generated files to thread
+      - reactions:write # Required for adding/removing reactions (👀 on receive, swap to ✅ on reply)
+      - team:read # Required for Existence Check (team_id verification)
+      - users:read # Required for Existence Check (user_id verification)
+      - channels:read # Required for Existence Check (channel_id verification)
+
+event_subscriptions:
+  bot_events:
+    - message.im
+    - app_mentions
+
+settings:
+  event_subscriptions:
+    request_url: https://xnurenw36wlmeqmvt7gyyqb6my0kirje.lambda-url.ap-northeast-1.on.aws/
+  interactivity:
+    is_enabled: false
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

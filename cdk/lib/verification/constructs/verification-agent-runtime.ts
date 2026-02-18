@@ -8,7 +8,7 @@
  * error debug log group and file-exchange bucket. A2A container port 9000, ARM64.
  *
  * Inputs: VerificationAgentRuntimeProps (agentRuntimeName, containerImageUri, DynamoDB tables,
- * secrets, executionAgentArn, optional slackPostRequestQueue, errorDebugLogGroup, fileExchangeBucket).
+ * secrets, executionAgentArns, optional slackPostRequestQueue, errorDebugLogGroup, fileExchangeBucket).
  *
  * Outputs: runtime, executionRole, runtimeArn (verificationAgentRuntimeArn).
  *
@@ -49,9 +49,9 @@ export interface VerificationAgentRuntimeProps {
   /** Secrets Manager secrets */
   readonly slackSigningSecret: secretsmanager.ISecret;
   readonly slackBotTokenSecret: secretsmanager.ISecret;
-  /** ARN of the Execution Agent Runtime (for A2A invocation) */
-  readonly executionAgentArn?: string;
-/** 019: SQS queue for Slack post requests; Agent sends here instead of calling Slack API */
+  /** Map of execution agent IDs to runtime ARNs (for A2A invocation) */
+  readonly executionAgentArns?: Record<string, string>;
+  /** 019: SQS queue for Slack post requests; Agent sends here instead of calling Slack API */
   readonly slackPostRequestQueue?: sqs.IQueue;
   /** CloudWatch Log group for execution error debug (troubleshooting) */
   readonly errorDebugLogGroup?: logs.ILogGroup;
@@ -159,6 +159,19 @@ export class VerificationAgentRuntime extends Construct {
       })
     );
 
+    // Router Agent runs Bedrock model inference for agent selection.
+    this.executionRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: "BedrockInvokeModel",
+        effect: iam.Effect.ALLOW,
+        actions: [
+          "bedrock:InvokeModel",
+          "bedrock:InvokeModelWithResponseStream",
+        ],
+        resources: ["*"],
+      })
+    );
+
     // DynamoDB permissions for 5 security tables
     props.tokenTable.grantReadWriteData(this.executionRole);
     props.dedupeTable.grantReadWriteData(this.executionRole);
@@ -187,14 +200,16 @@ export class VerificationAgentRuntime extends Construct {
     // the agent endpoint (see resource-based-policies.html "Hierarchical authorization").
     // Include both endpoint ARN forms: ...:runtime-endpoint/Name/DEFAULT and
     // ...:runtime/Name/runtime-endpoint/DEFAULT (latter is used at evaluation per AccessDenied message).
-    const invokeResources = props.executionAgentArn
-      ? (() => {
-          const runtimeArn = props.executionAgentArn;
+    const targetAgentArns = Object.values(props.executionAgentArns || {}).filter(
+      (arn): arn is string => Boolean(arn)
+    );
+    const invokeResources = targetAgentArns.length
+      ? targetAgentArns.flatMap((runtimeArn) => {
           const endpointArnDoc =
             runtimeArn.replace(/:runtime\//, ":runtime-endpoint/") + "/DEFAULT";
           const endpointArnAlt = `${runtimeArn}/runtime-endpoint/DEFAULT`;
           return [runtimeArn, endpointArnDoc, endpointArnAlt];
-        })()
+        })
       : [`arn:aws:bedrock-agentcore:${stack.region}:*:runtime/*`];
     this.executionRole.addToPolicy(
       new iam.PolicyStatement({
@@ -218,11 +233,25 @@ export class VerificationAgentRuntime extends Construct {
       RATE_LIMIT_TABLE_NAME: props.rateLimitTable.tableName,
       EXISTENCE_CHECK_CACHE_TABLE: props.existenceCheckCacheTable.tableName,
       RATE_LIMIT_PER_MINUTE: "10",
+      ENABLE_AGENT_CARD_DISCOVERY: "true",
     };
-    if (props.executionAgentArn) {
-      environmentVariables.EXECUTION_AGENT_ARN = props.executionAgentArn;
+    const executionAgentArnsMap: Record<string, string> = {
+      ...(props.executionAgentArns || {}),
+    };
+    // Backward compatibility for older key while routing default agent is file-creator.
+    if (
+      executionAgentArnsMap.general &&
+      !executionAgentArnsMap["file-creator"]
+    ) {
+      executionAgentArnsMap["file-creator"] = executionAgentArnsMap.general;
+      delete executionAgentArnsMap.general;
     }
-if (props.slackPostRequestQueue) {
+    if (Object.keys(executionAgentArnsMap).length > 0) {
+      environmentVariables.EXECUTION_AGENT_ARNS = JSON.stringify(
+        executionAgentArnsMap
+      );
+    }
+    if (props.slackPostRequestQueue) {
       environmentVariables.SLACK_POST_REQUEST_QUEUE_URL =
         props.slackPostRequestQueue.queueUrl;
       props.slackPostRequestQueue.grantSendMessages(this.executionRole);

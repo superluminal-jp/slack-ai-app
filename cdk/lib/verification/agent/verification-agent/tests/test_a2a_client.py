@@ -416,6 +416,51 @@ class Test032JsonRpcZoneConnection:
         assert data.get("correlation_id") == "corr-t025"
 
 
+class TestAgentCardDiscovery:
+    """Tests for discover_agent_card helper."""
+
+    @patch("a2a_client._get_agentcore_client")
+    def test_discover_agent_card_returns_result(self, mock_get_client):
+        """discover_agent_card should return response.result for valid JSON-RPC response."""
+        mock_client = Mock()
+        mock_get_client.return_value = mock_client
+        mock_client.invoke_agent_runtime.return_value = {
+            "response": json.dumps({
+                "jsonrpc": "2.0",
+                "result": {"name": "SlackAI-ExecutionAgent"},
+                "id": "card-1",
+            }),
+        }
+
+        from a2a_client import discover_agent_card
+
+        card = discover_agent_card(
+            "arn:aws:bedrock-agentcore:ap-northeast-1:111111111111:runtime/default"
+        )
+        assert isinstance(card, dict)
+        assert card.get("name") == "SlackAI-ExecutionAgent"
+
+    @patch("a2a_client._get_agentcore_client")
+    def test_discover_agent_card_returns_none_on_jsonrpc_error(self, mock_get_client):
+        """discover_agent_card should return None when response contains JSON-RPC error."""
+        mock_client = Mock()
+        mock_get_client.return_value = mock_client
+        mock_client.invoke_agent_runtime.return_value = {
+            "response": json.dumps({
+                "jsonrpc": "2.0",
+                "error": {"code": -32601, "message": "Method not found"},
+                "id": "card-2",
+            }),
+        }
+
+        from a2a_client import discover_agent_card
+
+        card = discover_agent_card(
+            "arn:aws:bedrock-agentcore:ap-northeast-1:111111111111:runtime/default"
+        )
+        assert card is None
+
+
 class TestA2AClientSigV4:
     """Test that the client uses SigV4 authentication (boto3 default)."""
 
