@@ -54,6 +54,8 @@ esac
 # Stack names
 ENV_SUFFIX=$([[ "${DEPLOYMENT_ENV}" == "prod" ]] && echo "Prod" || echo "Dev")
 EXEC_STACK="${EXECUTION_STACK_NAME:-SlackAI-Execution}-${ENV_SUFFIX}"
+DOCS_STACK="${DOCS_EXECUTION_STACK_NAME:-SlackAI-DocsExecution}-${ENV_SUFFIX}"
+TIME_STACK="${TIME_EXECUTION_STACK_NAME:-SlackAI-TimeExecution}-${ENV_SUFFIX}"
 VERIFY_STACK="${VERIFICATION_STACK_NAME:-SlackAI-Verification}-${ENV_SUFFIX}"
 
 # ── Shared helpers ───────────────────────────────────────────
@@ -61,6 +63,42 @@ VERIFY_STACK="${VERIFICATION_STACK_NAME:-SlackAI-Verification}-${ENV_SUFFIX}"
 get_config_value() {
     local config_file="${CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
     [[ -f "${config_file}" ]] && jq -r ".\"$1\" // empty" "${config_file}" 2>/dev/null || echo ""
+}
+
+save_execution_agent_arns_to_config() {
+    local execution_arn="$1" docs_arn="$2" time_arn="$3"
+    local config_file="${CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
+    local tmp_file
+    local arns_json
+    tmp_file="$(mktemp)"
+
+    arns_json=$(
+        jq -cn \
+            --arg file_creator "${execution_arn}" \
+            --arg docs "${docs_arn}" \
+            --arg time "${time_arn}" \
+            '{ "file-creator": $file_creator }
+             + (if $docs == "" then {} else { docs: $docs } end)
+             + (if $time == "" then {} else { time: $time } end)'
+    )
+
+    if [[ ! -f "${config_file}" ]]; then
+        log_warning "Config file not found: ${config_file}. Creating a new one."
+        printf '{}' > "${config_file}"
+    fi
+
+    if ! jq \
+        --argjson arns "${arns_json}" \
+        '.executionAgentArns = $arns
+         | del(.executionAgentArn, .docsAgentArn, .timeAgentArn)' \
+        "${config_file}" > "${tmp_file}"; then
+        rm -f "${tmp_file}"
+        log_error "Failed to update ${config_file}"
+        exit 1
+    fi
+
+    mv "${tmp_file}" "${config_file}"
+    log_success "Updated agent ARN config: ${config_file}"
 }
 
 get_stack_output() {
@@ -157,9 +195,10 @@ _fetch_logs() {
 # ── Subcommand: deploy ───────────────────────────────────────
 
 cmd_deploy() {
-    local exec_outputs verify_outputs force_rebuild="false"
-    exec_outputs="$(mktemp)"; verify_outputs="$(mktemp)"
-    trap "rm -f '${exec_outputs}' '${verify_outputs}'" EXIT
+    local exec_outputs docs_outputs time_outputs verify_outputs force_rebuild="false"
+    local pre_exec_arn pre_docs_arn pre_time_arn preflight_execution_agent_arns_json=""
+    exec_outputs="$(mktemp)"; docs_outputs="$(mktemp)"; time_outputs="$(mktemp)"; verify_outputs="$(mktemp)"
+    trap "rm -f '${exec_outputs}' '${docs_outputs}' '${time_outputs}' '${verify_outputs}'" EXIT
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -182,21 +221,53 @@ cmd_deploy() {
     [[ -z "${SLACK_SIGNING_SECRET:-}" ]] && { log_error "SLACK_SIGNING_SECRET is required"; exit 1; }
     require_commands aws node jq
     [[ -x "${CDK_CLI}" ]] || { log_error "CDK CLI not found at ${CDK_CLI}. Run: cd ${CDK_DIR} && npm install"; exit 1; }
-    log_success "Prerequisites OK (Execution: ${EXEC_STACK}, Verification: ${VERIFY_STACK})"
+    log_success "Prerequisites OK (Execution: ${EXEC_STACK}, Docs: ${DOCS_STACK}, Time: ${TIME_STACK}, Verification: ${VERIFY_STACK})"
+
+    # Preflight: deploy Verification first with current runtime ARNs to remove any legacy cross-stack import refs.
+    pre_exec_arn=$(get_stack_output "${EXEC_STACK}" "ExecutionAgentRuntimeArn")
+    pre_docs_arn=$(get_stack_output "${DOCS_STACK}" "DocsAgentRuntimeArn")
+    pre_time_arn=$(get_stack_output "${TIME_STACK}" "TimeAgentRuntimeArn")
+    if [[ -n "${pre_exec_arn}" && "${pre_exec_arn}" != "None" ]]; then
+        preflight_execution_agent_arns_json=$(
+            jq -cn \
+                --arg file_creator "${pre_exec_arn}" \
+                --arg docs "${pre_docs_arn}" \
+                --arg time "${pre_time_arn}" \
+                '{ "file-creator": $file_creator }
+                 + (if $docs == "" or $docs == "None" then {} else { docs: $docs } end)
+                 + (if $time == "" or $time == "None" then {} else { time: $time } end)'
+        )
+        log_info "========== Preflight: Deploying Verification Stack with current runtime ARNs =========="
+        ( cd "${CDK_DIR}" && "${CDK_CLI}" deploy "${VERIFY_STACK}" \
+            ${PROFILE_ARGS} --require-approval never \
+            --outputs-file "${verify_outputs}" \
+            --context deploymentEnv="${DEPLOYMENT_ENV}" \
+            --context executionAgentArns="${preflight_execution_agent_arns_json}" ) \
+            || { log_error "Preflight failed: could not deploy ${VERIFY_STACK}"; exit 1; }
+        log_success "Preflight Verification deploy completed"
+    else
+        log_info "Preflight skipped: ${EXEC_STACK} runtime ARN not found (first deploy path)"
+    fi
 
     # Phase 1: Execution Stack
     log_info "========== Phase 1: Deploying Execution Stack =========="
     local docs_src="${PROJECT_ROOT}/docs"
-    local agent_docs="${PROJECT_ROOT}/cdk/lib/execution/agent/execution-agent/docs"
+    local docs_agent_docs="${PROJECT_ROOT}/cdk/lib/docs-execution/agent/docs-agent/docs"
     if [[ -d "${docs_src}" ]]; then
-        rm -rf "${agent_docs}"; cp -r "${docs_src}" "${agent_docs}"
-        log_info "Copied docs/ into Execution Agent build context"
+        rm -rf "${docs_agent_docs}"
+        cp -r "${docs_src}" "${docs_agent_docs}"
+        log_info "Copied docs/ into Docs Agent build context"
     fi
 
     local context_args="--context deploymentEnv=${DEPLOYMENT_ENV}"
-    if [[ "${force_rebuild}" == "true" || -n "${FORCE_EXECUTION_IMAGE_REBUILD:-}" ]]; then
-        local hash="${FORCE_EXECUTION_IMAGE_REBUILD:-$(date +%s)}"
+    if [[ -n "${preflight_execution_agent_arns_json}" ]]; then
+        context_args+=" --context executionAgentArns=${preflight_execution_agent_arns_json}"
+    fi
+    if [[ "${force_rebuild}" == "true" || -n "${FORCE_EXECUTION_IMAGE_REBUILD:-}" || -n "${FORCE_DOCS_IMAGE_REBUILD:-}" || -n "${FORCE_TIME_IMAGE_REBUILD:-}" ]]; then
+        local hash="${FORCE_EXECUTION_IMAGE_REBUILD:-${FORCE_DOCS_IMAGE_REBUILD:-${FORCE_TIME_IMAGE_REBUILD:-$(date +%s)}}}"
         context_args+=" --context forceExecutionImageRebuild=${hash}"
+        context_args+=" --context forceDocsImageRebuild=${hash}"
+        context_args+=" --context forceTimeImageRebuild=${hash}"
         log_info "Forcing image rebuild (extraHash=${hash})"
         [[ -d "${CDK_DIR}/cdk.out" ]] && rm -rf "${CDK_DIR}/cdk.out"
     fi
@@ -210,10 +281,45 @@ cmd_deploy() {
     [[ -z "${exec_arn}" ]] && { log_error "ExecutionAgentRuntimeArn not found in outputs"; exit 1; }
     log_success "Execution Stack deployed (ARN: ${exec_arn})"
 
+    # Phase 1.5: Docs Execution Stack
+    log_info "========== Phase 1.5: Deploying Docs Execution Stack =========="
+    ( cd "${CDK_DIR}" && "${CDK_CLI}" deploy "${DOCS_STACK}" \
+        ${PROFILE_ARGS} --require-approval never \
+        --outputs-file "${docs_outputs}" ${context_args} ) \
+        || { log_error "Failed to deploy ${DOCS_STACK}"; exit 1; }
+
+    docs_arn=$(get_output_from_file_or_stack "${docs_outputs}" "${DOCS_STACK}" "DocsAgentRuntimeArn")
+    [[ -z "${docs_arn}" ]] && { log_error "DocsAgentRuntimeArn not found in outputs"; exit 1; }
+    log_success "Docs Execution Stack deployed (ARN: ${docs_arn})"
+
+    # Phase 1.75: Time Execution Stack
+    log_info "========== Phase 1.75: Deploying Time Execution Stack =========="
+    ( cd "${CDK_DIR}" && "${CDK_CLI}" deploy "${TIME_STACK}" \
+        ${PROFILE_ARGS} --require-approval never \
+        --outputs-file "${time_outputs}" ${context_args} ) \
+        || { log_error "Failed to deploy ${TIME_STACK}"; exit 1; }
+
+    time_arn=$(get_output_from_file_or_stack "${time_outputs}" "${TIME_STACK}" "TimeAgentRuntimeArn")
+    [[ -z "${time_arn}" ]] && { log_error "TimeAgentRuntimeArn not found in outputs"; exit 1; }
+    log_success "Time Execution Stack deployed (ARN: ${time_arn})"
+
+    # Persist agent ARNs so future deploys/policy checks use the latest runtime targets.
+    save_execution_agent_arns_to_config "${exec_arn}" "${docs_arn}" "${time_arn}"
+
     # Phase 2: Verification Stack
     log_info "========== Phase 2: Deploying Verification Stack =========="
     local verify_ctx="--context deploymentEnv=${DEPLOYMENT_ENV}"
-    [[ -n "${exec_arn}" ]] && verify_ctx+=" --context executionAgentArn=${exec_arn}"
+    local execution_agent_arns_json
+    execution_agent_arns_json=$(
+        jq -cn \
+            --arg file_creator "${exec_arn}" \
+            --arg docs "${docs_arn}" \
+            --arg time "${time_arn}" \
+            '{ "file-creator": $file_creator }
+             + (if $docs == "" then {} else { docs: $docs } end)
+             + (if $time == "" then {} else { time: $time } end)'
+    )
+    verify_ctx+=" --context executionAgentArns=${execution_agent_arns_json}"
 
     ( cd "${CDK_DIR}" && "${CDK_CLI}" deploy "${VERIFY_STACK}" \
         ${PROFILE_ARGS} --require-approval never \
@@ -224,18 +330,38 @@ cmd_deploy() {
     # Phase 2.5: Resource policy
     local account_id verify_account
     account_id=$(aws sts get-caller-identity ${PROFILE_ARGS} --query Account --output text 2>/dev/null || echo "")
-    if [[ -n "${exec_arn}" && -n "${account_id}" ]]; then
+    if [[ -n "${account_id}" ]]; then
         verify_account=$(get_config_value "verificationAccountId")
         : "${verify_account:=${account_id}}"
         local role_arn="arn:aws:iam::${verify_account}:role/${VERIFY_STACK}-ExecutionRole"
         log_info "Applying resource policy (Principal: ${role_arn})"
-        python3 "${SCRIPT_DIR}/apply-resource-policy.py" \
-            --execution-agent-arn "${exec_arn}" \
-            --verification-role-arn "${role_arn}" \
-            --account-id "${verify_account}" \
-            --region "${AWS_REGION}" \
-            && log_success "Resource policy applied" \
-            || log_warning "Could not apply resource policy"
+        if [[ -n "${exec_arn}" ]]; then
+            python3 "${SCRIPT_DIR}/apply-resource-policy.py" \
+                --execution-agent-arn "${exec_arn}" \
+                --verification-role-arn "${role_arn}" \
+                --account-id "${verify_account}" \
+                --region "${AWS_REGION}" \
+                && log_success "Execution resource policy applied" \
+                || log_warning "Could not apply Execution resource policy"
+        fi
+        if [[ -n "${docs_arn}" ]]; then
+            python3 "${SCRIPT_DIR}/apply-resource-policy.py" \
+                --execution-agent-arn "${docs_arn}" \
+                --verification-role-arn "${role_arn}" \
+                --account-id "${verify_account}" \
+                --region "${AWS_REGION}" \
+                && log_success "Docs resource policy applied" \
+                || log_warning "Could not apply Docs resource policy"
+        fi
+        if [[ -n "${time_arn}" ]]; then
+            python3 "${SCRIPT_DIR}/apply-resource-policy.py" \
+                --execution-agent-arn "${time_arn}" \
+                --verification-role-arn "${role_arn}" \
+                --account-id "${verify_account}" \
+                --region "${AWS_REGION}" \
+                && log_success "Time resource policy applied" \
+                || log_warning "Could not apply Time resource policy"
+        fi
     fi
 
     # Phase 3: Validate AgentCore runtimes
@@ -243,9 +369,11 @@ cmd_deploy() {
     local handler_url verify_arn
     handler_url=$(get_output_from_file_or_stack "${verify_outputs}" "${VERIFY_STACK}" "SlackEventHandlerUrl")
     verify_arn=$(get_output_from_file_or_stack "${verify_outputs}" "${VERIFY_STACK}" "VerificationAgentRuntimeArn")
-    local eid vid
-    eid=$(get_runtime_id "${exec_arn}"); vid=$(get_runtime_id "${verify_arn}")
+    local eid did tid vid
+    eid=$(get_runtime_id "${exec_arn}"); did=$(get_runtime_id "${docs_arn}"); tid=$(get_runtime_id "${time_arn}"); vid=$(get_runtime_id "${verify_arn}")
     [[ -n "${eid}" ]] && wait_for_agent_ready "Execution Agent" "${eid}" 120
+    [[ -n "${did}" ]] && wait_for_agent_ready "Docs Agent" "${did}" 120
+    [[ -n "${tid}" ]] && wait_for_agent_ready "Time Agent" "${tid}" 120
     [[ -n "${vid}" ]] && wait_for_agent_ready "Verification Agent" "${vid}" 120
 
     # Summary
@@ -254,6 +382,8 @@ cmd_deploy() {
     echo ""
     echo "Slack Event Handler URL: ${handler_url:-N/A}"
     echo "Execution Agent ARN:     ${exec_arn:-N/A}"
+    echo "Docs Agent ARN:          ${docs_arn:-N/A}"
+    echo "Time Agent ARN:          ${time_arn:-N/A}"
     echo "Verification Agent ARN:  ${verify_arn:-N/A}"
     echo ""
     echo "Next steps:"
@@ -271,6 +401,18 @@ cmd_status() {
         --region "${AWS_REGION}" ${PROFILE_ARGS} \
         --query 'Stacks[0].{LastUpdated:LastUpdatedTime,Status:StackStatus}' \
         --output table 2>/dev/null || { echo "Stack not found or no access."; exit 1; }
+    echo ""
+    echo "=== Docs Execution Stack status (${DOCS_STACK}) ==="
+    aws cloudformation describe-stacks --stack-name "${DOCS_STACK}" \
+        --region "${AWS_REGION}" ${PROFILE_ARGS} \
+        --query 'Stacks[0].{LastUpdated:LastUpdatedTime,Status:StackStatus}' \
+        --output table 2>/dev/null || echo "Stack not found or no access."
+    echo ""
+    echo "=== Time Execution Stack status (${TIME_STACK}) ==="
+    aws cloudformation describe-stacks --stack-name "${TIME_STACK}" \
+        --region "${AWS_REGION}" ${PROFILE_ARGS} \
+        --query 'Stacks[0].{LastUpdated:LastUpdatedTime,Status:StackStatus}' \
+        --output table 2>/dev/null || echo "Stack not found or no access."
     echo ""
     echo "Container image tag:"
     aws cloudformation get-template --stack-name "${EXEC_STACK}" \
@@ -392,11 +534,15 @@ cmd_logs() {
     [[ "$mode" == "correlation-id" && -z "$correlation_id" ]] && { log_error "--correlation-id requires a value"; exit 1; }
 
     # Discover log groups (Lambda + AgentCore in parallel)
-    local seh_lg="" ai_lg="" sp_lg="" va_lg="" ea_lg=""
+    local seh_lg="" ai_lg="" sp_lg="" va_lg="" ea_lg="" da_lg="" ta_lg=""
     log_info "Discovering log groups..."
-    local lambda_groups agentcore_groups
+    local lambda_groups agentcore_groups exec_rt_id docs_rt_id time_rt_id verify_rt_id
     lambda_groups=$(mktemp)
     agentcore_groups=$(mktemp)
+    exec_rt_id=$(get_runtime_id "$(get_stack_output "${EXEC_STACK}" "ExecutionAgentRuntimeArn")")
+    docs_rt_id=$(get_runtime_id "$(get_stack_output "${DOCS_STACK}" "DocsAgentRuntimeArn")")
+    time_rt_id=$(get_runtime_id "$(get_stack_output "${TIME_STACK}" "TimeAgentRuntimeArn")")
+    verify_rt_id=$(get_runtime_id "$(get_stack_output "${VERIFY_STACK}" "VerificationAgentRuntimeArn")")
     aws logs describe-log-groups \
         --log-group-name-prefix "/aws/lambda/${VERIFY_STACK}" \
         --region "$AWS_REGION" ${PROFILE_ARGS} \
@@ -414,8 +560,10 @@ cmd_logs() {
         esac
     done
     for lg in $(cat "${agentcore_groups}"); do
-        [[ "$lg" == *VerificationAgent*-DEFAULT ]] && va_lg="$lg"
-        [[ "$lg" == *ExecutionAgent*-DEFAULT ]]    && ea_lg="$lg"
+        [[ -n "${verify_rt_id}" && "$lg" == *"/${verify_rt_id}-DEFAULT" ]] && va_lg="$lg"
+        [[ -n "${exec_rt_id}" && "$lg" == *"/${exec_rt_id}-DEFAULT" ]] && ea_lg="$lg"
+        [[ -n "${docs_rt_id}" && "$lg" == *"/${docs_rt_id}-DEFAULT" ]] && da_lg="$lg"
+        [[ -n "${time_rt_id}" && "$lg" == *"/${time_rt_id}-DEFAULT" ]] && ta_lg="$lg"
     done
     rm -f "${lambda_groups}" "${agentcore_groups}"
 
@@ -426,6 +574,8 @@ cmd_logs() {
         printf "  %-24s %s\n" "Slack Poster:" "${sp_lg:-<not found>}"
         printf "  %-24s %s\n" "Verification Agent:" "${va_lg:-<not found>}"
         printf "  %-24s %s\n" "Execution Agent:" "${ea_lg:-<not found>}"
+        printf "  %-24s %s\n" "Docs Agent:" "${da_lg:-<not found>}"
+        printf "  %-24s %s\n" "Time Agent:" "${ta_lg:-<not found>}"
         return
     fi
 
@@ -452,7 +602,7 @@ cmd_logs() {
         if [[ -z "$correlation_id" ]]; then
             log_error "No Slack request found in the last $((since_seconds/60)) minutes."
             echo "Try --since 2h or --list-log-groups." >&2
-            exit 1
+            return 1
         fi
         echo -e "${CYAN}Latest correlation_id: ${correlation_id}${NC}"
         echo ""
@@ -464,7 +614,9 @@ cmd_logs() {
     _fetch_logs "$ai_lg"  "2. Agent Invoker"
     _fetch_logs "$va_lg"  "3. Verification Agent (AgentCore)" "agentcore"
     _fetch_logs "$ea_lg"  "4. Execution Agent (AgentCore)" "agentcore"
-    _fetch_logs "$sp_lg"  "5. Slack Poster"
+    _fetch_logs "$da_lg"  "5. Docs Agent (AgentCore)" "agentcore"
+    _fetch_logs "$ta_lg"  "6. Time Agent (AgentCore)" "agentcore"
+    _fetch_logs "$sp_lg"  "7. Slack Poster"
 }
 
 # ── Subcommand: policy ───────────────────────────────────────
@@ -478,9 +630,11 @@ cmd_policy() {
         esac
     done
 
-    local exec_arn account_id verify_account
+    local exec_arn docs_arn time_arn account_id verify_account
     exec_arn=$(get_stack_output "${EXEC_STACK}" "ExecutionAgentRuntimeArn")
     [[ -z "${exec_arn}" ]] && { log_error "ExecutionAgentRuntimeArn not found. Is ${EXEC_STACK} deployed?"; exit 1; }
+    docs_arn=$(get_stack_output "${DOCS_STACK}" "DocsAgentRuntimeArn")
+    time_arn=$(get_stack_output "${TIME_STACK}" "TimeAgentRuntimeArn")
 
     account_id=$(aws sts get-caller-identity ${PROFILE_ARGS} --query Account --output text 2>/dev/null || echo "")
     [[ -z "${account_id}" ]] && { log_error "Failed to get AWS account ID."; exit 1; }
@@ -490,6 +644,8 @@ cmd_policy() {
     local role_arn="arn:aws:iam::${verify_account}:role/${VERIFY_STACK}-ExecutionRole"
 
     log_info "Execution Agent: ${exec_arn}"
+    [[ -n "${docs_arn}" ]] && log_info "Docs Agent: ${docs_arn}"
+    [[ -n "${time_arn}" ]] && log_info "Time Agent: ${time_arn}"
     log_info "Verification Role: ${role_arn}"
     [[ -n "${dry_run}" ]] && log_info "Dry run — printing policy only"
 
@@ -498,7 +654,21 @@ cmd_policy() {
         --verification-role-arn "${role_arn}" \
         --account-id "${verify_account}" \
         --region "${AWS_REGION}" ${dry_run}
-    [[ -z "${dry_run}" ]] && log_success "Resource policy applied"
+    if [[ -n "${docs_arn}" ]]; then
+        python3 "${SCRIPT_DIR}/apply-resource-policy.py" \
+            --execution-agent-arn "${docs_arn}" \
+            --verification-role-arn "${role_arn}" \
+            --account-id "${verify_account}" \
+            --region "${AWS_REGION}" ${dry_run}
+    fi
+    if [[ -n "${time_arn}" ]]; then
+        python3 "${SCRIPT_DIR}/apply-resource-policy.py" \
+            --execution-agent-arn "${time_arn}" \
+            --verification-role-arn "${role_arn}" \
+            --account-id "${verify_account}" \
+            --region "${AWS_REGION}" ${dry_run}
+    fi
+    [[ -z "${dry_run}" ]] && log_success "Resource policies applied"
 }
 
 # ── Subcommand: help ─────────────────────────────────────────

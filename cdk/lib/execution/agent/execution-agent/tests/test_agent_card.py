@@ -27,7 +27,7 @@ class TestExecutionAgentCardStructure:
     def test_has_name(self):
         card = get_agent_card()
         assert "name" in card
-        assert card["name"] == "SlackAI-ExecutionAgent"
+        assert card["name"] == "SlackAI-FileCreatorAgent"
 
     def test_has_protocol_a2a(self):
         card = get_agent_card()
@@ -62,26 +62,26 @@ class TestExecutionAgentCardStructure:
         card = get_agent_card()
         serialized = json.dumps(card)
         deserialized = json.loads(serialized)
-        assert deserialized["name"] == "SlackAI-ExecutionAgent"
+        assert deserialized["name"] == "SlackAI-FileCreatorAgent"
 
 
 class TestExecutionAgentCardSkills:
     """Test skill definitions in Agent Card."""
 
-    def test_has_bedrock_conversation_skill(self):
+    def test_has_generate_excel_skill(self):
         card = get_agent_card()
         skill_ids = [s["id"] for s in card["skills"]]
-        assert "bedrock-conversation" in skill_ids
+        assert "generate_excel" in skill_ids
 
-    def test_has_attachment_processing_skill(self):
+    def test_has_generate_word_skill(self):
         card = get_agent_card()
         skill_ids = [s["id"] for s in card["skills"]]
-        assert "attachment-processing" in skill_ids
+        assert "generate_word" in skill_ids
 
-    def test_has_async_processing_skill(self):
+    def test_has_fetch_url_skill(self):
         card = get_agent_card()
         skill_ids = [s["id"] for s in card["skills"]]
-        assert "async-processing" in skill_ids
+        assert "fetch_url" in skill_ids
 
     def test_skills_have_required_fields(self):
         card = get_agent_card()
@@ -104,7 +104,7 @@ class TestExecutionAgentHealthStatus:
 
     def test_health_includes_agent_name(self):
         status = get_health_status(is_busy=False)
-        assert status["agent"] == "SlackAI-ExecutionAgent"
+        assert status["agent"] == "SlackAI-FileCreatorAgent"
 
     def test_health_is_json_serializable(self):
         status = get_health_status(is_busy=False)

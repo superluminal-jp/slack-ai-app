@@ -258,8 +258,10 @@ class TestPipelineIntegration:
     @patch("pipeline.check_entity_existence")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.resolve_slack_urls")
+    @patch("pipeline.route_request", return_value="file-creator")
+    @patch("pipeline.get_agent_arn", return_value="arn:aws:bedrock-agentcore:ap-northeast-1:111111111111:runtime/file-creator")
     def test_pipeline_calls_resolver(
-        self, mock_resolve, mock_rate, mock_existence, mock_auth, mock_invoke, mock_slack_post
+        self, _mock_arn, _mock_route, mock_resolve, mock_rate, mock_existence, mock_auth, mock_invoke, mock_slack_post
     ):
         mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, None)
@@ -296,8 +298,10 @@ class TestPipelineIntegration:
     @patch("pipeline.check_entity_existence")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.resolve_slack_urls")
+    @patch("pipeline.route_request", return_value="file-creator")
+    @patch("pipeline.get_agent_arn", return_value="arn:aws:bedrock-agentcore:ap-northeast-1:111111111111:runtime/file-creator")
     def test_pipeline_continues_on_resolver_exception(
-        self, mock_resolve, mock_rate, mock_existence, mock_auth, mock_invoke, mock_slack_post
+        self, _mock_arn, _mock_route, mock_resolve, mock_rate, mock_existence, mock_auth, mock_invoke, mock_slack_post
     ):
         mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, None)

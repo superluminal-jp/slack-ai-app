@@ -38,11 +38,11 @@ def get_agent_card() -> Dict[str, Any]:
     runtime_url = os.environ.get("AGENTCORE_RUNTIME_URL", "http://localhost:9000")
 
     return {
-        "name": "SlackAI-ExecutionAgent",
+        "name": "SlackAI-FileCreatorAgent",
         "description": (
-            "AI処理エージェント。Verification Agentから受け取ったメッセージを "
-            "Amazon Bedrock (Converse API)で処理し、AI生成レスポンスを返却する。"
-            "添付ファイル処理、スレッド履歴管理、非同期タスク管理をサポート。"
+            "ファイル生成特化エージェント。Excel/Word/PowerPoint/CSV/チャート画像などの"
+            "業務ファイルを生成し、ビジネス文書・スライド作成ガイドライン参照と"
+            "Webコンテンツ取得に対応する。"
         ),
         "url": runtime_url,
         "version": "1.0.0",
@@ -59,55 +59,76 @@ def get_agent_card() -> Dict[str, Any]:
         },
         "skills": [
             {
-                "id": "bedrock-conversation",
-                "name": "Bedrock Conversation",
+                "id": "generate_excel",
+                "name": "Generate Excel",
                 "description": (
-                    "Amazon Bedrock Converse APIを使用したAI会話処理。"
-                    "テキストメッセージを受け取り、AIレスポンスを生成。"
-                ),
-                "inputModes": ["text"],
-                "outputModes": ["text"],
-            },
-            {
-                "id": "attachment-processing",
-                "name": "Attachment Processing",
-                "description": (
-                    "Slack添付ファイルのダウンロードと処理。"
-                    "画像(PNG, JPEG, GIF, WebP)とドキュメント(PDF, DOCX, CSV, XLSX, PPTX, TXT)をサポート。"
-                ),
-                "inputModes": ["image", "document"],
-                "outputModes": ["text"],
-            },
-            {
-                "id": "thread-history",
-                "name": "Thread History Management",
-                "description": (
-                    "Slackスレッドの会話履歴管理。"
-                    "スレッド内の過去メッセージをコンテキストとして活用。"
-                ),
-                "inputModes": ["text"],
-                "outputModes": ["text"],
-            },
-            {
-                "id": "async-processing",
-                "name": "Async Task Processing",
-                "description": (
-                    "AgentCore非同期タスク管理。"
-                    "長時間実行タスク(添付ファイル付きBedrock処理)をバックグラウンドで実行。"
-                ),
-                "inputModes": ["text"],
-                "outputModes": ["text"],
-            },
-            {
-                "id": "generated-file",
-                "name": "Generated File",
-                "description": (
-                    "AI生成ファイルのA2A artifact返却(014)。"
-                    "CSV/JSON/テキスト等をgenerated_file artifactで返し、VerificationがSlackスレッドに投稿。"
-                    "最大5MB、許可MIME: text/csv, application/json, text/plain。"
+                    "構造化データをExcel(.xlsx)形式で生成する。"
                 ),
                 "inputModes": ["text"],
                 "outputModes": ["text", "file"],
+            },
+            {
+                "id": "generate_word",
+                "name": "Generate Word",
+                "description": (
+                    "提案書・報告書などのWord(.docx)文書を生成する。"
+                ),
+                "inputModes": ["text"],
+                "outputModes": ["text", "file"],
+            },
+            {
+                "id": "generate_powerpoint",
+                "name": "Generate PowerPoint",
+                "description": (
+                    "プレゼンテーション資料をPowerPoint(.pptx)形式で生成する。"
+                ),
+                "inputModes": ["text"],
+                "outputModes": ["text", "file"],
+            },
+            {
+                "id": "generate_chart_image",
+                "name": "Generate Chart Image",
+                "description": (
+                    "データからチャート画像を生成する。"
+                ),
+                "inputModes": ["text"],
+                "outputModes": ["text", "file"],
+            },
+            {
+                "id": "generate_text_file",
+                "name": "Generate Text File",
+                "description": (
+                    "CSV/JSON/TXTなどのテキスト系ファイルを生成する。"
+                ),
+                "inputModes": ["text"],
+                "outputModes": ["text", "file"],
+            },
+            {
+                "id": "get_business_document_guidelines",
+                "name": "Business Document Guidelines",
+                "description": (
+                    "ビジネス文書作成の標準ガイドラインを返す。"
+                ),
+                "inputModes": ["text"],
+                "outputModes": ["text"],
+            },
+            {
+                "id": "get_presentation_slide_guidelines",
+                "name": "Presentation Slide Guidelines",
+                "description": (
+                    "プレゼン資料作成の標準ガイドラインを返す。"
+                ),
+                "inputModes": ["text"],
+                "outputModes": ["text"],
+            },
+            {
+                "id": "fetch_url",
+                "name": "Fetch URL",
+                "description": (
+                    "指定URLのWebコンテンツを取得し、要約や加工に利用する。"
+                ),
+                "inputModes": ["text"],
+                "outputModes": ["text"],
             },
         ],
         "defaultInputModes": ["text"],
@@ -129,7 +150,7 @@ def get_health_status(is_busy: bool = False) -> Dict[str, Any]:
 
     return {
         "status": status,
-        "agent": "SlackAI-ExecutionAgent",
+        "agent": "SlackAI-FileCreatorAgent",
         "version": "1.0.0",
         "timestamp": time.time(),
     }

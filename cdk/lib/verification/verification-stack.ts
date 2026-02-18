@@ -32,8 +32,8 @@ import { VerificationStackProps } from "../types/stack-config";
  * - Verification Agent AgentCore Runtime (A2A) and ECR image
  * - Agent invocation (AgentInvoker, SlackPoster), S3 file exchange bucket, CloudWatch alarms
  *
- * Inputs: VerificationStackProps (env, executionAccountId, verificationAgentName, executionAgentArn, etc.);
- * context: deploymentEnv, awsRegion, slackBotToken, slackSigningSecret, bedrockModelId, executionAgentArn.
+ * Inputs: VerificationStackProps (env, executionAccountId, verificationAgentName, executionAgentArns, etc.);
+ * context: deploymentEnv, awsRegion, slackBotToken, slackSigningSecret, bedrockModelId, executionAgentArns.
  *
  * Outputs: slackEventHandler, functionUrl, lambdaRoleArn, verificationAgentRuntimeArn, agentInvocationQueue; CfnOutputs for URLs and ARNs.
  */
@@ -148,10 +148,19 @@ const slackSigningSecretResource = new secretsmanager.Secret(
       props.verificationAgentName ||
       this.node.tryGetContext("verificationAgentName") ||
       `SlackAI_VerificationAgent_${this.stackName.includes("-Prod") ? "Prod" : "Dev"}`;
-    const executionAgentArn =
-      props.executionAgentArn ||
-      this.node.tryGetContext("executionAgentArn") ||
-      "";
+    const contextExecutionAgentArnsRaw = this.node.tryGetContext(
+      "executionAgentArns"
+    );
+    const contextExecutionAgentArns =
+      contextExecutionAgentArnsRaw &&
+      typeof contextExecutionAgentArnsRaw === "object" &&
+      !Array.isArray(contextExecutionAgentArnsRaw)
+        ? (contextExecutionAgentArnsRaw as Record<string, string>)
+        : {};
+    const executionAgentArns = {
+      ...contextExecutionAgentArns,
+      ...(props.executionAgentArns || {}),
+    };
 
     // ECR before Runtime (Runtime needs containerImageUri). SlackPoster and LogGroup before Runtime (optional queue and log group).
     this.verificationAgentEcr = new VerificationAgentEcr(
@@ -182,8 +191,11 @@ const slackSigningSecretResource = new secretsmanager.Secret(
         rateLimitTable: rateLimit.table,
         slackSigningSecret: slackSigningSecretResource,
         slackBotTokenSecret: slackBotTokenSecret,
-        executionAgentArn: executionAgentArn || undefined,
-slackPostRequestQueue: slackPoster.queue,
+        executionAgentArns:
+          Object.keys(executionAgentArns).length > 0
+            ? executionAgentArns
+            : undefined,
+        slackPostRequestQueue: slackPoster.queue,
         errorDebugLogGroup: errorDebugLogGroup,
         fileExchangeBucket: fileExchangeBucket.bucket,
       }

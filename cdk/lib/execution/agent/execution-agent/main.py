@@ -646,6 +646,7 @@ def handle_invocation_body(body: bytes) -> dict:
 
     - Invalid JSON → error -32700 (Parse error), id null
     - Valid JSON but not a valid Request → error -32600 (Invalid Request), id null
+    - method == "get_agent_card" → return Agent Card in result, request id
     - method != "execute_task" → error -32601 (Method not found), request id
     - method == "execute_task" → call handle_message_tool with params, wrap in result, request id
     """
@@ -677,6 +678,9 @@ def handle_invocation_body(body: bytes) -> dict:
 
     req_id = data.get("id")
     method = data.get("method")
+
+    if method == "get_agent_card":
+        return {"jsonrpc": "2.0", "result": get_agent_card(), "id": req_id}
 
     if method != "execute_task":
         return {

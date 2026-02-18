@@ -145,8 +145,10 @@ describe("Cost allocation tags (031 US2)", () => {
       app = new cdk.App();
       stack = new VerificationStack(app, "TestVerificationStack", {
         env: { account: "123456789012", region: "ap-northeast-1" },
-        executionAgentArn:
-          "arn:aws:bedrock-agentcore:ap-northeast-1:123456789012:runtime/TestExecutionAgent",
+        executionAgentArns: {
+          "file-creator":
+            "arn:aws:bedrock-agentcore:ap-northeast-1:123456789012:runtime/TestExecutionAgent",
+        },
       });
       template = Template.fromStack(stack);
     });

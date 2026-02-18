@@ -27,7 +27,7 @@ describe("Cross-Account IAM Authentication (A2A)", () => {
         "SameAccountVerification",
         {
           env: { account: "123456789012", region: "ap-northeast-1" },
-          executionAgentArn: executionStack.executionAgentArn,
+          executionAgentArns: { "file-creator": executionStack.executionAgentArn },
         }
       );
 
@@ -73,8 +73,10 @@ describe("Cross-Account IAM Authentication (A2A)", () => {
         "CrossAccountVerification",
         {
           env: { account: "111111111111", region: "ap-northeast-1" },
-          executionAgentArn:
-            "arn:aws:bedrock-agentcore:ap-northeast-1:222222222222:runtime/exec-agent",
+          executionAgentArns: {
+            "file-creator":
+              "arn:aws:bedrock-agentcore:ap-northeast-1:222222222222:runtime/exec-agent",
+          },
           executionAccountId: "222222222222",
         }
       );
@@ -114,8 +116,10 @@ describe("Cross-Account IAM Authentication (A2A)", () => {
       expect(() => {
         new VerificationStack(app, "IndependentVerification", {
           env: { account: "123456789012", region: "ap-northeast-1" },
-          executionAgentArn:
-            "arn:aws:bedrock-agentcore:ap-northeast-1:123456789012:runtime/exec",
+          executionAgentArns: {
+            "file-creator":
+              "arn:aws:bedrock-agentcore:ap-northeast-1:123456789012:runtime/exec",
+          },
         });
       }).not.toThrow();
     });
@@ -136,8 +140,10 @@ describe("Cross-Account IAM Authentication (A2A)", () => {
       const app = new cdk.App();
       const verificationStack = new VerificationStack(app, "OutputVerification", {
         env: { account: "123456789012", region: "ap-northeast-1" },
-        executionAgentArn:
-          "arn:aws:bedrock-agentcore:ap-northeast-1:123456789012:runtime/exec",
+        executionAgentArns: {
+          "file-creator":
+            "arn:aws:bedrock-agentcore:ap-northeast-1:123456789012:runtime/exec",
+        },
       });
       const template = Template.fromStack(verificationStack);
 

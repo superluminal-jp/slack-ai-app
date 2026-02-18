@@ -41,7 +41,7 @@ export interface ExecutionStackProps extends cdk.StackProps {
 
 /**
  * Configuration for the Verification Stack (Account A).
- * Contains SlackEventHandler, DynamoDB tables, Secrets, Verification Agent (A2A). Requires executionAgentArn from Execution Stack or config.
+ * Contains SlackEventHandler, DynamoDB tables, Secrets, Verification Agent (A2A). Requires executionAgentArns from execution stacks or config.
  */
 export interface VerificationStackProps extends cdk.StackProps {
   /**
@@ -68,10 +68,68 @@ export interface VerificationStackProps extends cdk.StackProps {
   readonly verificationAgentName?: string;
 
   /**
-   * ARN of the Execution Agent Runtime (for A2A cross-account invocation)
+   * Map of execution agent IDs to runtime ARNs (for A2A invocation and routing)
+   * e.g. { "file-creator": "...", "docs": "...", "time": "..." }
    */
-  readonly executionAgentArn?: string;
+  readonly executionAgentArns?: Record<string, string>;
+}
 
+/**
+ * Configuration for the Docs Execution Stack (Account B).
+ * Contains Docs Agent AgentCore Runtime (A2A) dedicated to docs search.
+ */
+export interface DocsExecutionStackProps extends cdk.StackProps {
+  /**
+   * AWS Region for deployment
+   * @default "ap-northeast-1"
+   */
+  readonly awsRegion?: string;
+
+  /**
+   * Bedrock model ID (passed to Docs Agent container)
+   * @default "amazon.nova-pro-v1:0"
+   */
+  readonly bedrockModelId?: string;
+
+  /**
+   * Account ID of the Verification Stack (for cross-account A2A resource policy)
+   */
+  readonly verificationAccountId?: string;
+
+  /**
+   * Name for the Docs Agent AgentCore Runtime
+   * @default "SlackAI_DocsAgent"
+   */
+  readonly docsAgentName?: string;
+}
+
+/**
+ * Configuration for the Time Execution Stack (Account B).
+ * Contains Time Agent AgentCore Runtime (A2A) dedicated to current time retrieval.
+ */
+export interface TimeExecutionStackProps extends cdk.StackProps {
+  /**
+   * AWS Region for deployment
+   * @default "ap-northeast-1"
+   */
+  readonly awsRegion?: string;
+
+  /**
+   * Bedrock model ID (passed to Time Agent container)
+   * @default "amazon.nova-pro-v1:0"
+   */
+  readonly bedrockModelId?: string;
+
+  /**
+   * Account ID of the Verification Stack (for cross-account A2A resource policy)
+   */
+  readonly verificationAccountId?: string;
+
+  /**
+   * Name for the Time Agent AgentCore Runtime
+   * @default "SlackAI_TimeAgent"
+   */
+  readonly timeAgentName?: string;
 }
 
 /**

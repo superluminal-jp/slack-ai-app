@@ -18,6 +18,8 @@ from existence_check import check_entity_existence, ExistenceCheckError
 from authorization import authorize_request
 from rate_limiter import check_rate_limit, RateLimitExceededError
 from a2a_client import invoke_execution_agent
+from agent_registry import initialize_registry, get_agent_arn
+from router import route_request, UNROUTED_AGENT_ID
 from slack_post_request import send_slack_post_request, build_file_artifact, build_file_artifact_s3
 from error_debug import log_execution_error, log_execution_agent_error_response
 from logger_util import get_logger, log
@@ -62,6 +64,17 @@ DEFAULT_ERROR_MESSAGE = ":warning: エラーが発生しました。しばらく
 
 def _log(level: str, event_type: str, data: dict) -> None:
     log(_logger, level, event_type, data, service="verification-agent")
+
+
+# Initialize execution agent registry once at module import (container startup path).
+# Fail-open: keep pipeline runnable even when discovery fails.
+try:
+    initialize_registry()
+except Exception as e:
+    _log("WARN", "agent_registry_init_failed", {
+        "error": str(e),
+        "error_type": type(e).__name__,
+    })
 
 
 def _get_user_friendly_error(error_code: str, fallback_message: str = "") -> str:
@@ -336,9 +349,45 @@ def run(payload: dict) -> str:
         }
 
         try:
+            # Route request to target execution runtime.
+            agent_id = route_request(text, correlation_id=correlation_id)
+            target_arn = get_agent_arn(agent_id)
+            target_runtime_id = target_arn.split("/")[-1] if target_arn else ""
+            _log("INFO", "execution_agent_routed", {
+                "correlation_id": correlation_id,
+                "agent_id": agent_id,
+                "has_target_arn": bool(target_arn),
+                "target_runtime_id": target_runtime_id,
+            })
+
+            if agent_id == UNROUTED_AGENT_ID or not target_arn:
+                _log("WARN", "execution_agent_not_routed", {
+                    "correlation_id": correlation_id,
+                    "agent_id": agent_id,
+                    "reason": "no_target_agent_selected",
+                })
+                is_processing = False
+                send_slack_post_request(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    text=":warning: リクエストに適したエージェントを選択できませんでした。もう少し具体的に依頼してください。",
+                    bot_token=bot_token,
+                    correlation_id=correlation_id,
+                    message_ts=message_ts,
+                )
+                return json.dumps({
+                    "status": "error",
+                    "error_code": "no_target_agent",
+                    "error_message": "No target agent selected",
+                    "correlation_id": correlation_id,
+                })
+
             # 032 US3: invoke_execution_agent returns unwrapped payload only (result or error body).
             # No JSON-RPC envelope (jsonrpc/id) is exposed; Slack sees only status, response_text, or user-facing error.
-            execution_result = invoke_execution_agent(execution_payload)
+            execution_result = invoke_execution_agent(
+                execution_payload,
+                execution_agent_arn=target_arn,
+            )
             try:
                 result_data = json.loads(execution_result) if isinstance(execution_result, str) else execution_result
             except (json.JSONDecodeError, TypeError) as e:
