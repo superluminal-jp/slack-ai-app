@@ -38,7 +38,7 @@ aws lambda get-function --function-name slack-event-handler
 aws apigateway get-rest-apis
 
 # CloudWatch ログを確認
-aws logs tail /aws/cdk/lib/verification/lambda/slack-event-handler --follow
+aws logs tail /aws/lambda/SlackAI-Verification-Dev-SlackEventHandler --follow
 ```
 
 ---
@@ -488,7 +488,7 @@ aws logs filter-log-events --region ap-northeast-1 \
 **対処**:
 
 1. **CDK で環境変数を渡しているか確認**
-   `cdk/lib/verification/constructs/verification-agent-runtime.ts` の `AWS::BedrockAgentCore::Runtime` に、少なくとも次の環境変数が設定されているか確認する。
+   `verification-zones/verification-agent/cdk/lib/constructs/verification-agent-runtime.ts` の `AWS::BedrockAgentCore::Runtime` に、少なくとも次の環境変数が設定されているか確認する。
    - `EXECUTION_AGENT_ARN`（Execution Agent の ARN）
    - `AWS_REGION_NAME`
    - `DEDUPE_TABLE_NAME`
@@ -540,11 +540,11 @@ Slack からのリクエストについて、**各段階（Slack Event Handler �
 
 ```bash
 # 最新のログを表示
-aws logs tail /aws/cdk/lib/verification/lambda/slack-event-handler --follow
+aws logs tail /aws/lambda/SlackAI-Verification-Dev-SlackEventHandler --follow
 
 # 特定の時間範囲のログを検索
 aws logs filter-log-events \
-  --log-group-name /aws/cdk/lib/verification/lambda/slack-event-handler \
+  --log-group-name /aws/lambda/SlackAI-Verification-Dev-SlackEventHandler \
   --start-time $(date -v-1H +%s000) \
   --filter-pattern "ERROR"
 ```

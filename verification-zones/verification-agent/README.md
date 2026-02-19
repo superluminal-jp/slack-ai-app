@@ -6,25 +6,29 @@ This directory contains the **Verification Zone**: an independently deployable C
 
 ```
 verification-zones/verification-agent/
-├── agent/
-│   └── verification-agent/       # Python AgentCore agent (ARM64)
-│       ├── main.py
-│       ├── requirements.txt
-│       └── tests/
-└── cdk/                          # Standalone CDK app (TypeScript)
-    ├── bin/cdk.ts                # Entry point — VerificationStack only
-    ├── lib/
-    │   ├── verification-stack.ts
-    │   ├── constructs/
-    │   ├── lambda/
-    │   ├── utils/
-    │   ├── aspects/
-    │   └── types/
-    ├── test/
-    ├── cdk.json
-    ├── cdk.config.json.example
-    ├── package.json
-    └── tsconfig.json
+├── src/                          # Python AgentCore agent source (ARM64)
+│   ├── main.py
+│   ├── requirements.txt
+│   ├── a2a_client.py
+│   ├── agent_card.py
+│   └── …
+├── tests/                        # Python unit tests
+├── cdk/                          # Standalone CDK app (TypeScript)
+│   ├── bin/cdk.ts                # Entry point — VerificationStack only
+│   ├── lib/
+│   │   ├── verification-stack.ts
+│   │   ├── constructs/
+│   │   ├── lambda/               # SlackEventHandler Lambda
+│   │   ├── utils/
+│   │   ├── aspects/
+│   │   └── types/
+│   ├── test/
+│   ├── cdk.json
+│   ├── cdk.config.json.example
+│   ├── package.json
+│   └── tsconfig.json
+└── scripts/
+    └── deploy.sh                 # Zone-specific deploy script
 ```
 
 ## Prerequisites
@@ -95,6 +99,6 @@ cd verification-zones/verification-agent/cdk
 npm test
 
 # Python agent tests
-cd verification-zones/verification-agent/agent/verification-agent
+cd verification-zones/verification-agent
 python -m pytest tests/ -v
 ```

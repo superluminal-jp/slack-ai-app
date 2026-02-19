@@ -99,18 +99,26 @@ cd slack-ai-app
 
 ### ステップ 2: 依存関係のインストール
 
-#### CDK 依存関係のインストール
+#### CDK 依存関係のインストール（npm workspaces）
+
+プロジェクトルートで実行すると、すべてのゾーン CDK と共有ツールが一括でインストールされます：
 
 ```bash
-cd cdk
+# プロジェクトルートから（推奨）
 npm install
+```
+
+個別ゾーンのみインストールする場合：
+
+```bash
+cd execution-zones/execution-agent/cdk && npm install
 ```
 
 #### Python 依存関係のインストール（開発用）
 
 ```bash
 # SlackEventHandler Lambda の依存関係
-cd cdk/lib/verification/lambda/slack-event-handler
+cd verification-zones/verification-agent/cdk/lib/lambda/slack-event-handler
 pip install -r requirements.txt
 ```
 
@@ -118,25 +126,33 @@ pip install -r requirements.txt
 
 ### ステップ 3: 設定ファイルの作成
 
-CDK 設定ファイルを作成して、Slack 認証情報と AWS アカウント ID を設定します：
+プロジェクトはゾーンごとに独立した CDK 設定ファイルを使用します。各ゾーンの設定ファイルに AWS アカウント ID と Slack 認証情報を設定してください：
 
-```bash
-# 開発環境用の設定ファイルを作成
-cp cdk/cdk.config.json.example cdk/cdk.config.dev.json
-
-# 本番環境用の設定ファイルを作成（本番環境を使用する場合）
-cp cdk/cdk.config.json.example cdk/cdk.config.prod.json
-```
-
-`cdk/cdk.config.dev.json`（または`cdk/cdk.config.prod.json`）を編集して、以下を設定：
+**実行ゾーン**（`execution-zones/*/cdk/cdk.config.dev.json` を編集）:
 
 ```json
 {
   "awsRegion": "ap-northeast-1",
-  "bedrockModelId": "jp.anthropic.claude-haiku-4-5-20251001-v1:0",
+  "bedrockModelId": "jp.anthropic.claude-sonnet-4-6",
+  "deploymentEnv": "dev",
+  "executionStackName": "SlackAI-Execution",
+  "verificationAccountId": "YOUR_AWS_ACCOUNT_ID",
+  "executionAccountId": "YOUR_AWS_ACCOUNT_ID"
+}
+```
+
+**検証ゾーン**（`verification-zones/verification-agent/cdk/cdk.config.dev.json` を設定ファイル例からコピーして編集）:
+
+```bash
+cp verification-zones/verification-agent/cdk/cdk.config.json.example \
+   verification-zones/verification-agent/cdk/cdk.config.dev.json
+```
+
+```json
+{
+  "awsRegion": "ap-northeast-1",
   "deploymentEnv": "dev",
   "verificationStackName": "SlackAI-Verification",
-  "executionStackName": "SlackAI-Execution",
   "verificationAccountId": "YOUR_AWS_ACCOUNT_ID",
   "executionAccountId": "YOUR_AWS_ACCOUNT_ID",
   "slackBotToken": "xoxb-your-bot-token",
@@ -146,7 +162,7 @@ cp cdk/cdk.config.json.example cdk/cdk.config.prod.json
 
 **重要**:
 
-- 設定ファイルには機密情報が含まれるため、Git にコミットしないでください（`.gitignore`に含まれています）
+- 設定ファイルには機密情報が含まれるため、Git にコミットしないでください（`.gitignore` に含まれています）
 - 環境変数（`SLACK_BOT_TOKEN`、`SLACK_SIGNING_SECRET`）として設定することも可能ですが、設定ファイルの方が管理しやすくなります
 
 ### ステップ 4: CDK ブートストラップ（初回のみ）
@@ -154,7 +170,6 @@ cp cdk/cdk.config.json.example cdk/cdk.config.prod.json
 初めて CDK を使用する AWS アカウント/リージョンの場合：
 
 ```bash
-cd cdk
 cdk bootstrap aws://ACCOUNT-ID/REGION
 ```
 
@@ -244,42 +259,44 @@ export DEPLOYMENT_ENV=dev  # 本番環境の場合は 'prod' を使用
 # AWS プロファイルを使用する場合（オプション）
 export AWS_PROFILE=your-profile-name
 
-# デプロイスクリプトを実行
-chmod +x scripts/deploy.sh
-./scripts/deploy.sh
+# 全ゾーンをデプロイ（実行ゾーン → 検証ゾーンの順）
+./scripts/deploy/deploy-all.sh
+
+# 実行ゾーンのみ
+./scripts/deploy/deploy-execution-all.sh
+
+# 検証ゾーンのみ
+./scripts/deploy/deploy-verification-all.sh
+
+# 特定ゾーンのみ（Docker イメージ強制再ビルド付き）
+./execution-zones/execution-agent/scripts/deploy.sh --force-rebuild
 ```
 
-**注意**: デプロイスクリプトは`cdk.config.{env}.json`ファイルから設定を自動的に読み込みます。環境変数（`SLACK_BOT_TOKEN`、`SLACK_SIGNING_SECRET`）もサポートされていますが、設定ファイルの方が推奨されます。
+**注意**: 各ゾーンのデプロイスクリプトはゾーン固有の `cdk.config.{env}.json` から設定を自動的に読み込みます。
 
-**注意**: デプロイスクリプトは自動的に以下を実行します（A2A のみ）：
+**デプロイ順序**:
 
-1. Execution Stack をデプロイ
-2. ExecutionAgentRuntimeArn を取得し、`cdk.config.{env}.json` の `executionAgentArn` に設定
-3. Verification Stack をデプロイ（executionAgentArn を使用して A2A で Execution Agent を呼び出し）
+1. 実行ゾーン（execution-agent → time-agent → docs-agent）をデプロイし、出力された AgentCore Runtime ARN をメモ
+2. 検証ゾーンの `cdk.config.dev.json` の `executionAgentArns` に実行ゾーンの ARN を設定
+3. 検証ゾーンをデプロイ
 
 #### 方法 2: 手動デプロイ
 
 ```bash
-cd cdk
+# 1. 実行ゾーンをデプロイ
+cd execution-zones/execution-agent/cdk
+export DEPLOYMENT_ENV=dev
+npx cdk deploy SlackAI-Execution-Dev --require-approval never
 
-# .env ファイルから環境変数を読み込む
-set -a && source ../.env && set +a
+# 出力から ExecutionAgentRuntimeArn を取得し、
+# verification-zones/verification-agent/cdk/cdk.config.dev.json の
+# executionAgentArns.file-creator に設定
 
-# デプロイ環境を設定（dev または prod）
-export DEPLOYMENT_ENV=dev  # 本番環境の場合は 'prod' を使用
+# 同様に time-agent, docs-agent もデプロイ
 
-# 1. Execution Stack をデプロイ（環境サフィックスが自動的に追加されます）
-npx cdk deploy SlackAI-Execution-Dev \
-  --context deploymentEnv=dev \
-  --profile YOUR_PROFILE \
-  --require-approval never
-
-# 出力から ExecutionAgentRuntimeArn を取得し、cdk.config.dev.json の executionAgentArn に設定
-
-# 2. Verification Stack をデプロイ（executionAgentArn を設定済みの状態で）
+# 2. 検証ゾーンをデプロイ（executionAgentArns 設定済みの状態で）
+cd verification-zones/verification-agent/cdk
 npx cdk deploy SlackAI-Verification-Dev \
-  --context deploymentEnv=dev \
-  --context executionAgentArn=<ExecutionAgentRuntimeArn from step 1> \
   --profile YOUR_PROFILE \
   --require-approval never
 ```
