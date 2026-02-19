@@ -7,6 +7,7 @@ Invoked by main.py entrypoint only; main.py is the minimal A2A contract shell.
 
 import base64
 import json
+import os
 import time
 import traceback
 import uuid
@@ -31,6 +32,12 @@ from s3_file_manager import (
     upload_generated_file_to_s3,
     cleanup_request_files,
 )
+try:
+    from strands import Agent
+    from strands.models.bedrock import BedrockModel
+except ImportError:  # pragma: no cover
+    Agent = None
+    BedrockModel = None
 
 # 028: Threshold for SQS message size; files > 200KB use S3-backed delivery
 SQS_FILE_ARTIFACT_SIZE_THRESHOLD = 200 * 1024
@@ -39,6 +46,10 @@ SQS_FILE_ARTIFACT_SIZE_THRESHOLD = 200 * 1024
 is_processing = False
 
 _logger = get_logger()
+_FALLBACK_MODEL_ID = os.environ.get(
+    "VERIFICATION_FALLBACK_MODEL_ID",
+    os.environ.get("ROUTER_MODEL_ID", "jp.anthropic.claude-sonnet-4-6"),
+)
 
 ERROR_MESSAGE_MAP = {
     "bedrock_timeout": ":hourglass: AI サービスが応答に時間がかかっています。しばらくしてからお試しください。",
@@ -110,6 +121,59 @@ def parse_file_artifact(result_data: dict) -> Optional[Tuple[bytes, str, str]]:
         })
         return None
     return (file_bytes, name, mime)
+
+
+def _extract_text_from_model_output(result) -> str:
+    """Best-effort extraction of plain text from strands agent output."""
+    if result is None:
+        return ""
+    if isinstance(result, str):
+        return result.strip()
+    message = getattr(result, "message", None)
+    if isinstance(message, str):
+        return message.strip()
+    output_text = getattr(result, "output_text", None)
+    if isinstance(output_text, str):
+        return output_text.strip()
+    text = str(result).strip()
+    return "" if text == "None" else text
+
+
+def _generate_unrouted_fallback_response(user_text: str, correlation_id: str) -> str:
+    """Generate a direct response from verification-agent's own LLM when no execution agent is selected."""
+    if Agent is None or BedrockModel is None:
+        _log("WARN", "unrouted_llm_unavailable", {
+            "correlation_id": correlation_id,
+            "reason": "strands_dependencies_missing",
+        })
+        return ""
+
+    try:
+        model = BedrockModel(
+            model_id=_FALLBACK_MODEL_ID,
+            region_name=os.environ.get("AWS_REGION_NAME", "ap-northeast-1"),
+        )
+        agent = Agent(
+            model=model,
+            system_prompt=(
+                "You are the SlackAI verification agent. "
+                "No execution agent is available for this request, so answer directly. "
+                "Respond in Japanese, be concise, and avoid mentioning internal routing."
+            ),
+        )
+        result = agent(user_text or "ユーザーからの入力が空です。補助的に案内してください。")
+        response_text = _extract_text_from_model_output(result)
+        if response_text:
+            return response_text
+    except Exception as e:
+        _log("WARN", "unrouted_llm_failed", {
+            "correlation_id": correlation_id,
+            "error": str(e),
+            "error_type": type(e).__name__,
+        })
+        return ""
+
+    return ""
 
 
 def _get_slack_file_bytes(bot_token: str, file_id: str) -> Optional[bytes]:
@@ -367,20 +431,20 @@ def run(payload: dict) -> str:
                     "reason": "no_target_agent_selected",
                 })
                 is_processing = False
+                fallback_text = _generate_unrouted_fallback_response(text, correlation_id)
                 send_slack_post_request(
                     channel=channel,
                     thread_ts=thread_ts,
-                    text=":warning: リクエストに適したエージェントを選択できませんでした。もう少し具体的に依頼してください。",
+                    text=fallback_text or ":warning: リクエストに適したエージェントを選択できませんでした。もう少し具体的に依頼してください。",
                     bot_token=bot_token,
                     correlation_id=correlation_id,
                     message_ts=message_ts,
                 )
-                return json.dumps({
-                    "status": "error",
-                    "error_code": "no_target_agent",
-                    "error_message": "No target agent selected",
+                _log("INFO", "unrouted_direct_fallback_sent", {
                     "correlation_id": correlation_id,
+                    "used_llm_response": bool(fallback_text),
                 })
+                return json.dumps({"status": "completed", "correlation_id": correlation_id})
 
             # 032 US3: invoke_execution_agent returns unwrapped payload only (result or error body).
             # No JSON-RPC envelope (jsonrpc/id) is exposed; Slack sees only status, response_text, or user-facing error.

@@ -43,7 +43,7 @@ def get_max_tokens_for_model(model_id: str) -> int:
     If model is not recognized, returns a safe default (4096).
     
     Args:
-        model_id: Bedrock model identifier (e.g., "jp.anthropic.claude-haiku-4-5-20251001-v1:0")
+        model_id: Bedrock model identifier (e.g., "jp.anthropic.claude-sonnet-4-6")
         
     Returns:
         Maximum tokens for the model

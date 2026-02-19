@@ -25,9 +25,7 @@ except ImportError:  # pragma: no cover
 
 
 _logger = get_logger()
-_ROUTER_MODEL_ID = os.environ.get(
-    "ROUTER_MODEL_ID", "anthropic.claude-sonnet-4-6-20260219-v1:0"
-)
+_ROUTER_MODEL_ID = os.environ.get("ROUTER_MODEL_ID", "jp.anthropic.claude-sonnet-4-6")
 UNROUTED_AGENT_ID = "unrouted"
 DIRECT_RESPONSE_AGENT_ID = "direct"
 TIME_AGENT_ID = "time"

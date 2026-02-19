@@ -736,6 +736,59 @@ class TestPipelineDirectResponse:
         result_data = json.loads(result)
         assert result_data["status"] == "completed"
 
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    @patch("pipeline.route_request", return_value="unrouted")
+    @patch("pipeline.get_agent_arn", return_value="")
+    @patch("pipeline._generate_unrouted_fallback_response", return_value="Verification agent fallback reply")
+    def test_unrouted_request_returns_verification_llm_reply_without_execution_agent(
+        self, _mock_fallback, _mock_arn, _mock_route,
+        mock_existence, mock_auth, mock_invoke, mock_slack_post
+    ):
+        """When no suitable agent is routed, verification LLM response is sent and pipeline completes."""
+        mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
+
+        with patch("pipeline.check_rate_limit") as mock_rate:
+            mock_rate.return_value = (True, None)
+            from pipeline import run
+
+            result = run({"prompt": json.dumps(_payload(text="特殊な依頼"))})
+
+        mock_invoke.assert_not_called()
+        mock_slack_post.assert_called_once()
+        assert mock_slack_post.call_args[1].get("text") == "Verification agent fallback reply"
+        result_data = json.loads(result)
+        assert result_data["status"] == "completed"
+
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    @patch("pipeline.route_request", return_value="unrouted")
+    @patch("pipeline.get_agent_arn", return_value="")
+    @patch("pipeline._generate_unrouted_fallback_response", return_value="")
+    def test_unrouted_request_uses_static_warning_when_llm_fallback_empty(
+        self, _mock_fallback, _mock_arn, _mock_route,
+        mock_existence, mock_auth, mock_invoke, mock_slack_post
+    ):
+        """If fallback LLM returns empty text, static guidance is used and pipeline still completes."""
+        mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
+
+        with patch("pipeline.check_rate_limit") as mock_rate:
+            mock_rate.return_value = (True, None)
+            from pipeline import run
+
+            result = run({"prompt": json.dumps(_payload(text="特殊な依頼"))})
+
+        mock_invoke.assert_not_called()
+        mock_slack_post.assert_called_once()
+        posted_text = mock_slack_post.call_args[1].get("text", "")
+        assert "適したエージェントを選択できませんでした" in posted_text
+        result_data = json.loads(result)
+        assert result_data["status"] == "completed"
+
 
 @pytest.mark.skip(reason="要検証: E2E. Slack → Verification → Execution (JSON-RPC) → Verification → Slack. Run manually or in integration env.")
 def test_e2e_slack_verification_execution_slack_unchanged():
