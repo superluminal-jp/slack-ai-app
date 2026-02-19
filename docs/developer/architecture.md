@@ -438,7 +438,7 @@ npx cdk deploy SlackAI-Execution
 
 ### 4.1 Existence Check 実装（Two-Key Defense - 鍵2）
 
-**ファイル**: `cdk/lib/verification/lambda/slack-event-handler/existence_check.py`
+**ファイル**: `verification-zones/verification-agent/cdk/lib/lambda/slack-event-handler/existence_check.py`
 
 Existence Check は Two-Key Defense モデルの第二の鍵として、Slack API を使用して team_id, user_id, channel_id の実在性を動的に確認します。
 
@@ -471,7 +471,7 @@ Existence Check は Two-Key Defense モデルの第二の鍵として、Slack AP
 
 ### 4.2 SlackEventHandler（検証層）
 
-**ファイル**: `cdk/lib/verification/lambda/slack-event-handler/handler.py`
+**ファイル**: `verification-zones/verification-agent/cdk/lib/lambda/slack-event-handler/handler.py`
 
 SlackEventHandler は署名検証、Existence Check、認可を行い、即座に応答を返してから Execution Agent (A2A) を呼び出します。
 
@@ -539,7 +539,7 @@ def authorize_request(team_id, user_id, channel_id):
 
 ### 4.3 BedrockProcessor（実行層）
 
-**ファイル**: `cdk/lib/execution/lambda/bedrock-processor/handler.py`
+**ファイル**: `execution-zones/execution-agent/src/main.py`
 
 **目的**: Bedrock API を呼び出して AI 機能を提供（会話、画像生成、コード生成、データ分析など）
 
@@ -637,7 +637,7 @@ def extract_attachment_metadata(event):
 
 ### 4.5 レート制限の実装
 
-**ファイル**: `cdk/lib/verification/lambda/slack-event-handler/rate_limiter.py`
+**ファイル**: `verification-zones/verification-agent/cdk/lib/lambda/slack-event-handler/rate_limiter.py`
 
 レート制限は、DynamoDB ベースのトークンバケットアルゴリズムを使用して、ユーザー単位のスロットリングを実装します。
 
@@ -761,7 +761,7 @@ def extract_attachment_metadata(event):
 - [トラブルシューティング](../how-to/troubleshooting.md) — 一般的なエラーと解決手順
 - [ランブック](./runbook.md) — デプロイ・運用手順
 - [機能要件](../reference/requirements/functional-requirements.md) — ビジネス要件と機能仕様
-- [CDK README](../../cdk/README.md) — CDK スタックの詳細
+- [Quickstart](./quickstart.md) — 初回デプロイとゾーン設定手順
 
 ---
 

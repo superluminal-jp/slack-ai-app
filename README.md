@@ -41,31 +41,32 @@ This application enables teams to use AI capabilities directly from Slack. Team 
 
 ### Deploy
 
-This project uses two independent stacks (VerificationStack and ExecutionStack) that can be deployed separately, supporting cross-account deployments.
+This project uses four independent CDK apps (one per agent zone) deployed sequentially. Execution zones deploy first, then the Verification zone.
 
 **Deployment Steps**:
 
-1. Deploy ExecutionStack → Get `ExecutionApiUrl`
-2. Deploy VerificationStack → Get `VerificationLambdaRoleArn` and `ExecutionResponseQueueUrl`
-3. Update ExecutionStack → Set resource policy and SQS queue URL
+1. Configure each zone's `cdk.config.dev.json` with your account IDs and Slack credentials
+2. Deploy all execution zones → Execution Agent ARNs are output
+3. Set `executionAgentArns` in the Verification zone config
+4. Deploy Verification zone
 
-See [CDK README](cdk/README.md) for detailed deployment instructions.
+See [docs/developer/quickstart.md](docs/developer/quickstart.md) for detailed deployment instructions.
 
 **Quick start with deployment script:**
 
 ```bash
-# 1. Create configuration file
-cp cdk/cdk.config.json.example cdk/cdk.config.dev.json
-# Edit cdk/cdk.config.dev.json and set:
-# - verificationAccountId, executionAccountId
-# - slackBotToken, slackSigningSecret
+# 1. Configure each zone (edit account IDs, Slack tokens, etc.)
+# execution-zones/execution-agent/cdk/cdk.config.dev.json
+# execution-zones/time-agent/cdk/cdk.config.dev.json
+# execution-zones/docs-agent/cdk/cdk.config.dev.json
+# verification-zones/verification-agent/cdk/cdk.config.dev.json
 
 # 2. Set deployment environment (dev or prod)
 export DEPLOYMENT_ENV=dev  # Use 'prod' for production
 
-# 3. Run deployment script (with optional AWS profile)
+# 3. Run full deployment (execution zones → verification zone)
 export AWS_PROFILE=your-profile-name  # Optional: if using AWS profiles
-./scripts/deploy.sh
+./scripts/deploy/deploy-all.sh
 ```
 
 **Note**: Slack credentials can be set directly in `cdk.config.{env}.json` file. Environment variables are also supported, but configuration files are easier to manage.
@@ -89,11 +90,11 @@ This project supports environment separation for development (`dev`) and product
 ```bash
 # Deploy to development environment
 export DEPLOYMENT_ENV=dev
-./scripts/deploy.sh
+./scripts/deploy/deploy-all.sh
 
 # Deploy to production environment
 export DEPLOYMENT_ENV=prod
-./scripts/deploy.sh
+./scripts/deploy/deploy-all.sh
 ```
 
 **Note**: If `DEPLOYMENT_ENV` is not set, the script defaults to `dev` environment with a warning. Each environment should use separate Slack apps/workspaces or different secrets for security.
@@ -217,10 +218,12 @@ This separation enables:
 
 ## Architecture
 
-The application uses **two independent stacks** that can be deployed separately:
+The application uses **four independent CDK apps** (one per agent zone), each deployable separately:
 
-- **VerificationStack**: SlackEventHandler Lambda + Verification Agent (AgentCore) + DynamoDB + Secrets Manager
-- **ExecutionStack**: Execution Agent (AgentCore Runtime + ECR)
+- **Verification Zone** (`verification-zones/verification-agent/cdk`): SlackEventHandler Lambda + Verification Agent (AgentCore) + DynamoDB + Secrets Manager
+- **Execution Agent Zone** (`execution-zones/execution-agent/cdk`): File-creator agent (AgentCore Runtime + ECR)
+- **Time Agent Zone** (`execution-zones/time-agent/cdk`): Current-time agent (AgentCore Runtime + ECR)
+- **Docs Agent Zone** (`execution-zones/docs-agent/cdk`): Document-search agent (AgentCore Runtime + ECR)
 
 This structure supports:
 
@@ -247,44 +250,45 @@ For technical details, see [Architecture Overview](docs/developer/architecture.m
 
 ```
 slack-ai-app/
-├── cdk/                        # AWS CDK infrastructure
-│   ├── bin/                    # CDK entry point
-│   ├── lib/
-│   │   ├── execution/          # Execution Stack
-│   │   │   ├── execution-stack.ts
-│   │   │   ├── constructs/
-│   │   │   │   ├── execution-agent-runtime.ts   # AgentCore Runtime (A2A)
-│   │   │   │   └── execution-agent-ecr.ts       # ECR image build
-│   │   │   ├── agent/
-│   │   │   │   └── execution-agent/             # Execution Agent container
-│   │   │   │       ├── main.py                  # A2A server
-│   │   │   │       ├── agent_card.py            # Agent Card definition
-│   │   │   │       ├── cloudwatch_metrics.py    # Metrics
-│   │   │   │       └── tests/                   # Python tests (110 tests)
-│   │   │   └── lambda/                          # Legacy Lambda code
-│   │   ├── verification/       # Verification Stack
-│   │   │   ├── verification-stack.ts
-│   │   │   ├── constructs/
-│   │   │   │   ├── verification-agent-runtime.ts # AgentCore Runtime (A2A)
-│   │   │   │   ├── verification-agent-ecr.ts     # ECR image build
-│   │   │   │   └── slack-event-handler.ts        # Invokes Verification Agent via A2A
-│   │   │   ├── agent/
-│   │   │   │   └── verification-agent/           # Verification Agent container
-│   │   │   │       ├── main.py                   # A2A server
-│   │   │   │       ├── a2a_client.py             # Execution Agent A2A client
-│   │   │   │       ├── agent_card.py             # Agent Card definition
-│   │   │   │       ├── cloudwatch_metrics.py     # Metrics
-│   │   │   │       └── tests/                    # Python tests (93 tests)
-│   │   │   └── lambda/                           # SlackEventHandler Lambda
-│   │   └── types/              # Shared type definitions
-│   └── test/                   # CDK/Jest tests (25 tests)
-├── docs/                       # Documentation
-│   ├── reference/              # Architecture, Security, Operations
-│   ├── explanation/            # Design Principles, ADRs
-│   ├── tutorials/              # Getting Started
-│   └── how-to/                 # Troubleshooting
-├── specs/                      # Feature specifications
-└── scripts/                    # Deployment scripts
+├── execution-zones/              # Execution agent CDK apps (one per agent)
+│   ├── execution-agent/          # File-creator / general AI agent
+│   │   ├── cdk/                  # Standalone CDK app (TypeScript)
+│   │   │   ├── bin/cdk.ts        # Entry point
+│   │   │   ├── lib/              # Stack, constructs, types
+│   │   │   └── test/             # CDK synthesis tests (Jest)
+│   │   ├── src/                  # Python agent source (main.py, agent_card.py, …)
+│   │   ├── tests/                # Python unit tests
+│   │   └── scripts/deploy.sh     # Zone-specific deploy script
+│   ├── time-agent/               # Same structure — current-time agent
+│   └── docs-agent/               # Same structure — docs-search agent
+├── verification-zones/           # Verification agent CDK app
+│   └── verification-agent/
+│       ├── cdk/                  # Standalone CDK app (TypeScript)
+│       │   ├── bin/cdk.ts
+│       │   ├── lib/
+│       │   │   ├── verification-stack.ts
+│       │   │   ├── constructs/   # AgentCore Runtime, ECR, Lambda, …
+│       │   │   └── lambda/       # SlackEventHandler Lambda
+│       │   └── test/
+│       ├── src/                  # Python agent source
+│       ├── tests/                # Python unit tests
+│       └── scripts/deploy.sh
+├── platform/
+│   ├── tooling/                  # @slack-ai-app/cdk-tooling (shared npm package)
+│   │   └── src/utils/            # cdk-logger, cdk-error, cost-allocation-tags, …
+│   ├── schemas/                  # Shared JSON schemas (placeholder)
+│   └── policies/                 # Shared IAM policies (placeholder)
+├── scripts/
+│   ├── deploy/
+│   │   ├── deploy-all.sh         # Full deployment: execution → verification
+│   │   ├── deploy-execution-all.sh
+│   │   └── deploy-verification-all.sh
+│   └── validate/
+├── docs/                         # Documentation
+│   ├── developer/                # Architecture, Quickstart, Runbook, Testing, …
+│   ├── decision-maker/           # Proposal, cost, governance
+│   └── user/                     # User guide, usage policy, FAQ
+└── specs/                        # Feature specifications
 ```
 
 ## Development
@@ -292,17 +296,17 @@ slack-ai-app/
 ### Run Tests
 
 ```bash
-# CDK construct tests (Jest, 25 tests)
-cd cdk && npx jest test/agentcore-constructs.test.ts --verbose
+# CDK synthesis tests (Jest) — per zone
+cd execution-zones/execution-agent/cdk && npm test
+cd execution-zones/time-agent/cdk && npm test
+cd execution-zones/docs-agent/cdk && npm test
+cd verification-zones/verification-agent/cdk && npm test
 
-# Execution Agent tests (pytest, 110 tests)
-cd cdk/lib/execution/agent/execution-agent && python -m pytest tests/ -v
-
-# Verification Agent tests (pytest, 93 tests)
-cd cdk/lib/verification/agent/verification-agent && python -m pytest tests/ -v
-
-# SlackEventHandler Lambda tests
-cd cdk/lib/verification/lambda/slack-event-handler && pytest tests/
+# Python agent tests (pytest) — per zone
+cd execution-zones/execution-agent && python -m pytest tests/ -v
+cd execution-zones/time-agent && python -m pytest tests/ -v
+cd execution-zones/docs-agent && python -m pytest tests/ -v
+cd verification-zones/verification-agent && python -m pytest tests/ -v
 ```
 
 ### View Logs
@@ -543,6 +547,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## Recent Updates
 
+- **2026-02-19**: Zone-based CDK restructuring
+  - Migrated from single `cdk/` monolith to four independent CDK apps: `execution-zones/{execution-agent,time-agent,docs-agent}/cdk` and `verification-zones/verification-agent/cdk`
+  - Added `platform/tooling` shared npm package (`@slack-ai-app/cdk-tooling`) for common CDK utilities (logger, error, cost-allocation-tags, log-retention-aspect, config-loader)
+  - Added unified deploy scripts: `scripts/deploy/deploy-all.sh`, `deploy-execution-all.sh`, `deploy-verification-all.sh`
+  - Each zone has independent `src/`, `tests/`, `scripts/deploy.sh` and zone-specific `cdk.config.dev.json`
 - **2026-02-11**: Reaction swap on reply (eyes→checkmark)
   - When posting AI response to Slack, the system removes 👀 and adds ✅ on the original message for clear completion feedback
   - Slack Poster Lambda performs reaction swap after successful post; `message_ts` added to SQS payload for reaction target

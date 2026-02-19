@@ -41,31 +41,32 @@ Slack と Amazon Bedrock をセキュアに接続し、AI 生成レスポンス�
 
 ### デプロイ
 
-このプロジェクトは 2 つの独立したスタック（VerificationStack と ExecutionStack）を使用し、個別にデプロイ可能で、クロスアカウントデプロイをサポートします。
+このプロジェクトはエージェントゾーンごとに 4 つの独立した CDK アプリを使用します。実行ゾーン（3つ）をデプロイした後、検証ゾーンをデプロイします。
 
 **デプロイ手順**:
 
-1. ExecutionStack をデプロイ → `ExecutionApiUrl` を取得
-2. VerificationStack をデプロイ → `VerificationLambdaRoleArn` と `ExecutionResponseQueueUrl` を取得
-3. ExecutionStack を更新 → リソースポリシーと SQS キュー URL を設定
+1. 各ゾーンの `cdk.config.dev.json` にアカウント ID と Slack 認証情報を設定
+2. 実行ゾーンをすべてデプロイ → Execution Agent ARN が出力される
+3. Verification ゾーンの設定に `executionAgentArns` を設定
+4. Verification ゾーンをデプロイ
 
-詳細なデプロイ手順は [CDK README](cdk/README.md) を参照してください。
+詳細なデプロイ手順は [クイックスタートガイド](docs/developer/quickstart.md) を参照してください。
 
 **クイックスタート（デプロイスクリプト使用）**:
 
 ```bash
-# 1. 設定ファイルを作成
-cp cdk/cdk.config.json.example cdk/cdk.config.dev.json
-# cdk/cdk.config.dev.json を編集して以下を設定:
-# - verificationAccountId, executionAccountId
-# - slackBotToken, slackSigningSecret
+# 1. 各ゾーンの設定ファイルを編集（アカウント ID、Slack トークンなど）
+# execution-zones/execution-agent/cdk/cdk.config.dev.json
+# execution-zones/time-agent/cdk/cdk.config.dev.json
+# execution-zones/docs-agent/cdk/cdk.config.dev.json
+# verification-zones/verification-agent/cdk/cdk.config.dev.json
 
 # 2. デプロイ環境を設定（dev または prod）
 export DEPLOYMENT_ENV=dev  # 本番環境の場合は 'prod' を使用
 
-# 3. デプロイスクリプトを実行（AWSプロファイルはオプション）
+# 3. 全体デプロイ（実行ゾーン → 検証ゾーン）
 export AWS_PROFILE=your-profile-name  # オプション: AWSプロファイルを使用する場合
-./scripts/deploy.sh
+./scripts/deploy/deploy-all.sh
 ```
 
 **注意**: Slack 認証情報は`cdk.config.{env}.json`ファイルに直接設定できます。環境変数として設定することも可能ですが、設定ファイルの方が管理しやすくなります。
@@ -89,11 +90,11 @@ export AWS_PROFILE=your-profile-name  # オプション: AWSプロファイル�
 ```bash
 # 開発環境にデプロイ
 export DEPLOYMENT_ENV=dev
-./scripts/deploy.sh
+./scripts/deploy/deploy-all.sh
 
 # 本番環境にデプロイ
 export DEPLOYMENT_ENV=prod
-./scripts/deploy.sh
+./scripts/deploy/deploy-all.sh
 ```
 
 **注意**: `DEPLOYMENT_ENV` が設定されていない場合、スクリプトは警告を表示してデフォルトで `dev` 環境を使用します。セキュリティのため、各環境では別々の Slack アプリ/ワークスペースを使用するか、異なるシークレットを設定することを推奨します。
@@ -217,10 +218,12 @@ export DEPLOYMENT_ENV=prod
 
 ## アーキテクチャ
 
-アプリケーションは **2 つの独立したスタック**を使用し、個別にデプロイ可能です：
+アプリケーションはエージェントゾーンごとに **4 つの独立した CDK アプリ**を使用し、個別にデプロイ可能です：
 
-- **VerificationStack**: SlackEventHandler Lambda + Verification Agent (AgentCore) + DynamoDB + Secrets Manager
-- **ExecutionStack**: Execution Agent (AgentCore Runtime + ECR)
+- **Verification Zone** (`verification-zones/verification-agent/cdk`): SlackEventHandler Lambda + Verification Agent (AgentCore) + DynamoDB + Secrets Manager
+- **Execution Agent Zone** (`execution-zones/execution-agent/cdk`): ファイル生成エージェント（AgentCore Runtime + ECR）
+- **Time Agent Zone** (`execution-zones/time-agent/cdk`): 現在時刻エージェント（AgentCore Runtime + ECR）
+- **Docs Agent Zone** (`execution-zones/docs-agent/cdk`): ドキュメント検索エージェント（AgentCore Runtime + ECR）
 
 この構成は以下をサポートします：
 
@@ -247,44 +250,45 @@ export DEPLOYMENT_ENV=prod
 
 ```
 slack-ai-app/
-├── cdk/                        # AWS CDK インフラストラクチャ
-│   ├── bin/                    # CDK エントリーポイント
-│   ├── lib/
-│   │   ├── execution/          # Execution Stack
-│   │   │   ├── execution-stack.ts
-│   │   │   ├── constructs/
-│   │   │   │   ├── execution-agent-runtime.ts   # AgentCore Runtime (A2A)
-│   │   │   │   └── execution-agent-ecr.ts       # ECR イメージビルド
-│   │   │   ├── agent/
-│   │   │   │   └── execution-agent/             # Execution Agent コンテナ
-│   │   │   │       ├── main.py                  # A2A サーバー
-│   │   │   │       ├── agent_card.py            # Agent Card 定義
-│   │   │   │       ├── cloudwatch_metrics.py    # メトリクス
-│   │   │   │       └── tests/                   # Python テスト (110 tests)
-│   │   │   └── lambda/                          # レガシー Lambda コード
-│   │   ├── verification/       # Verification Stack
-│   │   │   ├── verification-stack.ts
-│   │   │   ├── constructs/
-│   │   │   │   ├── verification-agent-runtime.ts # AgentCore Runtime (A2A)
-│   │   │   │   ├── verification-agent-ecr.ts     # ECR イメージビルド
-│   │   │   │   └── slack-event-handler.ts        # Verification Agent を A2A で呼び出し
-│   │   │   ├── agent/
-│   │   │   │   └── verification-agent/           # Verification Agent コンテナ
-│   │   │   │       ├── main.py                   # A2A サーバー
-│   │   │   │       ├── a2a_client.py             # Execution Agent A2A クライアント
-│   │   │   │       ├── agent_card.py             # Agent Card 定義
-│   │   │   │       ├── cloudwatch_metrics.py     # メトリクス
-│   │   │   │       └── tests/                    # Python テスト (93 tests)
-│   │   │   └── lambda/                           # SlackEventHandler Lambda
-│   │   └── types/              # 共通型定義
-│   └── test/                   # CDK/Jest テスト (25 tests)
-├── docs/                       # ドキュメント
-│   ├── reference/              # アーキテクチャ、セキュリティ、運用
-│   ├── explanation/            # 設計原則、ADR
-│   ├── tutorials/              # 入門ガイド
-│   └── how-to/                 # トラブルシューティング
-├── specs/                      # 機能仕様
-└── scripts/                    # デプロイスクリプト
+├── execution-zones/              # 実行エージェント CDK アプリ（エージェントごとに独立）
+│   ├── execution-agent/          # ファイル生成・汎用 AI エージェント
+│   │   ├── cdk/                  # 独立 CDK アプリ（TypeScript）
+│   │   │   ├── bin/cdk.ts        # エントリーポイント
+│   │   │   ├── lib/              # スタック、コンストラクト、型定義
+│   │   │   └── test/             # CDK 合成テスト（Jest）
+│   │   ├── src/                  # Python エージェントソース（main.py, agent_card.py, …）
+│   │   ├── tests/                # Python ユニットテスト
+│   │   └── scripts/deploy.sh     # ゾーン固有デプロイスクリプト
+│   ├── time-agent/               # 同じ構造 — 現在時刻エージェント
+│   └── docs-agent/               # 同じ構造 — ドキュメント検索エージェント
+├── verification-zones/           # 検証エージェント CDK アプリ
+│   └── verification-agent/
+│       ├── cdk/                  # 独立 CDK アプリ（TypeScript）
+│       │   ├── bin/cdk.ts
+│       │   ├── lib/
+│       │   │   ├── verification-stack.ts
+│       │   │   ├── constructs/   # AgentCore Runtime, ECR, Lambda, …
+│       │   │   └── lambda/       # SlackEventHandler Lambda
+│       │   └── test/
+│       ├── src/                  # Python エージェントソース
+│       ├── tests/                # Python ユニットテスト
+│       └── scripts/deploy.sh
+├── platform/
+│   ├── tooling/                  # @slack-ai-app/cdk-tooling（共有 npm パッケージ）
+│   │   └── src/utils/            # cdk-logger, cdk-error, cost-allocation-tags, …
+│   ├── schemas/                  # 共有 JSON スキーマ（プレースホルダー）
+│   └── policies/                 # 共有 IAM ポリシー（プレースホルダー）
+├── scripts/
+│   ├── deploy/
+│   │   ├── deploy-all.sh         # 全体デプロイ: 実行ゾーン → 検証ゾーン
+│   │   ├── deploy-execution-all.sh
+│   │   └── deploy-verification-all.sh
+│   └── validate/
+├── docs/                         # ドキュメント
+│   ├── developer/                # アーキテクチャ、クイックスタート、運用ガイド、テスト、…
+│   ├── decision-maker/           # 提案書、コスト、ガバナンス
+│   └── user/                     # ユーザーガイド、利用規約、FAQ
+└── specs/                        # 機能仕様
 ```
 
 ## 開発
@@ -292,17 +296,17 @@ slack-ai-app/
 ### テスト実行
 
 ```bash
-# CDK コンストラクトテスト (Jest, 25 tests)
-cd cdk && npx jest test/agentcore-constructs.test.ts --verbose
+# CDK 合成テスト（Jest）— ゾーンごと
+cd execution-zones/execution-agent/cdk && npm test
+cd execution-zones/time-agent/cdk && npm test
+cd execution-zones/docs-agent/cdk && npm test
+cd verification-zones/verification-agent/cdk && npm test
 
-# Execution Agent テスト (pytest, 110 tests)
-cd cdk/lib/execution/agent/execution-agent && python -m pytest tests/ -v
-
-# Verification Agent テスト (pytest, 93 tests)
-cd cdk/lib/verification/agent/verification-agent && python -m pytest tests/ -v
-
-# SlackEventHandler Lambda テスト
-cd cdk/lib/verification/lambda/slack-event-handler && pytest tests/
+# Python エージェントテスト（pytest）— ゾーンごと
+cd execution-zones/execution-agent && python -m pytest tests/ -v
+cd execution-zones/time-agent && python -m pytest tests/ -v
+cd execution-zones/docs-agent && python -m pytest tests/ -v
+cd verification-zones/verification-agent && python -m pytest tests/ -v
 ```
 
 ### ログ確認

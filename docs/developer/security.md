@@ -126,7 +126,7 @@ Two-Key Defense は、2 つの独立した鍵（Signing Secret と Bot Token）�
 **コード例**:
 
 ```python
-# cdk/lib/verification/lambda/slack-event-handler/slack_verifier.py
+# verification-zones/verification-agent/cdk/lib/lambda/slack-event-handler/slack_verifier.py
 def verify_signature(
     body: str,
     timestamp: str,
