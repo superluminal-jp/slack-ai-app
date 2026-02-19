@@ -1,0 +1,16 @@
+{
+  "awsRegion": "ap-northeast-1",
+  "bedrockModelId": "jp.anthropic.claude-sonnet-4-6",
+  "deploymentEnv": "dev",
+  "verificationStackName": "SlackAI-Verification",
+  "verificationAccountId": "YOUR_VERIFICATION_AWS_ACCOUNT_ID",
+  "executionAccountId": "YOUR_EXECUTION_AWS_ACCOUNT_ID",
+  "slackBotToken": "",
+  "slackSigningSecret": "",
+  "verificationAgentName": "SlackAI_VerificationAgent_Dev",
+  "executionAgentArns": {
+    "file-creator": "arn:aws:bedrock-agentcore:ap-northeast-1:EXECUTION_ACCOUNT_ID:runtime/EXECUTION_RUNTIME_ID",
+    "docs": "arn:aws:bedrock-agentcore:ap-northeast-1:EXECUTION_ACCOUNT_ID:runtime/DOCS_RUNTIME_ID",
+    "time": "arn:aws:bedrock-agentcore:ap-northeast-1:EXECUTION_ACCOUNT_ID:runtime/TIME_RUNTIME_ID"
+  }
+}

@@ -35,6 +35,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CDK_DIR="${PROJECT_ROOT}/cdk"
 CDK_CLI="${CDK_DIR}/node_modules/aws-cdk/bin/cdk"
+VERIFY_CDK_DIR="${PROJECT_ROOT}/verification-zones/verification-agent/cdk"
+VERIFY_CDK_CLI="${VERIFY_CDK_DIR}/node_modules/aws-cdk/bin/cdk"
 AWS_REGION="${AWS_REGION:-ap-northeast-1}"
 PROFILE_ARGS="${AWS_PROFILE:+--profile ${AWS_PROFILE}}"
 
@@ -62,6 +64,11 @@ VERIFY_STACK="${VERIFICATION_STACK_NAME:-SlackAI-Verification}-${ENV_SUFFIX}"
 
 get_config_value() {
     local config_file="${CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
+    [[ -f "${config_file}" ]] && jq -r ".\"$1\" // empty" "${config_file}" 2>/dev/null || echo ""
+}
+
+get_verify_config_value() {
+    local config_file="${VERIFY_CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
     [[ -f "${config_file}" ]] && jq -r ".\"$1\" // empty" "${config_file}" 2>/dev/null || echo ""
 }
 
@@ -99,6 +106,23 @@ save_execution_agent_arns_to_config() {
 
     mv "${tmp_file}" "${config_file}"
     log_success "Updated agent ARN config: ${config_file}"
+
+    # Also update verification zone config if it exists
+    local verify_config="${VERIFY_CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
+    if [[ -f "${verify_config}" ]]; then
+        local vtmp
+        vtmp="$(mktemp)"
+        if jq \
+            --argjson arns "${arns_json}" \
+            '.executionAgentArns = $arns' \
+            "${verify_config}" > "${vtmp}"; then
+            mv "${vtmp}" "${verify_config}"
+            log_success "Updated agent ARN config: ${verify_config}"
+        else
+            rm -f "${vtmp}"
+            log_warning "Could not update ${verify_config}"
+        fi
+    fi
 }
 
 get_stack_output() {
@@ -210,17 +234,20 @@ cmd_deploy() {
     # Prerequisites
     log_info "Checking prerequisites (env=${DEPLOYMENT_ENV})..."
     if [[ -z "${SLACK_BOT_TOKEN:-}" ]]; then
-        SLACK_BOT_TOKEN=$(get_config_value "slackBotToken")
+        SLACK_BOT_TOKEN=$(get_verify_config_value "slackBotToken")
+        [[ -z "${SLACK_BOT_TOKEN}" ]] && SLACK_BOT_TOKEN=$(get_config_value "slackBotToken")
         [[ -n "${SLACK_BOT_TOKEN}" ]] && export SLACK_BOT_TOKEN && log_info "Loaded SLACK_BOT_TOKEN from config"
     fi
     if [[ -z "${SLACK_SIGNING_SECRET:-}" ]]; then
-        SLACK_SIGNING_SECRET=$(get_config_value "slackSigningSecret")
+        SLACK_SIGNING_SECRET=$(get_verify_config_value "slackSigningSecret")
+        [[ -z "${SLACK_SIGNING_SECRET}" ]] && SLACK_SIGNING_SECRET=$(get_config_value "slackSigningSecret")
         [[ -n "${SLACK_SIGNING_SECRET}" ]] && export SLACK_SIGNING_SECRET && log_info "Loaded SLACK_SIGNING_SECRET from config"
     fi
-    [[ -z "${SLACK_BOT_TOKEN:-}" ]]     && { log_error "SLACK_BOT_TOKEN is required"; exit 1; }
-    [[ -z "${SLACK_SIGNING_SECRET:-}" ]] && { log_error "SLACK_SIGNING_SECRET is required"; exit 1; }
+    [[ -z "${SLACK_BOT_TOKEN:-}" ]]     && { log_error "SLACK_BOT_TOKEN is required (set env var or add to ${VERIFY_CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json)"; exit 1; }
+    [[ -z "${SLACK_SIGNING_SECRET:-}" ]] && { log_error "SLACK_SIGNING_SECRET is required (set env var or add to ${VERIFY_CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json)"; exit 1; }
     require_commands aws node jq
     [[ -x "${CDK_CLI}" ]] || { log_error "CDK CLI not found at ${CDK_CLI}. Run: cd ${CDK_DIR} && npm install"; exit 1; }
+    [[ -x "${VERIFY_CDK_CLI}" ]] || { log_error "Verification CDK CLI not found. Run: cd ${VERIFY_CDK_DIR} && npm install"; exit 1; }
     log_success "Prerequisites OK (Execution: ${EXEC_STACK}, Docs: ${DOCS_STACK}, Time: ${TIME_STACK}, Verification: ${VERIFY_STACK})"
 
     # Preflight: deploy Verification first with current runtime ARNs to remove any legacy cross-stack import refs.
@@ -238,7 +265,7 @@ cmd_deploy() {
                  + (if $time == "" or $time == "None" then {} else { time: $time } end)'
         )
         log_info "========== Preflight: Deploying Verification Stack with current runtime ARNs =========="
-        ( cd "${CDK_DIR}" && "${CDK_CLI}" deploy "${VERIFY_STACK}" \
+        ( cd "${VERIFY_CDK_DIR}" && "${VERIFY_CDK_CLI}" deploy "${VERIFY_STACK}" \
             ${PROFILE_ARGS} --require-approval never \
             --outputs-file "${verify_outputs}" \
             --context deploymentEnv="${DEPLOYMENT_ENV}" \
@@ -306,7 +333,7 @@ cmd_deploy() {
     # Persist agent ARNs so future deploys/policy checks use the latest runtime targets.
     save_execution_agent_arns_to_config "${exec_arn}" "${docs_arn}" "${time_arn}"
 
-    # Phase 2: Verification Stack
+    # Phase 2: Verification Stack (deployed from verification-zones/verification-agent/cdk/)
     log_info "========== Phase 2: Deploying Verification Stack =========="
     local verify_ctx="--context deploymentEnv=${DEPLOYMENT_ENV}"
     local execution_agent_arns_json
@@ -321,7 +348,7 @@ cmd_deploy() {
     )
     verify_ctx+=" --context executionAgentArns=${execution_agent_arns_json}"
 
-    ( cd "${CDK_DIR}" && "${CDK_CLI}" deploy "${VERIFY_STACK}" \
+    ( cd "${VERIFY_CDK_DIR}" && "${VERIFY_CDK_CLI}" deploy "${VERIFY_STACK}" \
         ${PROFILE_ARGS} --require-approval never \
         --outputs-file "${verify_outputs}" ${verify_ctx} ) \
         || { log_error "Failed to deploy ${VERIFY_STACK}"; exit 1; }
