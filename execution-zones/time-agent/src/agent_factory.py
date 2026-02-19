@@ -30,7 +30,10 @@ def create_agent(tools: List[Any] | None = None) -> Agent:
         Configured Strands Agent ready for invocation.
     """
     tool_list = tools if tools is not None else get_tools()
-    model_id = os.environ.get("BEDROCK_MODEL_ID", "jp.anthropic.claude-sonnet-4-6")
+    model_id = os.environ.get(
+        "BEDROCK_MODEL_ID",
+        "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    )
     region = os.environ.get("AWS_REGION_NAME", "ap-northeast-1")
 
     model = BedrockModel(model_id=model_id, region_name=region)

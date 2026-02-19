@@ -45,8 +45,7 @@ type DeploymentEnvironment = (typeof VALID_ENVIRONMENTS)[number];
 
 // Outdir for cloud assembly (CLI sets CDK_OUTDIR; else default cdk.out)
 const outdir =
-  process.env.CDK_OUTDIR ||
-  path.join(path.dirname(__dirname), "cdk.out");
+  process.env.CDK_OUTDIR || path.join(path.dirname(__dirname), "cdk.out");
 const app = new cdk.App({ outdir });
 
 logInfo("Verification Zone CDK app starting", { phase: "config" });
@@ -83,9 +82,12 @@ function getDeploymentEnvironment(): DeploymentEnvironment {
   }
 
   if (!process.env.DEPLOYMENT_ENV && !app.node.tryGetContext("deploymentEnv")) {
-    logWarn(`DEPLOYMENT_ENV not set. Defaulting to '${DEFAULT_ENVIRONMENT}' environment.`, {
-      phase: "config",
-    });
+    logWarn(
+      `DEPLOYMENT_ENV not set. Defaulting to '${DEFAULT_ENVIRONMENT}' environment.`,
+      {
+        phase: "config",
+      },
+    );
   }
 
   return deploymentEnv;
@@ -105,10 +107,13 @@ function loadConfiguration(env: DeploymentEnvironment): CdkConfig | null {
     const fileConfig = loadCdkConfig(env, cdkDir);
     return applyEnvOverrides(fileConfig);
   } catch {
-    logWarn("Configuration file load failed; falling back to context or defaults.", {
-      phase: "config",
-      context: { step: "config load" },
-    });
+    logWarn(
+      "Configuration file load failed; falling back to context or defaults.",
+      {
+        phase: "config",
+        context: { step: "config load" },
+      },
+    );
     return null;
   }
 }
@@ -119,7 +124,7 @@ logInfo(
   config
     ? "Configuration loaded from file or env overrides."
     : "Using context or defaults (no config file).",
-  { phase: "config", context: { deploymentEnv } }
+  { phase: "config", context: { deploymentEnv } },
 );
 
 /**
@@ -158,7 +163,7 @@ const region = getConfigValue("awsRegion", DEFAULT_REGION);
 // Stack name (without environment suffix)
 const baseVerificationStackName = getConfigValue(
   "verificationStackName",
-  "SlackAI-Verification"
+  "SlackAI-Verification",
 );
 
 // Add environment suffix
@@ -172,7 +177,7 @@ const executionAccountId = getConfigString("executionAccountId");
 // AgentCore configuration
 const verificationAgentName = getConfigString(
   "verificationAgentName",
-  `SlackAI_VerificationAgent_${environmentSuffix}`
+  `SlackAI_VerificationAgent_${environmentSuffix}`,
 );
 
 // Execution agent ARNs (from context, env vars, or config file).
@@ -238,7 +243,7 @@ const defaultEnv = getDefaultEnv(region);
 function getStackEnvironment(
   accountId: string,
   region: string,
-  defaultEnv: cdk.Environment
+  defaultEnv: cdk.Environment,
 ): cdk.Environment {
   return accountId ? { account: accountId, region: region } : defaultEnv;
 }
@@ -246,10 +251,13 @@ function getStackEnvironment(
 const verificationEnv = getStackEnvironment(
   verificationAccountId,
   region,
-  defaultEnv
+  defaultEnv,
 );
 
-const bedrockModelId = getConfigString("bedrockModelId", "jp.anthropic.claude-sonnet-4-6");
+const bedrockModelId = getConfigString(
+  "bedrockModelId",
+  "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
+);
 
 // Create Verification Stack
 new VerificationStack(app, verificationStackName, {
@@ -257,12 +265,13 @@ new VerificationStack(app, verificationStackName, {
   executionAccountId: executionAccountId || undefined,
   verificationAgentName: verificationAgentName || undefined,
   executionAgentArns:
-    Object.keys(executionAgentArns).length > 0
-      ? executionAgentArns
-      : undefined,
+    Object.keys(executionAgentArns).length > 0 ? executionAgentArns : undefined,
   bedrockModelId: bedrockModelId || undefined,
 });
-logInfo("Verification stack created.", { phase: "stack", context: { stackName: verificationStackName } });
+logInfo("Verification stack created.", {
+  phase: "stack",
+  context: { stackName: verificationStackName },
+});
 
 // Emit cloud assembly
 app.synth();

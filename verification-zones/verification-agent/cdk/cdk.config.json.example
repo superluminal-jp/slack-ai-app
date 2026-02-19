@@ -1,6 +1,6 @@
 {
   "awsRegion": "ap-northeast-1",
-  "bedrockModelId": "jp.anthropic.claude-sonnet-4-6",
+  "bedrockModelId": "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
   "deploymentEnv": "dev",
   "verificationStackName": "SlackAI-Verification",
   "verificationAccountId": "YOUR_VERIFICATION_AWS_ACCOUNT_ID",

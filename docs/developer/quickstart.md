@@ -133,7 +133,7 @@ pip install -r requirements.txt
 ```json
 {
   "awsRegion": "ap-northeast-1",
-  "bedrockModelId": "jp.anthropic.claude-sonnet-4-6",
+  "bedrockModelId": "jp.anthropic.claude-haiku-4-5-20251001-v1:0",
   "deploymentEnv": "dev",
   "executionStackName": "SlackAI-Execution",
   "verificationAccountId": "YOUR_AWS_ACCOUNT_ID",

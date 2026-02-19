@@ -29,7 +29,7 @@ def get_max_tokens_for_model(model_id: str) -> int:
     If model is not recognized, returns a safe default (4096).
 
     Args:
-        model_id: Bedrock model identifier (e.g., "jp.anthropic.claude-sonnet-4-6")
+        model_id: Bedrock model identifier (e.g., "jp.anthropic.claude-sonnet-4-5-20250929-v1:0")
 
     Returns:
         Maximum tokens for the model
@@ -50,7 +50,16 @@ def get_max_tokens_for_model(model_id: str) -> int:
 
     # Claude 4.x series models (8192 tokens) - all variants
     # Pattern: claude-sonnet-4-5/4-6, claude-haiku-4-5, claude-opus-4-5/4-6
-    if any(p in model_id for p in ("claude-sonnet-4-5", "claude-sonnet-4-6", "claude-haiku-4-5", "claude-opus-4-5", "claude-opus-4-6")):
+    if any(
+        p in model_id
+        for p in (
+            "claude-sonnet-4-5",
+            "claude-sonnet-4-6",
+            "claude-haiku-4-5",
+            "claude-opus-4-5",
+            "claude-opus-4-6",
+        )
+    ):
         return 8192
 
     # Amazon Nova Pro (8192 tokens)
@@ -105,7 +114,10 @@ def invoke_bedrock(prompt: str) -> str:
 
     # Get configuration from environment variables
     aws_region = os.environ.get("AWS_REGION_NAME", "ap-northeast-1")
-    model_id = os.environ.get("BEDROCK_MODEL_ID", "jp.anthropic.claude-sonnet-4-6")
+    model_id = os.environ.get(
+        "BEDROCK_MODEL_ID",
+        "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    )
 
     # Get maximum tokens for the model (model-specific limit)
     max_tokens = get_max_tokens_for_model(model_id)

@@ -25,20 +25,11 @@ except ImportError:  # pragma: no cover
 
 
 _logger = get_logger()
-_ROUTER_MODEL_ID = os.environ.get("ROUTER_MODEL_ID", "jp.anthropic.claude-sonnet-4-6")
-UNROUTED_AGENT_ID = "unrouted"
-TIME_AGENT_ID = "time"
-_TIME_QUERY_KEYWORDS = (
-    "現在時刻",
-    "今の時刻",
-    "現在の時刻",
-    "時刻を取得",
-    "時間を取得",
-    "何時",
-    "what time",
-    "current time",
-    "time now",
+_ROUTER_MODEL_ID = os.environ.get(
+    "ROUTER_MODEL_ID",
+    "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
 )
+UNROUTED_AGENT_ID = "unrouted"
 
 
 def _log(level: str, event_type: str, data: dict) -> None:
@@ -99,19 +90,22 @@ def _build_router_system_prompt(
         "Do not assume hidden policies. Use only the provided request and agent metadata.",
         "",
         "Available routing options:",
+        f"- {UNROUTED_AGENT_ID}: Do not call execution agents. Use when no specialized agent is a strong match,"
+        " confidence is low, or the request is small-talk/chitchat not requiring tools.",
     ]
     for agent_id in sorted(available_agent_ids):
         lines.append(_build_agent_summary(agent_id, agent_cards.get(agent_id)))
     lines.append("")
-    if DEFAULT_AGENT_ID in available_agent_ids:
-        lines.extend([
+    lines.extend(
+        [
             "Routing rules:",
-            f"- If the request clearly matches a specialized agent's description or skills, select that agent.",
-            f"- For ambiguous, general-purpose, or conversational requests (greetings, meta-questions about available tools, etc.), select '{DEFAULT_AGENT_ID}'.",
-            f"- When in doubt, default to '{DEFAULT_AGENT_ID}'. Never leave a request unrouted.",
-        ])
+            "- If the request clearly matches a specialized agent's description or skills, select that agent.",
+            f"- If confidence is low or no strong match exists, select '{UNROUTED_AGENT_ID}'.",
+            f"- For short greetings/small-talk (e.g., 'hey', 'hello'), select '{UNROUTED_AGENT_ID}'.",
+        ]
+    )
     lines.append("")
-    lines.append("You MUST call select_agent exactly once with one of the available agent ids listed above.")
+    lines.append("You MUST call select_agent exactly once with one of the available agent ids listed above, or 'unrouted'.")
     return "\\n".join(lines)
 
 
@@ -144,7 +138,7 @@ def _route_with_router_model(
     )
     prompt = _build_router_system_prompt(available_agent_ids, agent_cards)
     agent = Agent(model=model, tools=[select_agent], system_prompt=prompt)
-    available_ids_csv = ", ".join(sorted(available_agent_ids))
+    available_ids_csv = ", ".join(sorted(available_agent_ids | {UNROUTED_AGENT_ID}))
     agent(
         f"Available agent ids in this environment: {available_ids_csv}.\\n"
         "Route this user request by calling select_agent with one available id.\\n"
@@ -152,21 +146,10 @@ def _route_with_router_model(
     )
 
     chosen = selected.get("agent_id", UNROUTED_AGENT_ID)
-    if chosen in available_agent_ids:
+    if chosen == UNROUTED_AGENT_ID or chosen in available_agent_ids:
         return chosen
-    # Fallback to file-creator if router model returned invalid id
-    if DEFAULT_AGENT_ID in available_agent_ids:
-        return DEFAULT_AGENT_ID
+    # Safer fallback for invalid id is abstain.
     return UNROUTED_AGENT_ID
-
-
-def _route_with_heuristics(text: str, available_agent_ids: Set[str]) -> str:
-    """Fast-path deterministic routes for high-confidence intents."""
-    normalized = (text or "").strip().lower()
-    if TIME_AGENT_ID in available_agent_ids:
-        if any(keyword in normalized for keyword in _TIME_QUERY_KEYWORDS):
-            return TIME_AGENT_ID
-    return ""
 
 
 def route_request(text: str, correlation_id: str = "") -> str:
@@ -181,58 +164,59 @@ def route_request(text: str, correlation_id: str = "") -> str:
     available_agent_ids: Set[str] = configured_ids
 
     if not available_agent_ids:
-        _log("INFO", "router_decision", {
-            "correlation_id": correlation_id,
-            "selected_agent_id": UNROUTED_AGENT_ID,
-            "fallback_reason": "no_configured_agents",
-        })
+        _log(
+            "INFO",
+            "router_decision",
+            {
+                "correlation_id": correlation_id,
+                "selected_agent_id": UNROUTED_AGENT_ID,
+                "fallback_reason": "no_configured_agents",
+            },
+        )
         return UNROUTED_AGENT_ID
 
     if not is_multi_agent():
-        selected_agent_id = DEFAULT_AGENT_ID if DEFAULT_AGENT_ID in available_agent_ids else sorted(available_agent_ids)[0]
-        _log("INFO", "router_decision", {
-            "correlation_id": correlation_id,
-            "selected_agent_id": selected_agent_id,
-            "fallback_reason": "single_agent_mode",
-        })
+        selected_agent_id = (
+            DEFAULT_AGENT_ID
+            if DEFAULT_AGENT_ID in available_agent_ids
+            else sorted(available_agent_ids)[0]
+        )
+        _log(
+            "INFO",
+            "router_decision",
+            {
+                "correlation_id": correlation_id,
+                "selected_agent_id": selected_agent_id,
+                "fallback_reason": "single_agent_mode",
+            },
+        )
         return selected_agent_id
 
     if not text or not text.strip():
-        _log("INFO", "router_decision", {
-            "correlation_id": correlation_id,
-            "selected_agent_id": UNROUTED_AGENT_ID,
-            "fallback_reason": "empty_text",
-        })
+        _log(
+            "INFO",
+            "router_decision",
+            {
+                "correlation_id": correlation_id,
+                "selected_agent_id": UNROUTED_AGENT_ID,
+                "fallback_reason": "empty_text",
+            },
+        )
         return UNROUTED_AGENT_ID
-
-    heuristic_agent_id = _route_with_heuristics(text, available_agent_ids)
-    if heuristic_agent_id:
-        selected_agent_id = heuristic_agent_id
-        fallback_reason = "heuristic_time_match"
-        if not get_agent_arn(heuristic_agent_id):
-            if DEFAULT_AGENT_ID in available_agent_ids and get_agent_arn(DEFAULT_AGENT_ID):
-                selected_agent_id = DEFAULT_AGENT_ID
-                fallback_reason = "heuristic_missing_agent_arn_fallback_default"
-            else:
-                selected_agent_id = UNROUTED_AGENT_ID
-                fallback_reason = "heuristic_missing_agent_arn"
-        _log("INFO", "router_decision", {
-            "correlation_id": correlation_id,
-            "requested_agent_id": heuristic_agent_id,
-            "selected_agent_id": selected_agent_id,
-            "fallback_reason": fallback_reason,
-        })
-        return selected_agent_id
 
     refresh_missing_cards()
     agent_cards = get_all_cards()
 
     try:
-        _log("INFO", "router_agent_inventory", {
-            "correlation_id": correlation_id,
-            "available_agent_ids": sorted(available_agent_ids),
-            "agent_card_ids": sorted(agent_cards.keys()),
-        })
+        _log(
+            "INFO",
+            "router_agent_inventory",
+            {
+                "correlation_id": correlation_id,
+                "available_agent_ids": sorted(available_agent_ids),
+                "agent_card_ids": sorted(agent_cards.keys()),
+            },
+        )
         agent_id = _route_with_router_model(
             text=text,
             correlation_id=correlation_id,
@@ -241,43 +225,43 @@ def route_request(text: str, correlation_id: str = "") -> str:
         )
         selected_agent_id = agent_id
         fallback_reason = ""
-        if agent_id not in available_agent_ids:
-            if DEFAULT_AGENT_ID in available_agent_ids and get_agent_arn(DEFAULT_AGENT_ID):
-                selected_agent_id = DEFAULT_AGENT_ID
-                fallback_reason = "invalid_agent_id_fallback_default"
-            else:
-                selected_agent_id = UNROUTED_AGENT_ID
-                fallback_reason = "invalid_agent_id"
-        elif not get_agent_arn(agent_id):
-            if DEFAULT_AGENT_ID in available_agent_ids and get_agent_arn(DEFAULT_AGENT_ID):
-                selected_agent_id = DEFAULT_AGENT_ID
-                fallback_reason = "missing_agent_arn_fallback_default"
-            else:
-                selected_agent_id = UNROUTED_AGENT_ID
-                fallback_reason = "missing_agent_arn"
+        if agent_id not in available_agent_ids and agent_id != UNROUTED_AGENT_ID:
+            selected_agent_id = UNROUTED_AGENT_ID
+            fallback_reason = "invalid_agent_id"
+        elif agent_id != UNROUTED_AGENT_ID and not get_agent_arn(agent_id):
+            selected_agent_id = UNROUTED_AGENT_ID
+            fallback_reason = "missing_agent_arn"
 
-        _log("INFO", "router_decision", {
-            "correlation_id": correlation_id,
-            "requested_agent_id": agent_id,
-            "selected_agent_id": selected_agent_id,
-            "fallback_reason": fallback_reason,
-        })
+        _log(
+            "INFO",
+            "router_decision",
+            {
+                "correlation_id": correlation_id,
+                "requested_agent_id": agent_id,
+                "selected_agent_id": selected_agent_id,
+                "fallback_reason": fallback_reason,
+            },
+        )
         return selected_agent_id
     except Exception as e:
-        # Fallback to file-creator on router exceptions when available
         fallback_id = UNROUTED_AGENT_ID
         fallback_reason = "router_exception"
-        if DEFAULT_AGENT_ID in available_agent_ids and get_agent_arn(DEFAULT_AGENT_ID):
-            fallback_id = DEFAULT_AGENT_ID
-            fallback_reason = "router_exception_fallback_default"
-        _log("WARN", "router_fallback_default", {
-            "correlation_id": correlation_id,
-            "error": str(e),
-            "error_type": type(e).__name__,
-        })
-        _log("INFO", "router_decision", {
-            "correlation_id": correlation_id,
-            "selected_agent_id": fallback_id,
-            "fallback_reason": fallback_reason,
-        })
+        _log(
+            "WARN",
+            "router_fallback_default",
+            {
+                "correlation_id": correlation_id,
+                "error": str(e),
+                "error_type": type(e).__name__,
+            },
+        )
+        _log(
+            "INFO",
+            "router_decision",
+            {
+                "correlation_id": correlation_id,
+                "selected_agent_id": fallback_id,
+                "fallback_reason": fallback_reason,
+            },
+        )
         return fallback_id

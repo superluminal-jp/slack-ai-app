@@ -11,7 +11,7 @@ from agent_card import get_agent_card, get_health_status
 
 def test_agent_card_name_and_protocol() -> None:
     card = get_agent_card()
-    assert card["name"] == "SlackAI-DocsAgent"
+    assert card["name"] == "SlackAI-DocsAgent (Slack AI App)"
     assert card["protocol"] == "A2A"
     assert card["protocolVersion"] == "1.0"
 
@@ -37,4 +37,4 @@ def test_health_status() -> None:
 def test_card_is_json_serializable() -> None:
     card = get_agent_card()
     serialized = json.dumps(card)
-    assert "SlackAI-DocsAgent" in serialized
+    assert "SlackAI-DocsAgent (Slack AI App)" in serialized

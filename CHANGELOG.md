@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Execution agent source layout**: Python source and tests for each execution agent moved from `cdk/lib/<type>/agent/<agent>/` to `execution-zones/<agent>/src/` and `execution-zones/<agent>/tests/`.
 - **Verification agent source layout**: Python source and tests moved from `verification-zones/verification-agent/agent/verification-agent/` to `verification-zones/verification-agent/src/` and `verification-zones/verification-agent/tests/`.
 - **Verification zone CDK imports**: `verification-zones/verification-agent/cdk/` now imports shared utilities from `@slack-ai-app/cdk-tooling` instead of local `lib/utils/` copies.
-- **Bedrock model ID**: All agents updated to use `jp.anthropic.claude-sonnet-4-6` (cross-region inference profile for ap-northeast-1).
+- **Bedrock model ID**: All agents updated to use `jp.jp.anthropic.claude-sonnet-4-5-20250929-v1:0` (cross-region inference profile for ap-northeast-1).
 - **ts-jest configuration**: `isolatedModules` moved from inline Jest transform option to `tsconfig.json` `compilerOptions` per ts-jest v29+ recommendation; eliminates deprecation warning.
 
 ### Removed
@@ -47,7 +47,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Execution Agent `fetch_url` tool**: Fetches and extracts text content from URLs so users can ask the agent to summarize web pages. Includes SSRF prevention (private IP blocking, scheme validation), HTML text extraction via BeautifulSoup, and size/truncation limits.
 - **Utility scripts**: `scripts/force-execution-redeploy.sh` (quick single-stack image rebuild), `scripts/check-execution-deploy-status.sh` (runtime status check)
-
 
 - **Execution Agent**: Single system prompt source (`system_prompt.py`), tools `get_current_time`, `get_business_document_guidelines`, `get_presentation_slide_guidelines`, `search_docs`; docs for system prompt and docs access.
 - **Documentation standards**: New [docs/DOCUMENTATION_STANDARDS.md](docs/DOCUMENTATION_STANDARDS.md) defining best practices for all project documentation (when to update, structure, writing style, CHANGELOG format, module README requirements, API docs, quality checklist). CLAUDE.md, docs/README.md, README.md, CONTRIBUTING.md, cdk/README.md, and agent READMEs updated to reference and apply these standards; CLAUDE.md Commands section corrected.

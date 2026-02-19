@@ -76,7 +76,7 @@ export class VerificationStack extends cdk.Stack {
       "";
     if (!slackBotToken) {
       throw new Error(
-        "SLACK_BOT_TOKEN is required. Set it via environment variable (SLACK_BOT_TOKEN) or config file (slackBotToken)."
+        "SLACK_BOT_TOKEN is required. Set it via environment variable (SLACK_BOT_TOKEN) or config file (slackBotToken).",
       );
     }
 
@@ -86,7 +86,7 @@ export class VerificationStack extends cdk.Stack {
       "";
     if (!slackSigningSecret) {
       throw new Error(
-        "SLACK_SIGNING_SECRET is required. Set it via environment variable (SLACK_SIGNING_SECRET) or config file (slackSigningSecret)."
+        "SLACK_SIGNING_SECRET is required. Set it via environment variable (SLACK_SIGNING_SECRET) or config file (slackSigningSecret).",
       );
     }
 
@@ -97,15 +97,15 @@ export class VerificationStack extends cdk.Stack {
     const bedrockModelId =
       props.bedrockModelId ||
       this.node.tryGetContext("bedrockModelId") ||
-      "jp.anthropic.claude-sonnet-4-6";
-const slackSigningSecretResource = new secretsmanager.Secret(
+      "jp.anthropic.claude-sonnet-4-5-20250929-v1:0";
+    const slackSigningSecretResource = new secretsmanager.Secret(
       this,
       "SlackSigningSecret",
       {
         secretName: `${this.stackName}/slack/signing-secret`,
         description: "Slack app signing secret for request verification",
         secretStringValue: cdk.SecretValue.unsafePlainText(slackSigningSecret),
-      }
+      },
     );
 
     const slackBotTokenSecret = new secretsmanager.Secret(
@@ -115,21 +115,31 @@ const slackSigningSecretResource = new secretsmanager.Secret(
         secretName: `${this.stackName}/slack/bot-token`,
         description: "Slack bot OAuth token",
         secretStringValue: cdk.SecretValue.unsafePlainText(slackBotToken),
-      }
+      },
     );
 
     // Order: DynamoDB tables and SQS/Secrets first; VerificationAgentRuntime depends on all of them
     const tokenStorage = new TokenStorage(this, "TokenStorage");
     const eventDedupe = new EventDedupe(this, "EventDedupe");
-    const existenceCheckCache = new ExistenceCheckCache(this, "ExistenceCheckCache");
+    const existenceCheckCache = new ExistenceCheckCache(
+      this,
+      "ExistenceCheckCache",
+    );
     const whitelistConfig = new WhitelistConfig(this, "WhitelistConfig");
     const rateLimit = new RateLimit(this, "RateLimit");
-    const fileExchangeBucket = new FileExchangeBucket(this, "FileExchangeBucket");
+    const fileExchangeBucket = new FileExchangeBucket(
+      this,
+      "FileExchangeBucket",
+    );
 
-    const agentInvocationDlq = new sqs.Queue(this, "AgentInvocationRequestDlq", {
-      queueName: `${this.stackName}-agent-invocation-dlq`,
-      retentionPeriod: cdk.Duration.days(14),
-    });
+    const agentInvocationDlq = new sqs.Queue(
+      this,
+      "AgentInvocationRequestDlq",
+      {
+        queueName: `${this.stackName}-agent-invocation-dlq`,
+        retentionPeriod: cdk.Duration.days(14),
+      },
+    );
 
     // Visibility timeout >= 6 * Agent Invoker Lambda timeout (900s) per AWS SQS+Lambda best practice; prevents redrive during long runs
     const agentInvocationQueue = new sqs.Queue(this, "AgentInvocationRequest", {
@@ -148,9 +158,8 @@ const slackSigningSecretResource = new secretsmanager.Secret(
       props.verificationAgentName ||
       this.node.tryGetContext("verificationAgentName") ||
       `SlackAI_VerificationAgent_${this.stackName.includes("-Prod") ? "Prod" : "Dev"}`;
-    const contextExecutionAgentArnsRaw = this.node.tryGetContext(
-      "executionAgentArns"
-    );
+    const contextExecutionAgentArnsRaw =
+      this.node.tryGetContext("executionAgentArns");
     const contextExecutionAgentArns =
       contextExecutionAgentArnsRaw &&
       typeof contextExecutionAgentArnsRaw === "object" &&
@@ -165,18 +174,22 @@ const slackSigningSecretResource = new secretsmanager.Secret(
     // ECR before Runtime (Runtime needs containerImageUri). SlackPoster and LogGroup before Runtime (optional queue and log group).
     this.verificationAgentEcr = new VerificationAgentEcr(
       this,
-      "VerificationAgentEcr"
+      "VerificationAgentEcr",
     );
 
     const slackPoster = new SlackPoster(this, "SlackPoster", {
       stackName: this.stackName,
     });
 
-    const errorDebugLogGroup = new logs.LogGroup(this, "VerificationAgentErrorLogs", {
-      logGroupName: `/aws/bedrock-agentcore/${this.stackName}-verification-agent-errors`,
-      retention: logs.RetentionDays.ONE_WEEK,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-    });
+    const errorDebugLogGroup = new logs.LogGroup(
+      this,
+      "VerificationAgentErrorLogs",
+      {
+        logGroupName: `/aws/bedrock-agentcore/${this.stackName}-verification-agent-errors`,
+        retention: logs.RetentionDays.ONE_WEEK,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      },
+    );
 
     this.verificationAgentRuntime = new VerificationAgentRuntime(
       this,
@@ -198,7 +211,7 @@ const slackSigningSecretResource = new secretsmanager.Secret(
         slackPostRequestQueue: slackPoster.queue,
         errorDebugLogGroup: errorDebugLogGroup,
         fileExchangeBucket: fileExchangeBucket.bucket,
-      }
+      },
     );
     this.verificationAgentRuntimeArn = this.verificationAgentRuntime.runtimeArn;
 
@@ -231,7 +244,9 @@ const slackSigningSecretResource = new secretsmanager.Secret(
 
     tokenStorage.table.grantReadWriteData(this.slackEventHandler.function);
     eventDedupe.table.grantReadWriteData(this.slackEventHandler.function);
-    existenceCheckCache.table.grantReadWriteData(this.slackEventHandler.function);
+    existenceCheckCache.table.grantReadWriteData(
+      this.slackEventHandler.function,
+    );
     whitelistConfig.table.grantReadData(this.slackEventHandler.function);
     rateLimit.table.grantReadWriteData(this.slackEventHandler.function);
 
@@ -263,8 +278,7 @@ const slackSigningSecretResource = new secretsmanager.Secret(
 
     new cloudwatch.Alarm(this, "WhitelistConfigLoadErrorAlarm", {
       alarmName: `${this.stackName}-WhitelistConfigLoadError`,
-      alarmDescription:
-        "Alert when whitelist configuration load errors occur",
+      alarmDescription: "Alert when whitelist configuration load errors occur",
       metric: new cloudwatch.Metric({
         namespace: "SlackEventHandler",
         metricName: "WhitelistConfigLoadErrors",
@@ -314,7 +328,8 @@ const slackSigningSecretResource = new secretsmanager.Secret(
 
     new cdk.CfnOutput(this, "SlackEventHandlerUrl", {
       value: this.functionUrl,
-      description: "Slack Event Handler Function URL (for Slack Event Subscriptions)",
+      description:
+        "Slack Event Handler Function URL (for Slack Event Subscriptions)",
       exportName: `${this.stackName}-SlackEventHandlerUrl`,
     });
 

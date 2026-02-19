@@ -9,7 +9,11 @@ import * as cdk from "aws-cdk-lib";
 import { Aspects } from "aws-cdk-lib";
 import * as path from "path";
 import { DocsAgentStack } from "../lib/docs-agent-stack";
-import { loadCdkConfig, applyEnvOverrides, CdkConfig } from "../lib/types/cdk-config";
+import {
+  loadCdkConfig,
+  applyEnvOverrides,
+  CdkConfig,
+} from "../lib/types/cdk-config";
 import {
   LogRetentionAspect,
   CostAllocationTagAspect,
@@ -23,7 +27,8 @@ const DEFAULT_ENVIRONMENT = "dev";
 const DEFAULT_REGION = "ap-northeast-1";
 type DeploymentEnvironment = (typeof VALID_ENVIRONMENTS)[number];
 
-const outdir = process.env.CDK_OUTDIR || path.join(path.dirname(__dirname), "cdk.out");
+const outdir =
+  process.env.CDK_OUTDIR || path.join(path.dirname(__dirname), "cdk.out");
 const app = new cdk.App({ outdir });
 
 logInfo("Docs Agent CDK app starting", { phase: "config" });
@@ -35,7 +40,9 @@ function getDeploymentEnvironment(): DeploymentEnvironment {
     process.env.DEPLOYMENT_ENV ||
     app.node.tryGetContext("deploymentEnv") ||
     DEFAULT_ENVIRONMENT;
-  const deploymentEnv = deploymentEnvRaw.toLowerCase().trim() as DeploymentEnvironment;
+  const deploymentEnv = deploymentEnvRaw
+    .toLowerCase()
+    .trim() as DeploymentEnvironment;
 
   if (!VALID_ENVIRONMENTS.includes(deploymentEnv)) {
     CdkError.throw({
@@ -47,7 +54,9 @@ function getDeploymentEnvironment(): DeploymentEnvironment {
   }
 
   if (!process.env.DEPLOYMENT_ENV && !app.node.tryGetContext("deploymentEnv")) {
-    logWarn(`DEPLOYMENT_ENV not set. Defaulting to '${DEFAULT_ENVIRONMENT}'.`, { phase: "config" });
+    logWarn(`DEPLOYMENT_ENV not set. Defaulting to '${DEFAULT_ENVIRONMENT}'.`, {
+      phase: "config",
+    });
   }
   return deploymentEnv;
 }
@@ -60,23 +69,29 @@ function loadConfiguration(env: DeploymentEnvironment): CdkConfig | null {
     const fileConfig = loadCdkConfig(env, cdkDir);
     return applyEnvOverrides(fileConfig);
   } catch {
-    logWarn("Configuration file load failed; falling back to context or defaults.", {
-      phase: "config",
-    });
+    logWarn(
+      "Configuration file load failed; falling back to context or defaults.",
+      {
+        phase: "config",
+      },
+    );
     return null;
   }
 }
 
 const config = loadConfiguration(deploymentEnv);
 logInfo(
-  config ? "Configuration loaded from file or env overrides." : "Using context or defaults.",
-  { phase: "config", context: { deploymentEnv } }
+  config
+    ? "Configuration loaded from file or env overrides."
+    : "Using context or defaults.",
+  { phase: "config", context: { deploymentEnv } },
 );
 
 function getConfigValue<T>(key: string, defaultValue: T): T {
   const contextValue = app.node.tryGetContext(key);
   if (contextValue !== undefined) return contextValue as T;
-  if (config && key in config) return (config as unknown as Record<string, unknown>)[key] as T;
+  if (config && key in config)
+    return (config as unknown as Record<string, unknown>)[key] as T;
   return defaultValue;
 }
 
@@ -85,13 +100,22 @@ function getConfigString(key: string, defaultValue = ""): string {
 }
 
 const region = getConfigValue("awsRegion", DEFAULT_REGION);
-const baseDocsStackName = getConfigValue("docsExecutionStackName", "SlackAI-DocsExecution");
+const baseDocsStackName = getConfigValue(
+  "docsExecutionStackName",
+  "SlackAI-DocsExecution",
+);
 const environmentSuffix = deploymentEnv === "prod" ? "Prod" : "Dev";
 const docsStackName = `${baseDocsStackName}-${environmentSuffix}`;
 const verificationAccountId = getConfigString("verificationAccountId");
 const executionAccountId = getConfigString("executionAccountId");
-const docsAgentName = getConfigString("docsAgentName", `SlackAI_DocsAgent_${environmentSuffix}`);
-const bedrockModelId = getConfigString("bedrockModelId", "jp.anthropic.claude-sonnet-4-6");
+const docsAgentName = getConfigString(
+  "docsAgentName",
+  `SlackAI_DocsAgent_${environmentSuffix}`,
+);
+const bedrockModelId = getConfigString(
+  "bedrockModelId",
+  "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
+);
 
 if (config) {
   app.node.setContext("awsRegion", region);
@@ -103,7 +127,10 @@ if (config) {
   app.node.setContext("docsAgentName", docsAgentName);
 }
 
-const defaultEnv: cdk.Environment = { account: process.env.CDK_DEFAULT_ACCOUNT, region };
+const defaultEnv: cdk.Environment = {
+  account: process.env.CDK_DEFAULT_ACCOUNT,
+  region,
+};
 const executionEnv: cdk.Environment = executionAccountId
   ? { account: executionAccountId, region }
   : defaultEnv;
@@ -115,6 +142,9 @@ new DocsAgentStack(app, docsStackName, {
   verificationAccountId: verificationAccountId || undefined,
   docsAgentName: docsAgentName || undefined,
 });
-logInfo("Docs Agent stack created.", { phase: "stack", context: { stackName: docsStackName } });
+logInfo("Docs Agent stack created.", {
+  phase: "stack",
+  context: { stackName: docsStackName },
+});
 
 app.synth();

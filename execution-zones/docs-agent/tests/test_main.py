@@ -29,7 +29,7 @@ class TestJsonRpc:
         resp = main.handle_invocation_body(b'{"jsonrpc":"2.0","method":"get_agent_card","id":"card"}')
         assert resp["jsonrpc"] == "2.0"
         assert resp["id"] == "card"
-        assert resp["result"]["name"] == "SlackAI-DocsAgent"
+        assert resp["result"]["name"] == "SlackAI-DocsAgent (Slack AI App)"
 
     def test_execute_task_missing_params_returns_32602(self):
         import main

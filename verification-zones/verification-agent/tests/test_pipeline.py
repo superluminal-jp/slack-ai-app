@@ -671,70 +671,7 @@ class TestPipelineAgentAttribution:
 
 
 class TestPipelineDirectResponse:
-    """Pipeline must answer directly when router returns DIRECT_RESPONSE_AGENT_ID."""
-
-    @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.invoke_execution_agent")
-    @patch("pipeline.authorize_request")
-    @patch("pipeline.check_entity_existence")
-    @patch("pipeline.route_request", return_value="direct")
-    @patch("pipeline.get_agent_arn", return_value="")
-    @patch("pipeline.get_agent_ids", return_value=["docs", "file-creator"])
-    @patch("pipeline.get_all_cards", return_value={
-        "docs": {"name": "DocsAgent", "description": "Docs search"},
-        "file-creator": {"name": "FileCreatorAgent", "description": "File creation"},
-    })
-    def test_direct_response_sends_agent_list_to_slack(
-        self, _mock_cards, _mock_ids, _mock_arn, _mock_route,
-        mock_existence, mock_auth, mock_invoke, mock_slack_post
-    ):
-        """When routed to 'direct', pipeline posts agent list to Slack without calling execution agent."""
-        mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
-
-        with patch("pipeline.check_rate_limit") as mock_rate:
-            mock_rate.return_value = (True, None)
-            from pipeline import run
-
-            result = run({"prompt": json.dumps(_payload(text="接続可能なエージェントの一覧を表示。どのエージェントも呼び出さない。"))})
-
-        # Slack post must be called with an agent list response
-        mock_slack_post.assert_called_once()
-        posted_text = mock_slack_post.call_args[1].get("text", "")
-        assert "docs" in posted_text or "DocsAgent" in posted_text
-        assert "file-creator" in posted_text or "FileCreatorAgent" in posted_text
-
-        # Execution agent must NOT be called
-        mock_invoke.assert_not_called()
-
-        # Pipeline returns completed status
-        result_data = json.loads(result)
-        assert result_data["status"] == "completed"
-
-    @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.invoke_execution_agent")
-    @patch("pipeline.authorize_request")
-    @patch("pipeline.check_entity_existence")
-    @patch("pipeline.route_request", return_value="direct")
-    @patch("pipeline.get_agent_arn", return_value="")
-    @patch("pipeline.get_agent_ids", return_value=[])
-    @patch("pipeline.get_all_cards", return_value={})
-    def test_direct_response_with_no_agents_configured(
-        self, _mock_cards, _mock_ids, _mock_arn, _mock_route,
-        mock_existence, mock_auth, mock_invoke, mock_slack_post
-    ):
-        """When no agents configured, direct response still posts a message (no error)."""
-        mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
-
-        with patch("pipeline.check_rate_limit") as mock_rate:
-            mock_rate.return_value = (True, None)
-            from pipeline import run
-
-            result = run({"prompt": json.dumps(_payload(text="エージェント一覧"))})
-
-        mock_slack_post.assert_called_once()
-        mock_invoke.assert_not_called()
-        result_data = json.loads(result)
-        assert result_data["status"] == "completed"
+    """Pipeline should answer via unrouted fallback when no execution agent is selected."""
 
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.invoke_execution_agent")
