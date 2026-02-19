@@ -564,7 +564,7 @@ class Test021FastAPIDirectRouting:
 
     def test_no_private_api_usage(self):
         """main.py source has zero occurrences of _handle_invocation."""
-        main_path = os.path.join(os.path.dirname(__file__), "..", "main.py")
+        main_path = os.path.join(os.path.dirname(__file__), "../src/main.py")
         with open(main_path) as f:
             source = f.read()
         assert "_handle_invocation" not in source, (
@@ -573,7 +573,7 @@ class Test021FastAPIDirectRouting:
 
     def test_no_bedrock_agentcore_import(self):
         """main.py source has zero occurrences of bedrock_agentcore."""
-        main_path = os.path.join(os.path.dirname(__file__), "..", "main.py")
+        main_path = os.path.join(os.path.dirname(__file__), "../src/main.py")
         with open(main_path) as f:
             source = f.read()
         assert "bedrock_agentcore" not in source, (
@@ -582,14 +582,14 @@ class Test021FastAPIDirectRouting:
 
     def test_uvicorn_run_uses_port_9000(self):
         """uvicorn.run(app, ..., port=9000) must be present in main.py source."""
-        main_path = os.path.join(os.path.dirname(__file__), "..", "main.py")
+        main_path = os.path.join(os.path.dirname(__file__), "../src/main.py")
         with open(main_path) as f:
             source = f.read()
         assert "port=9000" in source, "main.py must use port=9000 for A2A protocol"
 
     def test_no_strands_import(self):
         """main.py should not import strands (uses FastAPI directly)."""
-        main_path = os.path.join(os.path.dirname(__file__), "..", "main.py")
+        main_path = os.path.join(os.path.dirname(__file__), "../src/main.py")
         with open(main_path) as f:
             source = f.read()
         assert "from strands" not in source, "main.py should not import strands"
@@ -600,7 +600,7 @@ class TestUS3VersionConstraints:
 
     def test_no_loose_version_constraints(self):
         """requirements.txt must not contain >= constraints (all must be ~= or ==)."""
-        req_path = os.path.join(os.path.dirname(__file__), "..", "requirements.txt")
+        req_path = os.path.join(os.path.dirname(__file__), "../src/requirements.txt")
         with open(req_path) as f:
             lines = f.readlines()
         for line in lines:
@@ -613,7 +613,7 @@ class TestUS3VersionConstraints:
 
     def test_no_bedrock_agentcore_dependency(self):
         """requirements.txt must not list bedrock-agentcore (unused after migration)."""
-        req_path = os.path.join(os.path.dirname(__file__), "..", "requirements.txt")
+        req_path = os.path.join(os.path.dirname(__file__), "../src/requirements.txt")
         with open(req_path) as f:
             content = f.read()
         assert "bedrock-agentcore" not in content, (

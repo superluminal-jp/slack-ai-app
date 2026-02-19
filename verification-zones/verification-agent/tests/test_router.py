@@ -195,3 +195,54 @@ class TestRouter:
 
         route_request("hello", correlation_id="corr-7")
         mock_refresh.assert_called_once()
+
+    # --- Direct response tests ---
+
+    @patch("router._route_with_router_model")
+    @patch("router.is_multi_agent", return_value=True)
+    @patch("router.get_agent_ids", return_value=["file-creator", "docs"])
+    def test_direct_response_heuristic_bypasses_model_for_agent_list(
+        self, _mock_get_agent_ids, _mock_multi, mock_route_model
+    ):
+        """'エージェント一覧' keyword should route to 'direct' without calling the router model."""
+        from router import route_request, DIRECT_RESPONSE_AGENT_ID
+
+        result = route_request("接続可能なエージェントの一覧を表示。どのエージェントも呼び出さない。", correlation_id="corr-d1")
+        assert result == DIRECT_RESPONSE_AGENT_ID
+        mock_route_model.assert_not_called()
+
+    @patch("router._route_with_router_model")
+    @patch("router.is_multi_agent", return_value=True)
+    @patch("router.get_agent_ids", return_value=["file-creator", "docs"])
+    def test_direct_response_heuristic_for_no_agent_instruction(
+        self, _mock_get_agent_ids, _mock_multi, mock_route_model
+    ):
+        """'どのエージェントも呼び出さない' keyword alone routes to 'direct'."""
+        from router import route_request, DIRECT_RESPONSE_AGENT_ID
+
+        result = route_request("どのエージェントも呼び出さない。自己紹介して。", correlation_id="corr-d2")
+        assert result == DIRECT_RESPONSE_AGENT_ID
+        mock_route_model.assert_not_called()
+
+    @patch("router.refresh_missing_cards")
+    @patch("router.get_agent_ids", return_value=["file-creator", "docs"])
+    @patch("router._route_with_router_model", return_value="direct")
+    @patch("router.is_multi_agent", return_value=True)
+    def test_model_selected_direct_is_returned(
+        self, _mock_multi, _mock_route_model, _mock_get_agent_ids, _mock_refresh
+    ):
+        """When the router model selects 'direct', route_request should return DIRECT_RESPONSE_AGENT_ID."""
+        from router import route_request, DIRECT_RESPONSE_AGENT_ID
+
+        result = route_request("利用可能なエージェント", correlation_id="corr-d3")
+        assert result == DIRECT_RESPONSE_AGENT_ID
+
+    def test_router_system_prompt_includes_direct_option(self):
+        """Routing prompt should include 'direct' as a routing option."""
+        from router import _build_router_system_prompt
+
+        prompt = _build_router_system_prompt(
+            {"file-creator", "docs"},
+            {"file-creator": None, "docs": None},
+        )
+        assert "direct" in prompt

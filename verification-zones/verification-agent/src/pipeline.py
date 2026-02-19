@@ -18,8 +18,8 @@ from existence_check import check_entity_existence, ExistenceCheckError
 from authorization import authorize_request
 from rate_limiter import check_rate_limit, RateLimitExceededError
 from a2a_client import invoke_execution_agent
-from agent_registry import initialize_registry, get_agent_arn
-from router import route_request, UNROUTED_AGENT_ID
+from agent_registry import initialize_registry, get_agent_arn, get_agent_ids, get_all_cards
+from router import route_request, UNROUTED_AGENT_ID, DIRECT_RESPONSE_AGENT_ID
 from slack_post_request import send_slack_post_request, build_file_artifact, build_file_artifact_s3
 from error_debug import log_execution_error, log_execution_agent_error_response
 from logger_util import get_logger, log
@@ -83,6 +83,22 @@ def _get_user_friendly_error(error_code: str, fallback_message: str = "") -> str
     if fallback_message:
         return fallback_message
     return DEFAULT_ERROR_MESSAGE
+
+
+def _build_agent_list_response(agent_ids: list, agent_cards: dict) -> str:
+    """Build a Japanese response listing available execution agents from registry data."""
+    if not agent_ids:
+        return "現在、接続可能な実行エージェントが設定されていません。"
+    lines = ["接続可能なエージェントの一覧です："]
+    for agent_id in sorted(agent_ids):
+        card = agent_cards.get(agent_id) or {}
+        name = card.get("name", agent_id) if isinstance(card, dict) else agent_id
+        description = card.get("description", "") if isinstance(card, dict) else ""
+        if description:
+            lines.append(f"• *{name}* (`{agent_id}`): {description}")
+        else:
+            lines.append(f"• *{name}* (`{agent_id}`)")
+    return "\n".join(lines)
 
 
 def parse_file_artifact(result_data: dict) -> Optional[Tuple[bytes, str, str]]:
@@ -359,6 +375,23 @@ def run(payload: dict) -> str:
                 "has_target_arn": bool(target_arn),
                 "target_runtime_id": target_runtime_id,
             })
+
+            if agent_id == DIRECT_RESPONSE_AGENT_ID:
+                is_processing = False
+                response_text = _build_agent_list_response(get_agent_ids(), get_all_cards())
+                send_slack_post_request(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    text=response_text,
+                    bot_token=bot_token,
+                    correlation_id=correlation_id,
+                    message_ts=message_ts,
+                )
+                _log("INFO", "direct_response_sent", {
+                    "correlation_id": correlation_id,
+                    "channel": channel,
+                })
+                return json.dumps({"status": "completed", "correlation_id": correlation_id})
 
             if agent_id == UNROUTED_AGENT_ID or not target_arn:
                 _log("WARN", "execution_agent_not_routed", {

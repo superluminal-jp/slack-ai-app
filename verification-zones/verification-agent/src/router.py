@@ -29,6 +29,7 @@ _ROUTER_MODEL_ID = os.environ.get(
     "ROUTER_MODEL_ID", "anthropic.claude-sonnet-4-6-20260219-v1:0"
 )
 UNROUTED_AGENT_ID = "unrouted"
+DIRECT_RESPONSE_AGENT_ID = "direct"
 TIME_AGENT_ID = "time"
 _TIME_QUERY_KEYWORDS = (
     "現在時刻",
@@ -40,6 +41,16 @@ _TIME_QUERY_KEYWORDS = (
     "what time",
     "current time",
     "time now",
+)
+_DIRECT_RESPONSE_KEYWORDS = (
+    "どのエージェントも呼び出さない",
+    "エージェントを呼び出さずに",
+    "エージェントを使わずに",
+    "エージェント一覧",
+    "エージェントの一覧",
+    "接続可能なエージェント",
+    "利用可能なエージェント",
+    "使えるエージェント",
 )
 
 
@@ -101,19 +112,29 @@ def _build_router_system_prompt(
         "Do not assume hidden policies. Use only the provided request and agent metadata.",
         "",
         "Available routing options:",
+        f"- {DIRECT_RESPONSE_AGENT_ID}: Answer directly without calling any execution agent."
+        " Use when the request is a meta-question about the system (e.g., listing available agents,"
+        " what the system can do) or when the user explicitly asks not to call any agent.",
     ]
     for agent_id in sorted(available_agent_ids):
         lines.append(_build_agent_summary(agent_id, agent_cards.get(agent_id)))
     lines.append("")
+    lines.append("Routing rules:")
+    lines.append(
+        f"- If the request is a meta-question about available agents or explicitly instructs"
+        f" not to call any agent, select '{DIRECT_RESPONSE_AGENT_ID}'."
+    )
     if DEFAULT_AGENT_ID in available_agent_ids:
         lines.extend([
-            "Routing rules:",
             f"- If the request clearly matches a specialized agent's description or skills, select that agent.",
-            f"- For ambiguous, general-purpose, or conversational requests (greetings, meta-questions about available tools, etc.), select '{DEFAULT_AGENT_ID}'.",
+            f"- For ambiguous, general-purpose, or conversational requests (greetings, etc.), select '{DEFAULT_AGENT_ID}'.",
             f"- When in doubt, default to '{DEFAULT_AGENT_ID}'. Never leave a request unrouted.",
         ])
     lines.append("")
-    lines.append("You MUST call select_agent exactly once with one of the available agent ids listed above.")
+    lines.append(
+        f"You MUST call select_agent exactly once with one of: {DIRECT_RESPONSE_AGENT_ID},"
+        " or one of the execution agent ids listed above."
+    )
     return "\\n".join(lines)
 
 
@@ -146,7 +167,9 @@ def _route_with_router_model(
     )
     prompt = _build_router_system_prompt(available_agent_ids, agent_cards)
     agent = Agent(model=model, tools=[select_agent], system_prompt=prompt)
-    available_ids_csv = ", ".join(sorted(available_agent_ids))
+    # Include "direct" so the model can select it when appropriate.
+    available_ids_with_direct = sorted(available_agent_ids | {DIRECT_RESPONSE_AGENT_ID})
+    available_ids_csv = ", ".join(available_ids_with_direct)
     agent(
         f"Available agent ids in this environment: {available_ids_csv}.\\n"
         "Route this user request by calling select_agent with one available id.\\n"
@@ -154,12 +177,18 @@ def _route_with_router_model(
     )
 
     chosen = selected.get("agent_id", UNROUTED_AGENT_ID)
-    if chosen in available_agent_ids:
+    if chosen == DIRECT_RESPONSE_AGENT_ID or chosen in available_agent_ids:
         return chosen
     # Fallback to file-creator if router model returned invalid id
     if DEFAULT_AGENT_ID in available_agent_ids:
         return DEFAULT_AGENT_ID
     return UNROUTED_AGENT_ID
+
+
+def _is_direct_response_request(text: str) -> bool:
+    """Detect requests the verification agent can answer directly without calling any execution agent."""
+    normalized = (text or "").strip()
+    return any(keyword in normalized for keyword in _DIRECT_RESPONSE_KEYWORDS)
 
 
 def _route_with_heuristics(text: str, available_agent_ids: Set[str]) -> str:
@@ -207,6 +236,15 @@ def route_request(text: str, correlation_id: str = "") -> str:
         })
         return UNROUTED_AGENT_ID
 
+    # Direct response fast-path: verification agent answers without calling any execution agent.
+    if _is_direct_response_request(text):
+        _log("INFO", "router_decision", {
+            "correlation_id": correlation_id,
+            "selected_agent_id": DIRECT_RESPONSE_AGENT_ID,
+            "fallback_reason": "direct_response_heuristic",
+        })
+        return DIRECT_RESPONSE_AGENT_ID
+
     heuristic_agent_id = _route_with_heuristics(text, available_agent_ids)
     if heuristic_agent_id:
         selected_agent_id = heuristic_agent_id
@@ -243,7 +281,9 @@ def route_request(text: str, correlation_id: str = "") -> str:
         )
         selected_agent_id = agent_id
         fallback_reason = ""
-        if agent_id not in available_agent_ids:
+        if agent_id == DIRECT_RESPONSE_AGENT_ID:
+            pass  # Always valid — no ARN lookup needed
+        elif agent_id not in available_agent_ids:
             if DEFAULT_AGENT_ID in available_agent_ids and get_agent_arn(DEFAULT_AGENT_ID):
                 selected_agent_id = DEFAULT_AGENT_ID
                 fallback_reason = "invalid_agent_id_fallback_default"
