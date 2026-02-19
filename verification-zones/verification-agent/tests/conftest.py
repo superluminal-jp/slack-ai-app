@@ -4,8 +4,14 @@ Conftest for Verification Agent tests.
 Mocks FastAPI and uvicorn which are not available in the test environment.
 """
 
+import os
 import sys
 from unittest.mock import MagicMock
+
+# Source code lives in src/ (zone-based restructuring); make it importable.
+_SRC = os.path.join(os.path.dirname(__file__), "../src")
+if _SRC not in sys.path:
+    sys.path.insert(0, _SRC)
 
 
 # ─── Mock FastAPI ───

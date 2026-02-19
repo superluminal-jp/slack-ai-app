@@ -218,7 +218,7 @@ class TestExecutionDelegation:
         call_kw = mock_send.call_args[1]
         assert call_kw["channel"] == "C01234567"
         assert call_kw["thread_ts"] == "1234.5678"
-        assert call_kw["text"] == "This is the AI answer."
+        assert call_kw["text"].startswith("This is the AI answer.")
         assert call_kw["bot_token"] == "xoxb-test"
         assert call_kw.get("file_artifact") is None
 
@@ -268,7 +268,7 @@ class TestExecutionDelegation:
         mock_send.assert_called_once()
         call_kw = mock_send.call_args[1]
         assert call_kw["channel"] == "C01234567"
-        assert call_kw["text"] == "Here is your export."
+        assert call_kw["text"].startswith("Here is your export.")
         assert call_kw["file_artifact"] is not None
         assert call_kw["file_artifact"].get("fileName") == "export.csv"
 
@@ -343,7 +343,7 @@ class TestExecutionDelegation:
         call_kw = mock_send.call_args[1]
         assert call_kw["file_artifact"] is not None
         assert call_kw["file_artifact"]["fileName"] == "out.csv"
-        assert not call_kw.get("text") or call_kw.get("text") == ""
+        assert "_担当エージェント:" in call_kw.get("text", "")
 
     @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
@@ -384,7 +384,7 @@ class TestExecutionDelegation:
         handle_message(payload)
         mock_send.assert_called_once()
         call_kw = mock_send.call_args[1]
-        assert call_kw["text"] == "Here is the file."
+        assert call_kw["text"].startswith("Here is the file.")
         assert call_kw["file_artifact"] is not None
 
     @patch("pipeline.invoke_execution_agent")
@@ -564,7 +564,7 @@ class Test021FastAPIDirectRouting:
 
     def test_no_private_api_usage(self):
         """main.py source has zero occurrences of _handle_invocation."""
-        main_path = os.path.join(os.path.dirname(__file__), "..", "main.py")
+        main_path = os.path.join(os.path.dirname(__file__), "../src/main.py")
         with open(main_path) as f:
             source = f.read()
         assert "_handle_invocation" not in source, (
@@ -573,7 +573,7 @@ class Test021FastAPIDirectRouting:
 
     def test_no_bedrock_agentcore_import(self):
         """main.py source has zero occurrences of bedrock_agentcore."""
-        main_path = os.path.join(os.path.dirname(__file__), "..", "main.py")
+        main_path = os.path.join(os.path.dirname(__file__), "../src/main.py")
         with open(main_path) as f:
             source = f.read()
         assert "bedrock_agentcore" not in source, (
@@ -582,14 +582,14 @@ class Test021FastAPIDirectRouting:
 
     def test_uvicorn_run_uses_port_9000(self):
         """uvicorn.run(app, ..., port=9000) must be present in main.py source."""
-        main_path = os.path.join(os.path.dirname(__file__), "..", "main.py")
+        main_path = os.path.join(os.path.dirname(__file__), "../src/main.py")
         with open(main_path) as f:
             source = f.read()
         assert "port=9000" in source, "main.py must use port=9000 for A2A protocol"
 
     def test_no_strands_import(self):
         """main.py should not import strands (uses FastAPI directly)."""
-        main_path = os.path.join(os.path.dirname(__file__), "..", "main.py")
+        main_path = os.path.join(os.path.dirname(__file__), "../src/main.py")
         with open(main_path) as f:
             source = f.read()
         assert "from strands" not in source, "main.py should not import strands"
@@ -600,7 +600,7 @@ class TestUS3VersionConstraints:
 
     def test_no_loose_version_constraints(self):
         """requirements.txt must not contain >= constraints (all must be ~= or ==)."""
-        req_path = os.path.join(os.path.dirname(__file__), "..", "requirements.txt")
+        req_path = os.path.join(os.path.dirname(__file__), "../src/requirements.txt")
         with open(req_path) as f:
             lines = f.readlines()
         for line in lines:
@@ -613,7 +613,7 @@ class TestUS3VersionConstraints:
 
     def test_no_bedrock_agentcore_dependency(self):
         """requirements.txt must not list bedrock-agentcore (unused after migration)."""
-        req_path = os.path.join(os.path.dirname(__file__), "..", "requirements.txt")
+        req_path = os.path.join(os.path.dirname(__file__), "../src/requirements.txt")
         with open(req_path) as f:
             content = f.read()
         assert "bedrock-agentcore" not in content, (
@@ -666,7 +666,7 @@ class Test022NormalFlowDelegation:
         assert result_data["status"] == "completed"
         mock_invoke.assert_called_once()
         mock_send.assert_called_once()
-        assert mock_send.call_args[1]["text"] == "AI answer from execution"
+        assert mock_send.call_args[1]["text"].startswith("AI answer from execution")
 
     @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
@@ -690,7 +690,7 @@ class Test022NormalFlowDelegation:
 
         posted_text = mock_send.call_args[1]["text"]
         assert "[Echo]" not in posted_text
-        assert posted_text == "Normal AI response"
+        assert posted_text.startswith("Normal AI response")
 
     @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
@@ -725,7 +725,7 @@ class Test022NormalFlowDelegation:
 
         mock_send.assert_called_once()
         call_kw = mock_send.call_args[1]
-        assert call_kw["text"] == "See attached."
+        assert call_kw["text"].startswith("See attached.")
         assert call_kw["file_artifact"] is not None
         assert call_kw["file_artifact"]["fileName"] == "result.csv"
 
