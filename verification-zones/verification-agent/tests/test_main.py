@@ -218,7 +218,7 @@ class TestExecutionDelegation:
         call_kw = mock_send.call_args[1]
         assert call_kw["channel"] == "C01234567"
         assert call_kw["thread_ts"] == "1234.5678"
-        assert call_kw["text"] == "This is the AI answer."
+        assert call_kw["text"].startswith("This is the AI answer.")
         assert call_kw["bot_token"] == "xoxb-test"
         assert call_kw.get("file_artifact") is None
 
@@ -268,7 +268,7 @@ class TestExecutionDelegation:
         mock_send.assert_called_once()
         call_kw = mock_send.call_args[1]
         assert call_kw["channel"] == "C01234567"
-        assert call_kw["text"] == "Here is your export."
+        assert call_kw["text"].startswith("Here is your export.")
         assert call_kw["file_artifact"] is not None
         assert call_kw["file_artifact"].get("fileName") == "export.csv"
 
@@ -343,7 +343,7 @@ class TestExecutionDelegation:
         call_kw = mock_send.call_args[1]
         assert call_kw["file_artifact"] is not None
         assert call_kw["file_artifact"]["fileName"] == "out.csv"
-        assert not call_kw.get("text") or call_kw.get("text") == ""
+        assert "_担当エージェント:" in call_kw.get("text", "")
 
     @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
@@ -384,7 +384,7 @@ class TestExecutionDelegation:
         handle_message(payload)
         mock_send.assert_called_once()
         call_kw = mock_send.call_args[1]
-        assert call_kw["text"] == "Here is the file."
+        assert call_kw["text"].startswith("Here is the file.")
         assert call_kw["file_artifact"] is not None
 
     @patch("pipeline.invoke_execution_agent")
@@ -666,7 +666,7 @@ class Test022NormalFlowDelegation:
         assert result_data["status"] == "completed"
         mock_invoke.assert_called_once()
         mock_send.assert_called_once()
-        assert mock_send.call_args[1]["text"] == "AI answer from execution"
+        assert mock_send.call_args[1]["text"].startswith("AI answer from execution")
 
     @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
@@ -690,7 +690,7 @@ class Test022NormalFlowDelegation:
 
         posted_text = mock_send.call_args[1]["text"]
         assert "[Echo]" not in posted_text
-        assert posted_text == "Normal AI response"
+        assert posted_text.startswith("Normal AI response")
 
     @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
@@ -725,7 +725,7 @@ class Test022NormalFlowDelegation:
 
         mock_send.assert_called_once()
         call_kw = mock_send.call_args[1]
-        assert call_kw["text"] == "See attached."
+        assert call_kw["text"].startswith("See attached.")
         assert call_kw["file_artifact"] is not None
         assert call_kw["file_artifact"]["fileName"] == "result.csv"
 

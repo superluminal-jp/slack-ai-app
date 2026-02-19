@@ -85,6 +85,14 @@ def _get_user_friendly_error(error_code: str, fallback_message: str = "") -> str
     return DEFAULT_ERROR_MESSAGE
 
 
+def _build_agent_attribution(agent_id: str, agent_cards: dict) -> str:
+    """Build a Slack-formatted attribution footer for the called execution agent (rule-based)."""
+    card = agent_cards.get(agent_id) or {}
+    name = card.get("name", "") if isinstance(card, dict) else ""
+    display = name if name else agent_id
+    return f"_担当エージェント: {display}_"
+
+
 def _build_agent_list_response(agent_ids: list, agent_cards: dict) -> str:
     """Build a Japanese response listing available execution agents from registry data."""
     if not agent_ids:
@@ -507,10 +515,15 @@ def run(payload: dict) -> str:
                         "channel": channel,
                         "reason": "parse_file_artifact returned None despite file_artifact present",
                     })
+                attribution = _build_agent_attribution(agent_id, get_all_cards())
+                if response_text:
+                    response_text = f"{response_text}\n{attribution}"
+                else:
+                    response_text = attribution
                 send_slack_post_request(
                     channel=channel,
                     thread_ts=thread_ts,
-                    text=response_text if response_text else None,
+                    text=response_text,
                     file_artifact=file_artifact,
                     bot_token=bot_token,
                     correlation_id=correlation_id,
@@ -532,6 +545,8 @@ def run(payload: dict) -> str:
                     error_message=raw_error_message,
                     raw_response=result_data,
                 )
+                attribution = _build_agent_attribution(agent_id, get_all_cards())
+                user_friendly_message = f"{user_friendly_message}\n{attribution}"
                 send_slack_post_request(
                     channel=channel,
                     thread_ts=thread_ts,

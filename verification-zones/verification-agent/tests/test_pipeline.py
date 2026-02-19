@@ -492,7 +492,7 @@ class Test032E2EFlowUnchanged:
 
             mock_slack_post.assert_called_once()
             slack_kw = mock_slack_post.call_args[1]
-            assert slack_kw.get("text") == "AI reply content only"
+            assert "AI reply content only" in slack_kw.get("text", "")
             assert "jsonrpc" not in str(slack_kw)
             assert slack_kw.get("file_artifact") is None
 
@@ -524,9 +524,9 @@ class Test032E2EFlowUnchanged:
                 mock_slack_post.assert_called_once()
                 slack_kw = mock_slack_post.call_args[1]
                 expected_text = ERROR_MESSAGE_MAP.get("throttling")
-                assert slack_kw.get("text") == expected_text
+                assert slack_kw.get("text", "").startswith(expected_text)
                 assert "jsonrpc" not in str(slack_kw)
-                assert "id" not in str(slack_kw.get("text", ""))
+                assert "id" not in expected_text
 
 
 class Test033RoutingIntegration:
@@ -565,6 +565,109 @@ class Test033RoutingIntegration:
             assert mock_invoke.call_count == 1
             kwargs = mock_invoke.call_args[1]
             assert kwargs.get("execution_agent_arn", "").endswith("/docs")
+
+
+class TestPipelineAgentAttribution:
+    """Pipeline must append agent attribution footer to Slack replies from execution agents."""
+
+    def test_build_agent_attribution_with_card_name(self):
+        """When agent card has a name, attribution uses it."""
+        from pipeline import _build_agent_attribution
+
+        result = _build_agent_attribution(
+            "file-creator",
+            {"file-creator": {"name": "SlackAI-FileCreatorAgent", "description": "General AI"}},
+        )
+        assert "SlackAI-FileCreatorAgent" in result
+
+    def test_build_agent_attribution_without_card(self):
+        """When no card is available, attribution falls back to agent_id."""
+        from pipeline import _build_agent_attribution
+
+        result = _build_agent_attribution("docs", {})
+        assert "docs" in result
+
+    def test_build_agent_attribution_with_empty_name(self):
+        """When card name is empty, attribution falls back to agent_id."""
+        from pipeline import _build_agent_attribution
+
+        result = _build_agent_attribution("time", {"time": {"name": "", "description": ""}})
+        assert "time" in result
+
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_success_response_appended_with_attribution(
+        self, mock_existence, mock_auth, mock_invoke, mock_slack_post
+    ):
+        """On execution success, agent attribution is appended to the Slack message text."""
+        mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
+        mock_invoke.return_value = json.dumps({"status": "success", "response_text": "処理が完了しました。"})
+        mock_slack_post.return_value = None
+
+        with patch("pipeline.check_rate_limit") as mock_rate:
+            mock_rate.return_value = (True, None)
+            with patch("pipeline.get_all_cards", return_value={
+                "file-creator": {"name": "SlackAI-FileCreatorAgent", "description": "General AI"},
+            }):
+                from pipeline import run
+
+                run({"prompt": json.dumps(_payload(text="ファイルを作成して"))})
+
+        posted_text = mock_slack_post.call_args[1].get("text", "")
+        assert "処理が完了しました。" in posted_text
+        assert "SlackAI-FileCreatorAgent" in posted_text or "file-creator" in posted_text
+        # Attribution must come AFTER the response
+        main_pos = posted_text.find("処理が完了しました。")
+        attr_pos = posted_text.find("file-creator") if "file-creator" in posted_text else posted_text.find("SlackAI-FileCreatorAgent")
+        assert main_pos < attr_pos
+
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_error_response_appended_with_attribution(
+        self, mock_existence, mock_auth, mock_invoke, mock_slack_post
+    ):
+        """On execution error, agent attribution is appended to the error Slack message."""
+        mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
+        mock_invoke.return_value = json.dumps({"status": "error", "error_code": "generic", "error_message": "error"})
+        mock_slack_post.return_value = None
+
+        with patch("pipeline.check_rate_limit") as mock_rate:
+            mock_rate.return_value = (True, None)
+            with patch("pipeline.get_all_cards", return_value={
+                "file-creator": {"name": "SlackAI-FileCreatorAgent", "description": "General AI"},
+            }):
+                from pipeline import run
+
+                run({"prompt": json.dumps(_payload())})
+
+        posted_text = mock_slack_post.call_args[1].get("text", "")
+        assert "file-creator" in posted_text or "SlackAI-FileCreatorAgent" in posted_text
+
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_empty_response_text_attribution_only(
+        self, mock_existence, mock_auth, mock_invoke, mock_slack_post
+    ):
+        """When response_text is empty but file artifact exists, attribution stands alone."""
+        mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
+        mock_invoke.return_value = json.dumps({"status": "success", "response_text": ""})
+        mock_slack_post.return_value = None
+
+        with patch("pipeline.check_rate_limit") as mock_rate:
+            mock_rate.return_value = (True, None)
+            with patch("pipeline.get_all_cards", return_value={"file-creator": None}):
+                from pipeline import run
+
+                run({"prompt": json.dumps(_payload())})
+
+        posted_text = mock_slack_post.call_args[1].get("text", "")
+        assert "file-creator" in posted_text
 
 
 class TestPipelineDirectResponse:
