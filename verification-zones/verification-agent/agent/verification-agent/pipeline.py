@@ -29,6 +29,7 @@ from slack_post_request import (
 from error_debug import log_execution_error, log_execution_agent_error_response
 from logger_util import get_logger, log
 from slack_url_resolver import resolve_slack_urls
+from slack_thread_context import build_current_thread_context
 from s3_file_manager import (
     upload_file_to_s3,
     generate_presigned_url,
@@ -281,6 +282,7 @@ def run(payload: dict) -> str:
         team_id = task_payload.get("team_id", "")
         user_id = task_payload.get("user_id", "")
         attachments = task_payload.get("attachments", [])
+        current_message_ts = task_payload.get("message_ts")
 
         _log(
             "INFO",
@@ -426,7 +428,31 @@ def run(payload: dict) -> str:
                 },
             )
 
-        # 3.5. Resolve Slack message URLs in text
+        # 3.5. Fetch current Slack thread context and inject into prompt text
+        if bot_token and channel and thread_ts:
+            try:
+                thread_context = build_current_thread_context(
+                    bot_token=bot_token,
+                    channel_id=channel,
+                    thread_ts=thread_ts,
+                    correlation_id=correlation_id,
+                    current_message_ts=current_message_ts,
+                )
+                if thread_context:
+                    text = f"{thread_context}\n\n{text}".strip()
+            except Exception as e:
+                _log(
+                    "WARN",
+                    "thread_context_preprocess_error",
+                    {
+                        "correlation_id": correlation_id,
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                    },
+                )
+                # Fail-open: continue with original text
+
+        # 3.6. Resolve Slack message URLs in text
         if text and bot_token:
             try:
                 text = resolve_slack_urls(text, bot_token, correlation_id)
