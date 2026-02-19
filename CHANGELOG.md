@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Platform tooling package** (`@slack-ai-app/cdk-tooling`): Shared npm package at `platform/tooling/` exporting `cdk-logger`, `cdk-error`, `cost-allocation-tags`, `config-loader`, and `log-retention-aspect`. All zones import shared utilities from this package instead of local copies.
+- **Standalone execution zone CDK apps**: Each execution agent (`execution-agent`, `time-agent`, `docs-agent`) is now an independent CDK application under `execution-zones/<agent>/cdk/` with its own `bin/`, `lib/`, `test/`, `package.json`, and deploy script.
+- **Zone deploy scripts**: `execution-zones/<agent>/scripts/deploy.sh` per zone; `scripts/deploy/deploy-all.sh`, `deploy-execution-all.sh`, `deploy-verification-all.sh`; `scripts/validate/preflight.sh` for pre-deploy checks.
+- **npm workspaces root**: Root `package.json` registers `platform/tooling`, `execution-zones/*/cdk`, and `verification-zones/*/cdk` as workspaces so a single `npm install` satisfies all CDK dependencies.
+
+### Changed
+
+- **Execution agent source layout**: Python source and tests for each execution agent moved from `cdk/lib/<type>/agent/<agent>/` to `execution-zones/<agent>/src/` and `execution-zones/<agent>/tests/`.
+- **Verification agent source layout**: Python source and tests moved from `verification-zones/verification-agent/agent/verification-agent/` to `verification-zones/verification-agent/src/` and `verification-zones/verification-agent/tests/`.
+- **Verification zone CDK imports**: `verification-zones/verification-agent/cdk/` now imports shared utilities from `@slack-ai-app/cdk-tooling` instead of local `lib/utils/` copies.
+- **Bedrock model ID**: All agents updated to use `jp.anthropic.claude-sonnet-4-6` (cross-region inference profile for ap-northeast-1).
+- **ts-jest configuration**: `isolatedModules` moved from inline Jest transform option to `tsconfig.json` `compilerOptions` per ts-jest v29+ recommendation; eliminates deprecation warning.
+
+### Removed
+
+- **Monolithic `cdk/` directory**: Replaced by independent per-zone CDK apps under `execution-zones/` and updated `verification-zones/`.
+
+### Fixed
+
+- **CDK deploy scripts**: npm workspaces hoists `aws-cdk` to root `node_modules`; deploy scripts now resolve `cdk` CLI from project root with zone-local fallback and `cd` into the zone's CDK directory before invoking `cdk deploy`.
+- **ts-node module resolution**: Added `ts-node` block to each zone's `tsconfig.json` overriding `module`/`moduleResolution` to `CommonJS`/`node` at runtime so `cdk synth` resolves TypeScript files correctly under Node.js 24.
+- **`platform/tooling` package.json `main` field**: Changed from `index.js` to `index.ts` to eliminate `DEP0128` Node.js warning when resolving the symlinked workspace package.
+- **Local import `.js` extensions**: Removed explicit `.js` extensions from intra-zone and `platform/tooling` imports; CommonJS resolution does not require them and ts-node cannot resolve `.js` → `.ts` at runtime without ESM loader.
+
 ### Changed
 
 - **Verification–Execution zone connection (032)**: Zone-to-zone protocol is now JSON-RPC 2.0 (method `execute_task`). Application layer is transport-agnostic; transport (e.g. InvokeAgentRuntime) remains an implementation detail. Execution Agent accepts JSON-RPC Request and returns JSON-RPC Response; Verification Agent builds Request and parses Response. Error contract unified (e.g. -32602 Invalid params, -32603 Internal error).

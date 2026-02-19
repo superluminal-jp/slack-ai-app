@@ -1,0 +1,63 @@
+"use strict";
+/**
+ * Structured logging helper for CDK app lifecycle.
+ * Emits log entries per log-event contract: level, message, optional phase/context/timestamp.
+ * Must not contain secrets; caller is responsible for omitting sensitive data.
+ *
+ * @module cdk/lib/utils/cdk-logger
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.log = log;
+exports.logInfo = logInfo;
+exports.logWarn = logWarn;
+exports.logError = logError;
+exports.logDebug = logDebug;
+/**
+ * Emit a structured log entry to stdout (info/debug) or stderr (warn/error).
+ * Format: [LEVEL] [phase] message [context as JSON]
+ * Safe for redirect and CI; does not assume TTY.
+ *
+ * @param level - Severity (info, warn, error, debug)
+ * @param message - Human-readable message; must not contain secrets or PII
+ * @param options - Optional phase, context, timestamp
+ */
+function log(level, message, options) {
+    const timestamp = options?.timestamp ?? new Date().toISOString();
+    const phasePart = options?.phase ? ` [${options.phase}]` : "";
+    const prefix = `[${level.toUpperCase()}]${phasePart}`;
+    const line = `${prefix} ${message}`;
+    const contextJson = options?.context && Object.keys(options.context).length > 0
+        ? ` ${JSON.stringify(options.context)}`
+        : "";
+    const fullLine = `${line}${contextJson}`;
+    switch (level) {
+        case "error":
+            console.error(fullLine);
+            break;
+        case "warn":
+            console.warn(fullLine);
+            break;
+        case "info":
+        case "debug":
+        default:
+            console.log(fullLine);
+            break;
+    }
+}
+/** Convenience: log at info level with optional phase/context */
+function logInfo(message, options) {
+    log("info", message, options);
+}
+/** Convenience: log at warn level with optional phase/context */
+function logWarn(message, options) {
+    log("warn", message, options);
+}
+/** Convenience: log at error level with optional phase/context */
+function logError(message, options) {
+    log("error", message, options);
+}
+/** Convenience: log at debug level with optional phase/context */
+function logDebug(message, options) {
+    log("debug", message, options);
+}
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiY2RrLWxvZ2dlci5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbImNkay1sb2dnZXIudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7R0FNRzs7QUFzQkgsa0JBNkJDO0FBR0QsMEJBS0M7QUFHRCwwQkFLQztBQUdELDRCQUtDO0FBR0QsNEJBS0M7QUF0RUQ7Ozs7Ozs7O0dBUUc7QUFDSCxTQUFnQixHQUFHLENBQ2pCLEtBQWUsRUFDZixPQUFlLEVBQ2YsT0FBeUI7SUFFekIsTUFBTSxTQUFTLEdBQUcsT0FBTyxFQUFFLFNBQVMsSUFBSSxJQUFJLElBQUksRUFBRSxDQUFDLFdBQVcsRUFBRSxDQUFDO0lBQ2pFLE1BQU0sU0FBUyxHQUFHLE9BQU8sRUFBRSxLQUFLLENBQUMsQ0FBQyxDQUFDLEtBQUssT0FBTyxDQUFDLEtBQUssR0FBRyxDQUFDLENBQUMsQ0FBQyxFQUFFLENBQUM7SUFDOUQsTUFBTSxNQUFNLEdBQUcsSUFBSSxLQUFLLENBQUMsV0FBVyxFQUFFLElBQUksU0FBUyxFQUFFLENBQUM7SUFDdEQsTUFBTSxJQUFJLEdBQUcsR0FBRyxNQUFNLElBQUksT0FBTyxFQUFFLENBQUM7SUFDcEMsTUFBTSxXQUFXLEdBQ2YsT0FBTyxFQUFFLE9BQU8sSUFBSSxNQUFNLENBQUMsSUFBSSxDQUFDLE9BQU8sQ0FBQyxPQUFPLENBQUMsQ0FBQyxNQUFNLEdBQUcsQ0FBQztRQUN6RCxDQUFDLENBQUMsSUFBSSxJQUFJLENBQUMsU0FBUyxDQUFDLE9BQU8sQ0FBQyxPQUFPLENBQUMsRUFBRTtRQUN2QyxDQUFDLENBQUMsRUFBRSxDQUFDO0lBRVQsTUFBTSxRQUFRLEdBQUcsR0FBRyxJQUFJLEdBQUcsV0FBVyxFQUFFLENBQUM7SUFFekMsUUFBUSxLQUFLLEVBQUUsQ0FBQztRQUNkLEtBQUssT0FBTztZQUNWLE9BQU8sQ0FBQyxLQUFLLENBQUMsUUFBUSxDQUFDLENBQUM7WUFDeEIsTUFBTTtRQUNSLEtBQUssTUFBTTtZQUNULE9BQU8sQ0FBQyxJQUFJLENBQUMsUUFBUSxDQUFDLENBQUM7WUFDdkIsTUFBTTtRQUNSLEtBQUssTUFBTSxDQUFDO1FBQ1osS0FBSyxPQUFPLENBQUM7UUFDYjtZQUNFLE9BQU8sQ0FBQyxHQUFHLENBQUMsUUFBUSxDQUFDLENBQUM7WUFDdEIsTUFBTTtJQUNWLENBQUM7QUFDSCxDQUFDO0FBRUQsaUVBQWlFO0FBQ2pFLFNBQWdCLE9BQU8sQ0FDckIsT0FBZSxFQUNmLE9BQXlCO0lBRXpCLEdBQUcsQ0FBQyxNQUFNLEVBQUUsT0FBTyxFQUFFLE9BQU8sQ0FBQyxDQUFDO0FBQ2hDLENBQUM7QUFFRCxpRUFBaUU7QUFDakUsU0FBZ0IsT0FBTyxDQUNyQixPQUFlLEVBQ2YsT0FBeUI7SUFFekIsR0FBRyxDQUFDLE1BQU0sRUFBRSxPQUFPLEVBQUUsT0FBTyxDQUFDLENBQUM7QUFDaEMsQ0FBQztBQUVELGtFQUFrRTtBQUNsRSxTQUFnQixRQUFRLENBQ3RCLE9BQWUsRUFDZixPQUF5QjtJQUV6QixHQUFHLENBQUMsT0FBTyxFQUFFLE9BQU8sRUFBRSxPQUFPLENBQUMsQ0FBQztBQUNqQyxDQUFDO0FBRUQsa0VBQWtFO0FBQ2xFLFNBQWdCLFFBQVEsQ0FDdEIsT0FBZSxFQUNmLE9BQXlCO0lBRXpCLEdBQUcsQ0FBQyxPQUFPLEVBQUUsT0FBTyxFQUFFLE9BQU8sQ0FBQyxDQUFDO0FBQ2pDLENBQUMiLCJzb3VyY2VzQ29udGVudCI6WyIvKipcbiAqIFN0cnVjdHVyZWQgbG9nZ2luZyBoZWxwZXIgZm9yIENESyBhcHAgbGlmZWN5Y2xlLlxuICogRW1pdHMgbG9nIGVudHJpZXMgcGVyIGxvZy1ldmVudCBjb250cmFjdDogbGV2ZWwsIG1lc3NhZ2UsIG9wdGlvbmFsIHBoYXNlL2NvbnRleHQvdGltZXN0YW1wLlxuICogTXVzdCBub3QgY29udGFpbiBzZWNyZXRzOyBjYWxsZXIgaXMgcmVzcG9uc2libGUgZm9yIG9taXR0aW5nIHNlbnNpdGl2ZSBkYXRhLlxuICpcbiAqIEBtb2R1bGUgY2RrL2xpYi91dGlscy9jZGstbG9nZ2VyXG4gKi9cblxuZXhwb3J0IHR5cGUgTG9nTGV2ZWwgPSBcImluZm9cIiB8IFwid2FyblwiIHwgXCJlcnJvclwiIHwgXCJkZWJ1Z1wiO1xuXG5leHBvcnQgaW50ZXJmYWNlIExvZ0VudHJ5T3B0aW9ucyB7XG4gIC8qKiBMaWZlY3ljbGUgcGhhc2UsIGUuZy4gY29uZmlnLCBzeW50aGVzaXMsIHN0YWNrLCBjb25zdHJ1Y3QgKi9cbiAgcGhhc2U/OiBzdHJpbmc7XG4gIC8qKiBPcHRpb25hbCBrZXktdmFsdWUgY29udGV4dCAoZS5nLiBzdGFja05hbWUsIGNvbnN0cnVjdElkKS4gTXVzdCBub3QgY29udGFpbiBzZWNyZXRzLiAqL1xuICBjb250ZXh0PzogUmVjb3JkPHN0cmluZywgdW5rbm93bj47XG4gIC8qKiBJU08gODYwMSB0aW1lc3RhbXA7IGRlZmF1bHRzIHRvIG5vdyBpZiBvbWl0dGVkICovXG4gIHRpbWVzdGFtcD86IHN0cmluZztcbn1cblxuLyoqXG4gKiBFbWl0IGEgc3RydWN0dXJlZCBsb2cgZW50cnkgdG8gc3Rkb3V0IChpbmZvL2RlYnVnKSBvciBzdGRlcnIgKHdhcm4vZXJyb3IpLlxuICogRm9ybWF0OiBbTEVWRUxdIFtwaGFzZV0gbWVzc2FnZSBbY29udGV4dCBhcyBKU09OXVxuICogU2FmZSBmb3IgcmVkaXJlY3QgYW5kIENJOyBkb2VzIG5vdCBhc3N1bWUgVFRZLlxuICpcbiAqIEBwYXJhbSBsZXZlbCAtIFNldmVyaXR5IChpbmZvLCB3YXJuLCBlcnJvciwgZGVidWcpXG4gKiBAcGFyYW0gbWVzc2FnZSAtIEh1bWFuLXJlYWRhYmxlIG1lc3NhZ2U7IG11c3Qgbm90IGNvbnRhaW4gc2VjcmV0cyBvciBQSUlcbiAqIEBwYXJhbSBvcHRpb25zIC0gT3B0aW9uYWwgcGhhc2UsIGNvbnRleHQsIHRpbWVzdGFtcFxuICovXG5leHBvcnQgZnVuY3Rpb24gbG9nKFxuICBsZXZlbDogTG9nTGV2ZWwsXG4gIG1lc3NhZ2U6IHN0cmluZyxcbiAgb3B0aW9ucz86IExvZ0VudHJ5T3B0aW9uc1xuKTogdm9pZCB7XG4gIGNvbnN0IHRpbWVzdGFtcCA9IG9wdGlvbnM/LnRpbWVzdGFtcCA/PyBuZXcgRGF0ZSgpLnRvSVNPU3RyaW5nKCk7XG4gIGNvbnN0IHBoYXNlUGFydCA9IG9wdGlvbnM/LnBoYXNlID8gYCBbJHtvcHRpb25zLnBoYXNlfV1gIDogXCJcIjtcbiAgY29uc3QgcHJlZml4ID0gYFske2xldmVsLnRvVXBwZXJDYXNlKCl9XSR7cGhhc2VQYXJ0fWA7XG4gIGNvbnN0IGxpbmUgPSBgJHtwcmVmaXh9ICR7bWVzc2FnZX1gO1xuICBjb25zdCBjb250ZXh0SnNvbiA9XG4gICAgb3B0aW9ucz8uY29udGV4dCAmJiBPYmplY3Qua2V5cyhvcHRpb25zLmNvbnRleHQpLmxlbmd0aCA+IDBcbiAgICAgID8gYCAke0pTT04uc3RyaW5naWZ5KG9wdGlvbnMuY29udGV4dCl9YFxuICAgICAgOiBcIlwiO1xuXG4gIGNvbnN0IGZ1bGxMaW5lID0gYCR7bGluZX0ke2NvbnRleHRKc29ufWA7XG5cbiAgc3dpdGNoIChsZXZlbCkge1xuICAgIGNhc2UgXCJlcnJvclwiOlxuICAgICAgY29uc29sZS5lcnJvcihmdWxsTGluZSk7XG4gICAgICBicmVhaztcbiAgICBjYXNlIFwid2FyblwiOlxuICAgICAgY29uc29sZS53YXJuKGZ1bGxMaW5lKTtcbiAgICAgIGJyZWFrO1xuICAgIGNhc2UgXCJpbmZvXCI6XG4gICAgY2FzZSBcImRlYnVnXCI6XG4gICAgZGVmYXVsdDpcbiAgICAgIGNvbnNvbGUubG9nKGZ1bGxMaW5lKTtcbiAgICAgIGJyZWFrO1xuICB9XG59XG5cbi8qKiBDb252ZW5pZW5jZTogbG9nIGF0IGluZm8gbGV2ZWwgd2l0aCBvcHRpb25hbCBwaGFzZS9jb250ZXh0ICovXG5leHBvcnQgZnVuY3Rpb24gbG9nSW5mbyhcbiAgbWVzc2FnZTogc3RyaW5nLFxuICBvcHRpb25zPzogTG9nRW50cnlPcHRpb25zXG4pOiB2b2lkIHtcbiAgbG9nKFwiaW5mb1wiLCBtZXNzYWdlLCBvcHRpb25zKTtcbn1cblxuLyoqIENvbnZlbmllbmNlOiBsb2cgYXQgd2FybiBsZXZlbCB3aXRoIG9wdGlvbmFsIHBoYXNlL2NvbnRleHQgKi9cbmV4cG9ydCBmdW5jdGlvbiBsb2dXYXJuKFxuICBtZXNzYWdlOiBzdHJpbmcsXG4gIG9wdGlvbnM/OiBMb2dFbnRyeU9wdGlvbnNcbik6IHZvaWQge1xuICBsb2coXCJ3YXJuXCIsIG1lc3NhZ2UsIG9wdGlvbnMpO1xufVxuXG4vKiogQ29udmVuaWVuY2U6IGxvZyBhdCBlcnJvciBsZXZlbCB3aXRoIG9wdGlvbmFsIHBoYXNlL2NvbnRleHQgKi9cbmV4cG9ydCBmdW5jdGlvbiBsb2dFcnJvcihcbiAgbWVzc2FnZTogc3RyaW5nLFxuICBvcHRpb25zPzogTG9nRW50cnlPcHRpb25zXG4pOiB2b2lkIHtcbiAgbG9nKFwiZXJyb3JcIiwgbWVzc2FnZSwgb3B0aW9ucyk7XG59XG5cbi8qKiBDb252ZW5pZW5jZTogbG9nIGF0IGRlYnVnIGxldmVsIHdpdGggb3B0aW9uYWwgcGhhc2UvY29udGV4dCAqL1xuZXhwb3J0IGZ1bmN0aW9uIGxvZ0RlYnVnKFxuICBtZXNzYWdlOiBzdHJpbmcsXG4gIG9wdGlvbnM/OiBMb2dFbnRyeU9wdGlvbnNcbik6IHZvaWQge1xuICBsb2coXCJkZWJ1Z1wiLCBtZXNzYWdlLCBvcHRpb25zKTtcbn1cbiJdfQ==

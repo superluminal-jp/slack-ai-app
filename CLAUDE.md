@@ -22,9 +22,10 @@ tests/
 
 ## Commands
 
-- **Python (agents)**: `cd cdk/lib/execution/agent/execution-agent && python -m pytest tests/ -v` (Execution); `cd cdk/lib/verification/agent/verification-agent && python -m pytest tests/ -v` (Verification)
+- **Python (agents)**: `cd execution-zones/execution-agent && python -m pytest tests/ -v` (Execution); `cd execution-zones/time-agent && python -m pytest tests/ -v` (Time); `cd execution-zones/docs-agent && python -m pytest tests/ -v` (Docs); `cd verification-zones/verification-agent && python -m pytest tests/ -v` (Verification)
 - **Lint**: `cd src && ruff check .` (when applicable)
-- **CDK**: `cd cdk && npm run test` (Jest); `npx cdk deploy SlackAI-Execution-Dev` / `SlackAI-Verification-Dev` (see cdk/README.md)
+- **CDK (zone)**: `cd execution-zones/execution-agent/cdk && npm test` (Jest); zone-specific deploy: `./execution-zones/execution-agent/scripts/deploy.sh`
+- **CDK (all)**: `./scripts/deploy/deploy-all.sh` (execution zones → verification zone)
 
 ## Documentation
 

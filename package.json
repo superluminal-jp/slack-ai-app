@@ -1,0 +1,15 @@
+{
+  "name": "slack-ai-app",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "platform/tooling",
+    "execution-zones/*/cdk",
+    "verification-zones/*/cdk"
+  ],
+  "scripts": {
+    "build:tooling": "cd platform/tooling && npm run build",
+    "test:execution": "cd execution-zones/execution-agent/cdk && npm test && cd ../time-agent/cdk && npm test && cd ../docs-agent/cdk && npm test",
+    "test:verification": "cd verification-zones/verification-agent/cdk && npm test"
+  }
+}
