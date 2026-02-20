@@ -727,6 +727,156 @@ class TestPipelineDirectResponse:
         assert result_data["status"] == "completed"
 
 
+class TestBuildAgentListMessage:
+    """Unit tests for _build_agent_list_message() (034-router-list-agents)."""
+
+    def test_populated_registry_contains_agent_names(self):
+        """Reply must include each agent's name from the registry."""
+        from pipeline import _build_agent_list_message
+
+        cards = {
+            "file-creator": {
+                "name": "SlackAI-FileCreatorAgent",
+                "description": "Creates files",
+                "skills": [{"name": "create_excel", "description": "Excel generation"}],
+            },
+            "time": {
+                "name": "SlackAI-TimeAgent",
+                "description": "Returns current time",
+                "skills": [],
+            },
+        }
+        msg = _build_agent_list_message(cards)
+        assert "SlackAI-FileCreatorAgent" in msg
+        assert "SlackAI-TimeAgent" in msg
+
+    def test_populated_registry_contains_descriptions(self):
+        """Reply must include each agent's description."""
+        from pipeline import _build_agent_list_message
+
+        cards = {
+            "docs": {
+                "name": "SlackAI-DocsAgent",
+                "description": "Searches project documentation",
+                "skills": [],
+            }
+        }
+        msg = _build_agent_list_message(cards)
+        assert "Searches project documentation" in msg
+
+    def test_populated_registry_contains_skill_names(self):
+        """Reply must include skill names for agents that have them."""
+        from pipeline import _build_agent_list_message
+
+        cards = {
+            "file-creator": {
+                "name": "SlackAI-FileCreatorAgent",
+                "description": "Creates files",
+                "skills": [
+                    {"name": "create_excel", "description": "Excel generation"},
+                    {"name": "create_word", "description": "Word generation"},
+                ],
+            }
+        }
+        msg = _build_agent_list_message(cards)
+        assert "create_excel" in msg or "create_word" in msg
+
+    def test_partial_none_cards_are_omitted_without_error(self):
+        """Agents with None cards must be silently omitted from the reply."""
+        from pipeline import _build_agent_list_message
+
+        cards = {
+            "file-creator": {
+                "name": "SlackAI-FileCreatorAgent",
+                "description": "Creates files",
+                "skills": [],
+            },
+            "time": None,
+        }
+        msg = _build_agent_list_message(cards)
+        assert "SlackAI-FileCreatorAgent" in msg
+        assert msg  # Non-empty
+
+    def test_empty_registry_returns_non_empty_user_friendly_message(self):
+        """Empty registry must return a non-empty, user-friendly message (SC-004)."""
+        from pipeline import _build_agent_list_message
+
+        msg = _build_agent_list_message({})
+        assert msg  # Non-empty
+        assert "エージェント" in msg or "agent" in msg.lower()
+
+    def test_all_none_cards_returns_non_empty_message(self):
+        """All-None card registry must also return a graceful non-empty message."""
+        from pipeline import _build_agent_list_message
+
+        msg = _build_agent_list_message({"file-creator": None, "time": None})
+        assert msg  # Non-empty
+
+
+class TestListAgentsBranchHandler:
+    """Integration tests for list_agents branch in pipeline.run() (034-router-list-agents)."""
+
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    @patch("pipeline.route_request", return_value="list_agents")
+    @patch("pipeline.get_all_cards", return_value={
+        "file-creator": {
+            "name": "SlackAI-FileCreatorAgent",
+            "description": "Creates files",
+            "skills": [{"name": "create_excel", "description": "Excel"}],
+        }
+    })
+    def test_list_agents_route_posts_agent_list_to_slack(
+        self, _mock_cards, _mock_route,
+        mock_existence, mock_auth, mock_invoke, mock_slack_post
+    ):
+        """When route_request returns list_agents, pipeline posts agent list without invoking execution agent."""
+        mock_existence.return_value = MagicMock(exists=True)
+        mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
+
+        with patch("pipeline.check_rate_limit") as mock_rate:
+            mock_rate.return_value = (True, None)
+            from pipeline import run
+
+            result = run({"prompt": json.dumps(_payload(text="何ができる？"))})
+
+        mock_invoke.assert_not_called()
+        mock_slack_post.assert_called_once()
+        posted_text = mock_slack_post.call_args[1].get("text", "")
+        assert "SlackAI-FileCreatorAgent" in posted_text
+        result_data = json.loads(result)
+        assert result_data["status"] == "completed"
+
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    @patch("pipeline.route_request", return_value="list_agents")
+    @patch("pipeline.get_all_cards", return_value={
+        "file-creator": {"name": "SlackAI-FileCreatorAgent", "description": "Creates files", "skills": []},
+        "time": {"name": "SlackAI-TimeAgent", "description": "Returns time", "skills": []},
+    })
+    def test_list_agents_reply_contains_all_available_agents(
+        self, _mock_cards, _mock_route,
+        mock_existence, mock_auth, mock_invoke, mock_slack_post
+    ):
+        """Reply must list all agents present in the registry (SC-002)."""
+        mock_existence.return_value = MagicMock(exists=True)
+        mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
+
+        with patch("pipeline.check_rate_limit") as mock_rate:
+            mock_rate.return_value = (True, None)
+            from pipeline import run
+
+            run({"prompt": json.dumps(_payload(text="エージェント一覧"))})
+
+        posted_text = mock_slack_post.call_args[1].get("text", "")
+        assert "SlackAI-FileCreatorAgent" in posted_text
+        assert "SlackAI-TimeAgent" in posted_text
+
+
 @pytest.mark.skip(reason="要検証: E2E. Slack → Verification → Execution (JSON-RPC) → Verification → Slack. Run manually or in integration env.")
 def test_e2e_slack_verification_execution_slack_unchanged():
     """T031/T033: E2E flow unchanged. Reply content and error messages equivalent to pre-JSON-RPC baseline."""

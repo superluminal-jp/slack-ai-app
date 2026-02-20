@@ -30,6 +30,7 @@ _ROUTER_MODEL_ID = os.environ.get(
     "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
 )
 UNROUTED_AGENT_ID = "unrouted"
+LIST_AGENTS_AGENT_ID = "list_agents"
 
 
 def _log(level: str, event_type: str, data: dict) -> None:
@@ -92,6 +93,10 @@ def _build_router_system_prompt(
         "Available routing options:",
         f"- {UNROUTED_AGENT_ID}: Do not call execution agents. Use when no specialized agent is a strong match,"
         " confidence is low, or the request is small-talk/chitchat not requiring tools.",
+        f"- {LIST_AGENTS_AGENT_ID}: Return the list of available agents to the user."
+        " Use when the user asks what agents are available, what the bot can do,"
+        " or requests an overview of capabilities (e.g., 'agent list', '何ができる？',"
+        " 'エージェント一覧', 'What can you do?').",
     ]
     for agent_id in sorted(available_agent_ids):
         lines.append(_build_agent_summary(agent_id, agent_cards.get(agent_id)))
@@ -107,7 +112,7 @@ def _build_router_system_prompt(
     lines.append("")
     lines.append(
         f"You MUST call select_agent exactly once with one of: {UNROUTED_AGENT_ID},"
-        " or one of the execution agent ids listed above."
+        f" {LIST_AGENTS_AGENT_ID}, or one of the execution agent ids listed above."
     )
     return "\\n".join(lines)
 
@@ -141,8 +146,8 @@ def _route_with_router_model(
     )
     prompt = _build_router_system_prompt(available_agent_ids, agent_cards)
     agent = Agent(model=model, tools=[select_agent], system_prompt=prompt)
-    # Include "unrouted" so the model can abstain when appropriate.
-    available_ids_csv = ", ".join(sorted(available_agent_ids | {UNROUTED_AGENT_ID}))
+    # Include special routes so the model can select them when appropriate.
+    available_ids_csv = ", ".join(sorted(available_agent_ids | {UNROUTED_AGENT_ID, LIST_AGENTS_AGENT_ID}))
     agent(
         f"Available agent ids in this environment: {available_ids_csv}.\\n"
         "Route this user request by calling select_agent with one available id.\\n"
@@ -150,7 +155,7 @@ def _route_with_router_model(
     )
 
     chosen = selected.get("agent_id", UNROUTED_AGENT_ID)
-    if chosen == UNROUTED_AGENT_ID or chosen in available_agent_ids:
+    if chosen == UNROUTED_AGENT_ID or chosen == LIST_AGENTS_AGENT_ID or chosen in available_agent_ids:
         return chosen
     # Safer fallback for invalid id is abstain.
     return UNROUTED_AGENT_ID
@@ -229,8 +234,8 @@ def route_request(text: str, correlation_id: str = "") -> str:
         )
         selected_agent_id = agent_id
         fallback_reason = ""
-        if agent_id == UNROUTED_AGENT_ID:
-            pass  # Always valid — no ARN lookup needed
+        if agent_id in (UNROUTED_AGENT_ID, LIST_AGENTS_AGENT_ID):
+            pass  # Special routes — no ARN lookup needed
         elif agent_id not in available_agent_ids:
             selected_agent_id = UNROUTED_AGENT_ID
             fallback_reason = "invalid_agent_id"

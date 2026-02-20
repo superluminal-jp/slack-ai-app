@@ -24,7 +24,7 @@ from agent_registry import (
     get_agent_arn,
     get_all_cards,
 )
-from router import route_request, UNROUTED_AGENT_ID
+from router import route_request, UNROUTED_AGENT_ID, LIST_AGENTS_AGENT_ID
 from slack_post_request import (
     send_slack_post_request,
     build_file_artifact,
@@ -137,6 +137,27 @@ def _extract_text_from_model_output(result) -> str:
         return output_text.strip()
     text = str(result).strip()
     return "" if text == "None" else text
+
+
+def _build_agent_list_message(agent_cards: dict) -> str:
+    """Build a Slack mrkdwn-formatted list of registered agents from the card cache."""
+    available = {aid: card for aid, card in agent_cards.items() if isinstance(card, dict)}
+    if not available:
+        return "現在、利用可能なエージェントは登録されていません。"
+    lines = ["*利用可能なエージェント一覧*\n"]
+    for agent_id in sorted(available):
+        card = available[agent_id]
+        name = str(card.get("name", agent_id)).strip() or agent_id
+        desc = str(card.get("description", "")).strip()
+        skills = card.get("skills", [])
+        skill_names = [s.get("name", "") for s in skills if isinstance(s, dict) and s.get("name")]
+        line = f"• *{name}*"
+        if desc:
+            line += f"\n  {desc}"
+        if skill_names:
+            line += f"\n  スキル: {', '.join(skill_names)}"
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def _generate_unrouted_fallback_response(user_text: str, correlation_id: str) -> str:
@@ -577,6 +598,24 @@ def run(payload: dict) -> str:
                     "target_runtime_id": target_runtime_id,
                 },
             )
+
+            if agent_id == LIST_AGENTS_AGENT_ID:
+                is_processing = False
+                agent_list_text = _build_agent_list_message(get_all_cards())
+                send_slack_post_request(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    text=agent_list_text,
+                    bot_token=bot_token,
+                    correlation_id=correlation_id,
+                    message_ts=message_ts,
+                )
+                _log(
+                    "INFO",
+                    "list_agents_reply_sent",
+                    {"correlation_id": correlation_id, "channel": channel},
+                )
+                return json.dumps({"status": "completed", "correlation_id": correlation_id})
 
             if agent_id == UNROUTED_AGENT_ID or not target_arn:
                 _log(

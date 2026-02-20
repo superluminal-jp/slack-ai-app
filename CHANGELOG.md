@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Agent list Slack reply** (`verification-agent`): Users can ask the bot what it can do (e.g., "何ができる？", "agent list") and receive a formatted Slack reply listing all registered agents with their names, descriptions, and skills. The router LLM detects this intent and selects the new `list_agents` special route; the verification agent compiles the reply from the in-memory agent card cache without invoking any execution agent.
 - **Platform tooling package** (`@slack-ai-app/cdk-tooling`): Shared npm package at `platform/tooling/` exporting `cdk-logger`, `cdk-error`, `cost-allocation-tags`, `config-loader`, and `log-retention-aspect`. All zones import shared utilities from this package instead of local copies.
 - **Standalone execution zone CDK apps**: Each execution agent (`execution-agent`, `time-agent`, `docs-agent`) is now an independent CDK application under `execution-zones/<agent>/cdk/` with its own `bin/`, `lib/`, `test/`, `package.json`, and deploy script.
 - **Zone deploy scripts**: `execution-zones/<agent>/scripts/deploy.sh` per zone; `scripts/deploy/deploy-all.sh`, `deploy-execution-all.sh`, `deploy-verification-all.sh`; `scripts/validate/preflight.sh` for pre-deploy checks.
