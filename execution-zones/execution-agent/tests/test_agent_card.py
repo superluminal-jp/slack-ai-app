@@ -78,10 +78,16 @@ class TestExecutionAgentCardSkills:
         skill_ids = [s["id"] for s in card["skills"]]
         assert "generate_word" in skill_ids
 
-    def test_has_fetch_url_skill(self):
+    def test_does_not_have_fetch_url_skill(self):
+        """fetch_url moved to fetch-url-agent (035)."""
         card = get_agent_card()
         skill_ids = [s["id"] for s in card["skills"]]
-        assert "fetch_url" in skill_ids
+        assert "fetch_url" not in skill_ids
+
+    def test_has_seven_skills(self):
+        """Execution agent has 7 skills after fetch_url removal."""
+        card = get_agent_card()
+        assert len(card["skills"]) == 7, f"Expected 7 skills, got {len(card['skills'])}"
 
     def test_skills_have_required_fields(self):
         card = get_agent_card()

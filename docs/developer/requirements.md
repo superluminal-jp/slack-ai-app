@@ -115,7 +115,7 @@
    - 検証: 署名検証テスト、認可テスト
    - 所要時間: 3 日
 
-2. **BedrockProcessor（実行層 Execution Layer）実装**
+2. **Execution Agent（実行層 Execution Layer）実装**
 
    - タスク: Bedrock API 呼び出し、response_url 投稿
    - 成果物: `src/application/execution_handler.py`
@@ -130,7 +130,7 @@
    - 所要時間: 2 日
 
 4. **IAM ポリシー設定**
-   - タスク: SlackEventHandler、BedrockProcessor の最小権限ポリシー作成
+   - タスク: SlackEventHandler、Execution Agent の最小権限ポリシー作成
    - 成果物: IAM Policy JSON ファイル
    - 検証: ポリシーバリデーター、権限過剰チェック
    - 所要時間: 2 日
@@ -152,28 +152,28 @@
    - 検証: 各種ファイル形式のメタデータ抽出テスト
    - 所要時間: 1 日
 
-2. **ファイルダウンロード機能** (BedrockProcessor)
+2. **ファイルダウンロード機能** (Execution Agent)
 
    - タスク: Slack CDN からファイルをダウンロード（ボットトークン認証）
    - 成果物: `execution-zones/execution-agent/src/file_downloader.py`
    - 検証: ダウンロード成功/失敗のテスト
    - 所要時間: 2 日
 
-3. **ドキュメントテキスト抽出** (BedrockProcessor)
+3. **ドキュメントテキスト抽出** (Execution Agent)
 
    - タスク: PDF, DOCX, CSV, XLSX, PPTX, TXT からテキスト抽出
    - 成果物: `execution-zones/execution-agent/src/document_extractor.py`
    - 検証: 各形式のテキスト抽出テスト
    - 所要時間: 3 日
 
-4. **画像処理統合** (BedrockProcessor)
+4. **画像処理統合** (Execution Agent)
 
    - タスク: 画像を Bedrock 視覚機能に送信
    - 成果物: `execution-zones/execution-agent/src/bedrock_client.py` の更新
    - 検証: 画像分析のテスト
    - 所要時間: 2 日
 
-5. **添付ファイル処理オーケストレーション** (BedrockProcessor)
+5. **添付ファイル処理オーケストレーション** (Execution Agent)
 
    - タスク: 複数添付ファイルの処理、エラーハンドリング
    - 成果物: `execution-zones/execution-agent/src/attachment_processor.py`

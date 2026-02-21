@@ -41,7 +41,7 @@ Slack と Amazon Bedrock をセキュアに接続し、AI 生成レスポンス�
 
 ### デプロイ
 
-このプロジェクトはエージェントゾーンごとに 4 つの独立した CDK アプリを使用します。実行ゾーン（3つ）をデプロイした後、検証ゾーンをデプロイします。
+このプロジェクトはエージェントゾーンごとに 5 つの独立した CDK アプリを使用します。実行ゾーン（4つ）をデプロイした後、検証ゾーンをデプロイします。
 
 **デプロイ手順**:
 
@@ -59,6 +59,7 @@ Slack と Amazon Bedrock をセキュアに接続し、AI 生成レスポンス�
 # execution-zones/execution-agent/cdk/cdk.config.dev.json
 # execution-zones/time-agent/cdk/cdk.config.dev.json
 # execution-zones/docs-agent/cdk/cdk.config.dev.json
+# execution-zones/fetch-url-agent/cdk/cdk.config.dev.json
 # verification-zones/verification-agent/cdk/cdk.config.dev.json
 
 # 2. デプロイ環境を設定（dev または prod）
@@ -77,8 +78,8 @@ export AWS_PROFILE=your-profile-name  # オプション: AWSプロファイル�
 
 このプロジェクトは開発環境（`dev`）と本番環境（`prod`）の分離をサポートしています：
 
-- **スタック名**: 自動的に `-Dev` または `-Prod` のサフィックスが付加されます（例: `SlackAI-Execution-Dev`, `SlackAI-Verification-Prod`）
-- **リソース分離**: すべてのリソース（Lambda 関数、DynamoDB テーブル、Secrets Manager、API Gateway など）が環境ごとに自動的に分離されます
+- **スタック名**: 自動的に `-Dev` または `-Prod` のサフィックスが付加されます（例: `SlackAI-FileCreator-Dev`, `SlackAI-WebFetch-Dev`, `SlackAI-Verification-Prod`）
+- **リソース分離**: すべてのリソース（Lambda 関数、DynamoDB テーブル、Secrets Manager、AgentCore Runtime など）が環境ごとに自動的に分離されます
 - **リソースタグ付け**: すべてのリソースに以下のタグが付与されます：
   - `Environment`: `dev` または `prod`
   - `Project`: `SlackAI`
@@ -218,12 +219,13 @@ export DEPLOYMENT_ENV=prod
 
 ## アーキテクチャ
 
-アプリケーションはエージェントゾーンごとに **4 つの独立した CDK アプリ**を使用し、個別にデプロイ可能です：
+アプリケーションはエージェントゾーンごとに **5 つの独立した CDK アプリ**を使用し、個別にデプロイ可能です：
 
 - **Verification Zone** (`verification-zones/verification-agent/cdk`): SlackEventHandler Lambda + Verification Agent (AgentCore) + DynamoDB + Secrets Manager
 - **Execution Agent Zone** (`execution-zones/execution-agent/cdk`): ファイル生成エージェント（AgentCore Runtime + ECR）
 - **Time Agent Zone** (`execution-zones/time-agent/cdk`): 現在時刻エージェント（AgentCore Runtime + ECR）
 - **Docs Agent Zone** (`execution-zones/docs-agent/cdk`): ドキュメント検索エージェント（AgentCore Runtime + ECR）
+- **Web Fetch Agent Zone** (`execution-zones/fetch-url-agent/cdk`): URL 取得エージェント（AgentCore Runtime + ECR）
 
 この構成は以下をサポートします：
 
@@ -260,7 +262,8 @@ slack-ai-app/
 │   │   ├── tests/                # Python ユニットテスト
 │   │   └── scripts/deploy.sh     # ゾーン固有デプロイスクリプト
 │   ├── time-agent/               # 同じ構造 — 現在時刻エージェント
-│   └── docs-agent/               # 同じ構造 — ドキュメント検索エージェント
+│   ├── docs-agent/               # 同じ構造 — ドキュメント検索エージェント
+│   └── fetch-url-agent/          # 同じ構造 — URL 取得エージェント
 ├── verification-zones/           # 検証エージェント CDK アプリ
 │   └── verification-agent/
 │       ├── cdk/                  # 独立 CDK アプリ（TypeScript）
@@ -300,12 +303,14 @@ slack-ai-app/
 cd execution-zones/execution-agent/cdk && npm test
 cd execution-zones/time-agent/cdk && npm test
 cd execution-zones/docs-agent/cdk && npm test
+cd execution-zones/fetch-url-agent/cdk && npm test
 cd verification-zones/verification-agent/cdk && npm test
 
 # Python エージェントテスト（pytest）— ゾーンごと
 cd execution-zones/execution-agent && python -m pytest tests/ -v
 cd execution-zones/time-agent && python -m pytest tests/ -v
 cd execution-zones/docs-agent && python -m pytest tests/ -v
+cd execution-zones/fetch-url-agent && python -m pytest tests/ -v
 cd verification-zones/verification-agent && python -m pytest tests/ -v
 ```
 
@@ -316,7 +321,7 @@ cd verification-zones/verification-agent && python -m pytest tests/ -v
 aws logs tail /aws/lambda/SlackAI-Verification-Dev-SlackEventHandler --follow
 
 # AgentCore Runtime ログ（AgentCore 有効時）
-aws logs tail /aws/lambda/SlackAI-Verification-Dev-SlackEventHandler --follow
+aws logs tail /aws/bedrock-agentcore/runtimes/SlackAI_VerificationAgent_Dev-<runtime-id>-DEFAULT --follow
 ```
 
 ## 環境変数
@@ -327,7 +332,7 @@ aws logs tail /aws/lambda/SlackAI-Verification-Dev-SlackEventHandler --follow
 | `SLACK_BOT_TOKEN`               | Slack ボット OAuth トークン（初回デプロイのみ）     | -                                              |
 | `BEDROCK_MODEL_ID`              | Bedrock モデル（cdk.json で設定）                   | -                                              |
 | `VERIFICATION_AGENT_ARN`        | Verification Agent の AgentCore Runtime ARN（CDK で設定） | - |
-| `EXECUTION_AGENT_ARN`           | Execution Agent の AgentCore Runtime ARN（クロススタックまたは設定） | - |
+| `EXECUTION_AGENT_ARNS`          | 実行エージェント ARN マップ（file-creator/docs/time/fetch-url） | - |
 
 シークレットは初回デプロイ後、AWS Secrets Manager に保存されます。
 
@@ -582,4 +587,4 @@ Signing Secret + Bot Token の両方が漏洩した場合、攻撃者は：
   - Agent Card (`/.well-known/agent-card.json`) による Agent Discovery
   - AgentCore A2A を唯一の通信経路として採用
   - TDD テスト 97 件全パス（Python 73 + CDK/Jest 24、以降 167+ に拡大）
-- **2025-12-28**: Execution API Gateway にデュアル認証サポート（IAM 認証と API キー認証）を追加
+- **2025-12-28**: Execution API Gateway にデュアル認証サポート（IAM 認証と API キー認証）を追加（※レガシー。2026-02-19 に AgentCore A2A へ移行）

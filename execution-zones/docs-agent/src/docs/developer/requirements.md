@@ -115,7 +115,7 @@
    - 検証: 署名検証テスト、認可テスト
    - 所要時間: 3 日
 
-2. **BedrockProcessor（実行層 Execution Layer）実装**
+2. **Execution Agent（実行層 Execution Layer）実装**
 
    - タスク: Bedrock API 呼び出し、response_url 投稿
    - 成果物: `src/application/execution_handler.py`
@@ -130,7 +130,7 @@
    - 所要時間: 2 日
 
 4. **IAM ポリシー設定**
-   - タスク: SlackEventHandler、BedrockProcessor の最小権限ポリシー作成
+   - タスク: SlackEventHandler、Execution Agent の最小権限ポリシー作成
    - 成果物: IAM Policy JSON ファイル
    - 検証: ポリシーバリデーター、権限過剰チェック
    - 所要時間: 2 日
@@ -148,35 +148,35 @@
 1. **添付ファイルメタデータ抽出** (SlackEventHandler)
 
    - タスク: `event.files` から添付ファイル情報を抽出
-   - 成果物: `cdk/lib/verification/lambda/slack-event-handler/attachment_extractor.py`
+   - 成果物: `verification-zones/verification-agent/cdk/lib/lambda/slack-event-handler/attachment_extractor.py`
    - 検証: 各種ファイル形式のメタデータ抽出テスト
    - 所要時間: 1 日
 
-2. **ファイルダウンロード機能** (BedrockProcessor)
+2. **ファイルダウンロード機能** (Execution Agent)
 
    - タスク: Slack CDN からファイルをダウンロード（ボットトークン認証）
-   - 成果物: `cdk/lib/execution/lambda/bedrock-processor/file_downloader.py`
+   - 成果物: `execution-zones/execution-agent/src/file_downloader.py`
    - 検証: ダウンロード成功/失敗のテスト
    - 所要時間: 2 日
 
-3. **ドキュメントテキスト抽出** (BedrockProcessor)
+3. **ドキュメントテキスト抽出** (Execution Agent)
 
    - タスク: PDF, DOCX, CSV, XLSX, PPTX, TXT からテキスト抽出
-   - 成果物: `cdk/lib/execution/lambda/bedrock-processor/document_extractor.py`
+   - 成果物: `execution-zones/execution-agent/src/document_extractor.py`
    - 検証: 各形式のテキスト抽出テスト
    - 所要時間: 3 日
 
-4. **画像処理統合** (BedrockProcessor)
+4. **画像処理統合** (Execution Agent)
 
    - タスク: 画像を Bedrock 視覚機能に送信
-   - 成果物: `cdk/lib/execution/lambda/bedrock-processor/bedrock_client.py` の更新
+   - 成果物: `execution-zones/execution-agent/src/bedrock_client.py` の更新
    - 検証: 画像分析のテスト
    - 所要時間: 2 日
 
-5. **添付ファイル処理オーケストレーション** (BedrockProcessor)
+5. **添付ファイル処理オーケストレーション** (Execution Agent)
 
    - タスク: 複数添付ファイルの処理、エラーハンドリング
-   - 成果物: `cdk/lib/execution/lambda/bedrock-processor/attachment_processor.py`
+   - 成果物: `execution-zones/execution-agent/src/attachment_processor.py`
    - 検証: 複数ファイル、部分成功、エラーケースのテスト
    - 所要時間: 2 日
 
@@ -193,7 +193,7 @@
 4.5. **Slack API Existence Check (Two-Key Defense - 鍵2)**
 
    - タスク: team_id, user_id, channel_id の実在性を Slack API で動的に確認
-   - 成果物: `cdk/lib/verification/lambda/slack-event-handler/existence_check.py`
+   - 成果物: `verification-zones/verification-agent/cdk/lib/lambda/slack-event-handler/existence_check.py`
    - DynamoDB キャッシュテーブル作成（5分TTL）
    - エラーハンドリング（タイムアウト、レート制限、リトライ）
    - CloudWatch メトリクスとアラーム
@@ -286,14 +286,14 @@
 17. **スレッド返信機能実装** ✅ 完了
 
     - タスク: Slack API `thread_ts` パラメータを使用したスレッド返信機能
-    - 成果物: `cdk/lib/execution/lambda/bedrock-processor/slack_poster.py`、`cdk/lib/verification/lambda/slack-event-handler/handler.py`
+    - 成果物: `execution-zones/execution-agent/src/slack_poster.py`、`verification-zones/verification-agent/cdk/lib/lambda/slack-event-handler/handler.py`
     - 検証: スレッド返信テスト、エラーハンドリングテスト
     - 完了日: 2025-12-06
 
 18. **スレッド履歴取得機能実装** ✅ 完了
 
     - タスク: Slack API `conversations.replies` を使用したスレッド履歴取得
-    - 成果物: `cdk/lib/execution/lambda/bedrock-processor/thread_history.py`
+    - 成果物: `execution-zones/execution-agent/src/thread_history.py`
     - 検証: スレッド履歴取得テスト、会話コンテキストテスト
     - 完了日: 2025-12-06
 

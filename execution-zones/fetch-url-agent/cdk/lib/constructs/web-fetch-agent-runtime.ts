@@ -1,7 +1,7 @@
 /**
- * Execution Agent AgentCore Runtime construct.
+ * Web Fetch Agent AgentCore Runtime construct.
  *
- * @module execution-zones/execution-agent/cdk/lib/constructs/execution-agent-runtime
+ * @module execution-zones/fetch-url-agent/cdk/lib/constructs/web-fetch-agent-runtime
  */
 
 import * as cdk from "aws-cdk-lib";
@@ -14,7 +14,7 @@ export interface AgentCoreLifecycleConfig {
   readonly maxLifetimeSeconds?: number;
 }
 
-export interface ExecutionAgentRuntimeProps {
+export interface WebFetchAgentRuntimeProps {
   readonly agentRuntimeName: string;
   readonly containerImageUri: string;
   readonly lifecycleConfiguration?: AgentCoreLifecycleConfig;
@@ -23,13 +23,12 @@ export interface ExecutionAgentRuntimeProps {
   readonly verificationAccountId?: string;
 }
 
-export class ExecutionAgentRuntime extends Construct {
+export class WebFetchAgentRuntime extends Construct {
   public readonly runtime: cdk.CfnResource;
-  public readonly endpoint: cdk.CfnResource | undefined = undefined;
   public readonly executionRole: iam.Role;
   public readonly runtimeArn: string;
 
-  constructor(scope: Construct, id: string, props: ExecutionAgentRuntimeProps) {
+  constructor(scope: Construct, id: string, props: WebFetchAgentRuntimeProps) {
     super(scope, id);
 
     const stack = cdk.Stack.of(this);
@@ -45,7 +44,7 @@ export class ExecutionAgentRuntime extends Construct {
         },
       }),
       description:
-        "Execution role for Execution Agent AgentCore Runtime with Bedrock, ECR, CloudWatch, and X-Ray permissions",
+        "Execution role for Web Fetch Agent AgentCore Runtime with Bedrock, ECR, CloudWatch, and X-Ray permissions",
     });
 
     this.executionRole.addToPolicy(
@@ -154,15 +153,15 @@ export class ExecutionAgentRuntime extends Construct {
 
     if (props.verificationAccountId) {
       const endpointArnStatic = `arn:aws:bedrock-agentcore:${stack.region}:${stack.account}:runtime-endpoint/${props.agentRuntimeName}/DEFAULT`;
-      new cdk.CfnOutput(this, "ExecutionRuntimeArn", {
+      new cdk.CfnOutput(this, "WebFetchRuntimeArn", {
         description: "AgentCore Runtime ARN; resource policy applied via deploy script",
         value: this.runtimeArn,
-        exportName: `${stack.stackName}-ExecutionRuntimeArn`,
+        exportName: `${stack.stackName}-WebFetchRuntimeArn`,
       });
-      new cdk.CfnOutput(this, "ExecutionEndpointArn", {
+      new cdk.CfnOutput(this, "WebFetchEndpointArn", {
         description: "AgentCore Runtime Endpoint ARN; resource policy applied via deploy script",
         value: endpointArnStatic,
-        exportName: `${stack.stackName}-ExecutionEndpointArn`,
+        exportName: `${stack.stackName}-WebFetchEndpointArn`,
       });
     }
   }

@@ -612,7 +612,7 @@ aws logs tail /aws/agentcore/execution-agent --follow
 3. **中期対応（T+24 時間）**:
 
    - セキュリティ検出ルールを更新
-   - SlackEventHandler と BedrockProcessor のコードをデプロイ
+   - SlackEventHandler と Execution Agent のコードをデプロイ
    - 攻撃パターンをドキュメント化
    - 脅威モデルを更新
 

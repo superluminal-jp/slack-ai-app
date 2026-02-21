@@ -3,6 +3,7 @@ Unit tests for Execution Agent agent_factory.py.
 
 Focus:
 - Tool wiring excludes search_docs after docs-agent split.
+- fetch_url excluded after web-fetch-agent split (035).
 """
 
 import ast
@@ -10,13 +11,13 @@ from pathlib import Path
 
 
 def _load_agent_factory_ast() -> ast.Module:
-    root = Path(__file__).resolve().parent.parent
+    root = Path(__file__).resolve().parent.parent / "src"
     src = (root / "agent_factory.py").read_text(encoding="utf-8")
     return ast.parse(src)
 
 
 def test_get_tools_does_not_include_search_docs() -> None:
-    """Execution Agent tools list must not include search_docs."""
+    """Execution Agent tools list must not include search_docs or fetch_url."""
     tree = _load_agent_factory_ast()
 
     get_tools_fn = None
@@ -36,5 +37,7 @@ def test_get_tools_does_not_include_search_docs() -> None:
 
     assert "search_docs" not in returned_names
     assert "get_current_time" not in returned_names
-    assert "fetch_url" in returned_names
+    # fetch_url moved to fetch-url-agent (035)
+    assert "fetch_url" not in returned_names
     assert "generate_text_file" in returned_names
+    assert len(returned_names) == 7, f"Expected 7 tools, got {len(returned_names)}: {returned_names}"

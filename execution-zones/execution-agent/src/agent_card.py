@@ -41,8 +41,7 @@ def get_agent_card() -> Dict[str, Any]:
         "name": "SlackAI-FileCreatorAgent",
         "description": (
             "ファイル生成特化エージェント。Excel/Word/PowerPoint/CSV/チャート画像などの"
-            "業務ファイルを生成し、ビジネス文書・スライド作成ガイドライン参照と"
-            "Webコンテンツ取得に対応する。"
+            "業務ファイルを生成し、ビジネス文書・スライド作成ガイドラインを参照する。"
         ),
         "url": runtime_url,
         "version": "1.0.0",
@@ -117,15 +116,6 @@ def get_agent_card() -> Dict[str, Any]:
                 "name": "Presentation Slide Guidelines",
                 "description": (
                     "プレゼン資料作成の標準ガイドラインを返す。"
-                ),
-                "inputModes": ["text"],
-                "outputModes": ["text"],
-            },
-            {
-                "id": "fetch_url",
-                "name": "Fetch URL",
-                "description": (
-                    "指定URLのWebコンテンツを取得し、要約や加工に利用する。"
                 ),
                 "inputModes": ["text"],
                 "outputModes": ["text"],

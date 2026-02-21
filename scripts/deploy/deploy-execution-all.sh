@@ -2,7 +2,8 @@
 #
 # deploy-execution-all.sh — Deploy all execution zones sequentially
 #
-# Deploys: execution-agent → time-agent → docs-agent
+# Discovers zones automatically from execution-zones/*/scripts/deploy.sh
+# and deploys them in order (execution-agent first, then others alphabetically).
 #
 # Usage:
 #   export DEPLOYMENT_ENV=dev
@@ -32,7 +33,41 @@ done
 
 log_info "Deploying all execution zones (env: ${DEPLOYMENT_ENV})"
 
-for agent in execution-agent time-agent docs-agent; do
+discover_execution_zones() {
+    local zones=() zone_dir zone
+    while IFS= read -r zone_dir; do
+        [[ -z "${zone_dir}" ]] && continue
+        zone="$(basename "${zone_dir}")"
+        if [[ -x "${zone_dir}/scripts/deploy.sh" ]]; then
+            zones+=("${zone}")
+        fi
+    done < <(find "${PROJECT_ROOT}/execution-zones" -mindepth 1 -maxdepth 1 -type d | sort)
+
+    if [[ ${#zones[@]} -eq 0 ]]; then
+        log_error "No deployable execution zones found under ${PROJECT_ROOT}/execution-zones"
+        exit 1
+    fi
+
+    # Ensure file-creator (execution-agent) deploys first when present.
+    local ordered=()
+    for i in "${!zones[@]}"; do
+        if [[ "${zones[$i]}" == "execution-agent" ]]; then
+            ordered+=("${zones[$i]}")
+            unset 'zones[$i]'
+            break
+        fi
+    done
+    for zone in "${zones[@]}"; do
+        [[ -n "${zone}" ]] && ordered+=("${zone}")
+    done
+
+    echo "${ordered[@]}"
+}
+
+IFS=' ' read -r -a EXECUTION_ZONES <<< "$(discover_execution_zones)"
+log_info "Discovered execution zones: ${EXECUTION_ZONES[*]}"
+
+for agent in "${EXECUTION_ZONES[@]}"; do
     log_info "--- Deploying ${agent} ---"
     DEPLOYMENT_ENV="${DEPLOYMENT_ENV}" \
         bash "${PROJECT_ROOT}/execution-zones/${agent}/scripts/deploy.sh" \

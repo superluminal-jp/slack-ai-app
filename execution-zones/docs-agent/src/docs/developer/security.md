@@ -40,8 +40,8 @@
 | **Slack**             | ユーザー認証              | SSO + MFA                    | リクエスト不可 |
 | **Function URL**      | エンドポイント公開        | なし（署名検証は Lambda 内） | -              |
 | **SlackEventHandler** | 署名検証、Existence Check | Signing Secret + Bot Token   | 401/403 を返す |
-| **ExecutionApi**      | 内部 API 保護             | IAM認証 または APIキー認証（デフォルト: APIキー認証） | 403 を返す     |
-| **BedrockProcessor**  | AI 処理実行               | IAM ロール                   | エラーログ     |
+| **Execution Runtime** | 実行ゾーン保護            | IAM + リソースポリシー       | AccessDenied   |
+| **Execution Agent**   | AI 処理実行               | IAM ロール                   | エラーログ     |
 
 ---
 
@@ -88,12 +88,12 @@
 │        └─ メッセージ長、空文字チェック                       │
 │    ↓ すべて成功時のみ次へ                                   │
 ├─────────────────────────────────────────────────────────────┤
-│ 4. ExecutionApi (API Gateway)                                │
-│    ↓ IAM 認証                                                │
-│    [リソースポリシー: SlackEventHandlerロールのみ許可]       │
-│    [内部API保護]                                             │
+│ 4. Execution Runtime (AgentCore A2A)                         │
+│    ↓ IAM + リソースポリシー                                  │
+│    [InvokeAgentRuntime を許可された Runtime/Endpoint のみ]   │
+│    [実行ゾーン保護]                                           │
 ├─────────────────────────────────────────────────────────────┤
-│ 5. BedrockProcessor (実行層)                                 │
+│ 5. Execution Agent (実行層)                                  │
 │    ↓ IAM ロール認証                                          │
 │    [最小権限: Bedrock呼び出しのみ]                           │
 │    └─ Bedrock Converse API 呼び出し                          │
@@ -126,7 +126,7 @@ Two-Key Defense は、2 つの独立した鍵（Signing Secret と Bot Token）�
 **コード例**:
 
 ```python
-# cdk/lib/verification/lambda/slack-event-handler/slack_verifier.py
+# verification-zones/verification-agent/cdk/lib/lambda/slack-event-handler/slack_verifier.py
 def verify_signature(
     body: str,
     timestamp: str,
@@ -343,26 +343,15 @@ def check_entity_existence(
 - ユーザーフレンドリーなエラーメッセージを返す
 - リクエストは処理しない
 
-#### レイヤー 4: ExecutionApi（デュアル認証: IAM と API キー）
+#### レイヤー 4: Execution Runtime（AgentCore A2A 認可）
 
-**目的**: 内部 API の保護、非AWS API統合への対応
+**目的**: 実行ゾーン Runtime への不正呼び出し防止
 
 **実装詳細**:
 
-- API Gateway REST API
-- **デュアル認証**: IAM認証 と APIキー認証の両方をサポート
-- **デフォルト認証方法**: APIキー認証（環境変数 `EXECUTION_API_AUTH_METHOD` で制御）
-- リソースポリシー: SlackEventHandler ロール + APIキー認証を許可
-
-**認証方法の選択**:
-
-- **IAM認証**: AWS Signature Version 4 (SigV4) 署名による認証
-  - 既存のIAM認証機能を維持（後方互換性）
-  - クロスアカウントデプロイに対応
-- **APIキー認証**: `x-api-key` ヘッダーによる認証（デフォルト）
-  - AWS Secrets ManagerにAPIキーを保存
-  - 非AWS APIとの統合に対応
-  - 使用量プランによるレート制限
+- 呼び出し元 IAM: Verification 実行ロールに `bedrock-agentcore:InvokeAgentRuntime` を付与
+- 呼び出し先リソースポリシー: 各 Execution Runtime で Principal を限定
+- 対象リソース: Runtime ARN と DEFAULT Endpoint ARN の両方
 
 **リソースポリシー例**:
 
@@ -371,43 +360,30 @@ def check_entity_existence(
   "Version": "2012-10-17",
   "Statement": [
     {
+      "Sid": "AllowVerificationAgentInvoke",
       "Effect": "Allow",
       "Principal": {
-        "AWS": "arn:aws:iam::ACCOUNT_ID:role/SlackEventHandlerRole"
+        "AWS": "arn:aws:iam::ACCOUNT_ID:role/SlackAI-Verification-Dev-ExecutionRole"
       },
-      "Action": "execute-api:Invoke",
-      "Resource": "arn:aws:execute-api:REGION:ACCOUNT_ID:API_ID/*",
+      "Action": "bedrock-agentcore:InvokeAgentRuntime",
+      "Resource": "arn:aws:bedrock-agentcore:REGION:ACCOUNT_ID:runtime/RUNTIME_ID",
       "Condition": {
         "StringEquals": {
-          "aws:PrincipalAccount": "ACCOUNT_ID"
+          "aws:SourceAccount": "ACCOUNT_ID"
         }
       }
-    },
-    {
-      "Effect": "Allow",
-      "Principal": "*",
-      "Action": "execute-api:Invoke",
-      "Resource": "arn:aws:execute-api:REGION:ACCOUNT_ID:API_ID/*"
     }
   ]
 }
 ```
 
-**APIキー管理**:
-
-- APIキーはAWS Secrets Managerに保存（暗号化）
-- シークレット名: `execution-api-key`（デフォルト、環境変数で変更可能）
-- APIキー値はログ、環境変数、コードに露出しない
-- ダウンタイムなしでAPIキーをローテーション可能
-
 **セキュリティ効果**:
 
-- 内部 API への不正アクセス防止
+- 実行 Runtime への不正呼び出し防止
 - 最小権限の原則
-- 非AWS APIとの統合に対応
-- 柔軟な認証方法の選択
+- クロスアカウント境界の明確化
 
-#### レイヤー 5: BedrockProcessor（実行層）
+#### レイヤー 5: Execution Agent（実行層）
 
 **目的**: AI 処理の実行
 
@@ -597,37 +573,27 @@ def check_entity_existence(
     return True
 ```
 
-### Execution API の IAM 認証
+### AgentCore A2A の IAM 認証
 
-**ファイル**: `cdk/lib/constructs/execution-api.ts`
+**ファイル**: `verification-zones/verification-agent/cdk/lib/constructs/verification-agent-runtime.ts` ほか
 
 ```typescript
-// API Gateway リソースポリシー
-const resourcePolicy = new iam.PolicyDocument({
-  statements: [
-    new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
-      principals: [new iam.ArnPrincipal(verificationLambdaRoleArn)],
-      actions: ["execute-api:Invoke"],
-      resources: [api.arnForExecuteApi("*")],
-    }),
-  ],
-});
-
-// API Gateway にリソースポリシーを設定
-api.addApiKey("ExecutionApiKey", {
-  apiKeyName: `${stackName}-execution-api-key`,
-  description: "API Key for Execution API (IAM authentication)",
-});
-
-// Lambda に IAM 権限を付与
-verificationLambda.addToRolePolicy(
+// Verification 実行ロールに Runtime/Endpoint 両方を許可
+verificationRole.addToPolicy(
   new iam.PolicyStatement({
     effect: iam.Effect.ALLOW,
-    actions: ["execute-api:Invoke"],
-    resources: [api.arnForExecuteApi("*")],
+    actions: ["bedrock-agentcore:InvokeAgentRuntime"],
+    resources: [runtimeArn, endpointArn],
   })
 );
+```
+
+```python
+# Execution Runtime 側にリソースポリシーを適用
+client.put_resource_policy(
+    resourceArn=execution_agent_arn,
+    policy=json.dumps(policy_document),
+)
 ```
 
 ### モニタリングとアラート
@@ -742,7 +708,7 @@ const existenceCheckAlarm = new cloudwatch.Alarm(
 | T-03     | リプレイアタック                   | ネットワークキャプチャ               | 重複質問実行                               | 低     | 中             | タイムスタンプ検証、nonce 追跡                                  |
 | T-04     | Function URL 漏洩                  | ログ露出、ドキュメント               | 直接呼び出し試行                           | 高     | 中             | 署名検証（シークレットなしで失敗）                              |
 | T-05     | SlackEventHandler IAM ロール侵害   | AWS 認証情報漏洩                     | 内部 API アクセス                          | 低     | 致命的         | 最小権限、認証情報ローテーション                                |
-| T-06     | コマンドインジェクション           | サニタイズされていない Slack 入力    | BedrockProcessor でのコード実行            | 低     | 致命的         | 入力検証、パラメータ化クエリ                                    |
+| T-06     | コマンドインジェクション           | サニタイズされていない Slack 入力    | Execution Agent での不正実行               | 低     | 致命的         | 入力検証、パラメータ化クエリ                                    |
 | T-07     | DDoS / レート乱用                  | Slack API 自動化                     | サービス利用不可、高額コスト               | 中     | 中             | WAF レート制限、ユーザー単位スロットリング                      |
 | T-08     | 権限昇格                           | 誤設定された IAM ポリシー            | 不正リソースアクセス                       | 低     | 高             | IAM ポリシーレビュー、最小権限                                  |
 | **T-11** | **モデル乱用（コスト）**           | **大量リクエスト、長いコンテキスト** | **高額な Bedrock コスト**                  | **高** | **中**         | **トークン制限、クォータ**                                      |
@@ -805,7 +771,7 @@ Slack API Existence Check により、署名シークレット漏洩時のリス
 - **T-01: 署名シークレット漏洩** → 2 鍵防御（Existence Check）により影響を「高」から「中」に軽減
 - **T-02: Slack アカウント乗っ取り** → SSO + MFA、IP 制限で防御
 - **T-03: リプレイアタック** → タイムスタンプ検証（±5 分）で防御
-- **T-04: API Gateway URL 漏洩** → 署名検証により不正アクセスをブロック
+- **T-04: Function URL 漏洩** → 署名検証により不正アクセスをブロック
 - **T-05: Lambda IAM ロール侵害** → 最小権限の原則、認証情報ローテーション
 - **T-08: 権限昇格** → ホワイトリスト認可、IAM ポリシーレビュー
 
@@ -837,10 +803,10 @@ Slack API Existence Check により、署名シークレット漏洩時のリス
 │    └─ 3c. 認可 (ホワイトリスト)                            │
 │    ↓ すべて成功時のみ次へ                                   │
 ├─────────────────────────────────────────────────────────────┤
-│ 4. ExecutionApi (IAM 認証)                                   │
+│ 4. Execution Runtime (IAM + リソースポリシー)               │
 │    ↓                                                         │
 ├─────────────────────────────────────────────────────────────┤
-│ 5. BedrockProcessor → Bedrock                                │
+│ 5. Execution Agent → Bedrock                                 │
 │    └─ Guardrails                                            │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -932,8 +898,8 @@ Slack API Existence Check により、署名シークレット漏洩時のリス
   - 3a. HMAC SHA256 署名検証
   - **3b. Slack API Existence Check（NEW）**
   - 3c. 認可（ホワイトリスト）
-- **レイヤー 4（ExecutionApi）**: デュアル認証（IAM認証 または APIキー認証）による内部 API 保護
-- **レイヤー 5（BedrockProcessor）**: Bedrock Guardrails
+- **レイヤー 4（Execution Runtime）**: IAM + リソースポリシーによる Runtime 保護
+- **レイヤー 5（Execution Agent）**: Bedrock Guardrails
 - **レイヤー 6（Bedrock）**: Automated Reasoning
 
 ### レイヤー 3b: Slack API Existence Check 実装詳細

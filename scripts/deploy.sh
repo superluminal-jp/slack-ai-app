@@ -58,6 +58,7 @@ ENV_SUFFIX=$([[ "${DEPLOYMENT_ENV}" == "prod" ]] && echo "Prod" || echo "Dev")
 EXEC_STACK="${EXECUTION_STACK_NAME:-SlackAI-Execution}-${ENV_SUFFIX}"
 DOCS_STACK="${DOCS_EXECUTION_STACK_NAME:-SlackAI-DocsExecution}-${ENV_SUFFIX}"
 TIME_STACK="${TIME_EXECUTION_STACK_NAME:-SlackAI-TimeExecution}-${ENV_SUFFIX}"
+WEB_FETCH_STACK="${WEB_FETCH_EXECUTION_STACK_NAME:-SlackAI-WebFetch}-${ENV_SUFFIX}"
 VERIFY_STACK="${VERIFICATION_STACK_NAME:-SlackAI-Verification}-${ENV_SUFFIX}"
 
 # ── Shared helpers ───────────────────────────────────────────
@@ -73,7 +74,7 @@ get_verify_config_value() {
 }
 
 save_execution_agent_arns_to_config() {
-    local execution_arn="$1" docs_arn="$2" time_arn="$3"
+    local execution_arn="$1" docs_arn="$2" time_arn="$3" fetch_arn="$4"
     local config_file="${CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
     local tmp_file
     local arns_json
@@ -84,9 +85,11 @@ save_execution_agent_arns_to_config() {
             --arg file_creator "${execution_arn}" \
             --arg docs "${docs_arn}" \
             --arg time "${time_arn}" \
+            --arg fetch_url "${fetch_arn}" \
             '{ "file-creator": $file_creator }
              + (if $docs == "" then {} else { docs: $docs } end)
-             + (if $time == "" then {} else { time: $time } end)'
+             + (if $time == "" then {} else { time: $time } end)
+             + (if $fetch_url == "" or $fetch_url == "None" then {} else { "fetch-url": $fetch_url } end)'
     )
 
     if [[ ! -f "${config_file}" ]]; then
@@ -97,7 +100,7 @@ save_execution_agent_arns_to_config() {
     if ! jq \
         --argjson arns "${arns_json}" \
         '.executionAgentArns = $arns
-         | del(.executionAgentArn, .docsAgentArn, .timeAgentArn)' \
+         | del(.executionAgentArn, .docsAgentArn, .timeAgentArn, .fetchUrlAgentArn, .webFetchAgentArn)' \
         "${config_file}" > "${tmp_file}"; then
         rm -f "${tmp_file}"
         log_error "Failed to update ${config_file}"
@@ -220,7 +223,7 @@ _fetch_logs() {
 
 cmd_deploy() {
     local exec_outputs docs_outputs time_outputs verify_outputs force_rebuild="false"
-    local pre_exec_arn pre_docs_arn pre_time_arn preflight_execution_agent_arns_json=""
+    local pre_exec_arn pre_docs_arn pre_time_arn pre_fetch_arn preflight_execution_agent_arns_json=""
     exec_outputs="$(mktemp)"; docs_outputs="$(mktemp)"; time_outputs="$(mktemp)"; verify_outputs="$(mktemp)"
     trap "rm -f '${exec_outputs}' '${docs_outputs}' '${time_outputs}' '${verify_outputs}'" EXIT
 
@@ -254,15 +257,18 @@ cmd_deploy() {
     pre_exec_arn=$(get_stack_output "${EXEC_STACK}" "ExecutionAgentRuntimeArn")
     pre_docs_arn=$(get_stack_output "${DOCS_STACK}" "DocsAgentRuntimeArn")
     pre_time_arn=$(get_stack_output "${TIME_STACK}" "TimeAgentRuntimeArn")
+    pre_fetch_arn=$(get_stack_output "${WEB_FETCH_STACK}" "WebFetchAgentRuntimeArn")
     if [[ -n "${pre_exec_arn}" && "${pre_exec_arn}" != "None" ]]; then
         preflight_execution_agent_arns_json=$(
             jq -cn \
                 --arg file_creator "${pre_exec_arn}" \
                 --arg docs "${pre_docs_arn}" \
                 --arg time "${pre_time_arn}" \
+                --arg fetch_url "${pre_fetch_arn}" \
                 '{ "file-creator": $file_creator }
                  + (if $docs == "" or $docs == "None" then {} else { docs: $docs } end)
-                 + (if $time == "" or $time == "None" then {} else { time: $time } end)'
+                 + (if $time == "" or $time == "None" then {} else { time: $time } end)
+                 + (if $fetch_url == "" or $fetch_url == "None" then {} else { "fetch-url": $fetch_url } end)'
         )
         log_info "========== Preflight: Deploying Verification Stack with current runtime ARNs =========="
         ( cd "${VERIFY_CDK_DIR}" && "${VERIFY_CDK_CLI}" deploy "${VERIFY_STACK}" \
@@ -329,9 +335,16 @@ cmd_deploy() {
     time_arn=$(get_output_from_file_or_stack "${time_outputs}" "${TIME_STACK}" "TimeAgentRuntimeArn")
     [[ -z "${time_arn}" ]] && { log_error "TimeAgentRuntimeArn not found in outputs"; exit 1; }
     log_success "Time Execution Stack deployed (ARN: ${time_arn})"
+    fetch_arn=$(get_stack_output "${WEB_FETCH_STACK}" "WebFetchAgentRuntimeArn")
+    if [[ -n "${fetch_arn}" && "${fetch_arn}" != "None" ]]; then
+        log_success "Web Fetch Stack runtime detected (ARN: ${fetch_arn})"
+    else
+        fetch_arn=""
+        log_warning "Web Fetch runtime ARN not found from ${WEB_FETCH_STACK}; continuing without fetch-url route"
+    fi
 
     # Persist agent ARNs so future deploys/policy checks use the latest runtime targets.
-    save_execution_agent_arns_to_config "${exec_arn}" "${docs_arn}" "${time_arn}"
+    save_execution_agent_arns_to_config "${exec_arn}" "${docs_arn}" "${time_arn}" "${fetch_arn}"
 
     # Phase 2: Verification Stack (deployed from verification-zones/verification-agent/cdk/)
     log_info "========== Phase 2: Deploying Verification Stack =========="
@@ -342,9 +355,11 @@ cmd_deploy() {
             --arg file_creator "${exec_arn}" \
             --arg docs "${docs_arn}" \
             --arg time "${time_arn}" \
+            --arg fetch_url "${fetch_arn}" \
             '{ "file-creator": $file_creator }
              + (if $docs == "" then {} else { docs: $docs } end)
-             + (if $time == "" then {} else { time: $time } end)'
+             + (if $time == "" then {} else { time: $time } end)
+             + (if $fetch_url == "" then {} else { "fetch-url": $fetch_url } end)'
     )
     verify_ctx+=" --context executionAgentArns=${execution_agent_arns_json}"
 
@@ -389,6 +404,15 @@ cmd_deploy() {
                 && log_success "Time resource policy applied" \
                 || log_warning "Could not apply Time resource policy"
         fi
+        if [[ -n "${fetch_arn}" ]]; then
+            python3 "${SCRIPT_DIR}/apply-resource-policy.py" \
+                --execution-agent-arn "${fetch_arn}" \
+                --verification-role-arn "${role_arn}" \
+                --account-id "${verify_account}" \
+                --region "${AWS_REGION}" \
+                && log_success "Fetch URL resource policy applied" \
+                || log_warning "Could not apply Fetch URL resource policy"
+        fi
     fi
 
     # Phase 3: Validate AgentCore runtimes
@@ -396,11 +420,12 @@ cmd_deploy() {
     local handler_url verify_arn
     handler_url=$(get_output_from_file_or_stack "${verify_outputs}" "${VERIFY_STACK}" "SlackEventHandlerUrl")
     verify_arn=$(get_output_from_file_or_stack "${verify_outputs}" "${VERIFY_STACK}" "VerificationAgentRuntimeArn")
-    local eid did tid vid
-    eid=$(get_runtime_id "${exec_arn}"); did=$(get_runtime_id "${docs_arn}"); tid=$(get_runtime_id "${time_arn}"); vid=$(get_runtime_id "${verify_arn}")
+    local eid did tid fid vid
+    eid=$(get_runtime_id "${exec_arn}"); did=$(get_runtime_id "${docs_arn}"); tid=$(get_runtime_id "${time_arn}"); fid=$(get_runtime_id "${fetch_arn}"); vid=$(get_runtime_id "${verify_arn}")
     [[ -n "${eid}" ]] && wait_for_agent_ready "Execution Agent" "${eid}" 120
     [[ -n "${did}" ]] && wait_for_agent_ready "Docs Agent" "${did}" 120
     [[ -n "${tid}" ]] && wait_for_agent_ready "Time Agent" "${tid}" 120
+    [[ -n "${fid}" ]] && wait_for_agent_ready "Web Fetch Agent" "${fid}" 120
     [[ -n "${vid}" ]] && wait_for_agent_ready "Verification Agent" "${vid}" 120
 
     # Summary
@@ -411,6 +436,7 @@ cmd_deploy() {
     echo "Execution Agent ARN:     ${exec_arn:-N/A}"
     echo "Docs Agent ARN:          ${docs_arn:-N/A}"
     echo "Time Agent ARN:          ${time_arn:-N/A}"
+    echo "Fetch URL Agent ARN:     ${fetch_arn:-N/A}"
     echo "Verification Agent ARN:  ${verify_arn:-N/A}"
     echo ""
     echo "Next steps:"
@@ -657,11 +683,12 @@ cmd_policy() {
         esac
     done
 
-    local exec_arn docs_arn time_arn account_id verify_account
+    local exec_arn docs_arn time_arn fetch_arn account_id verify_account
     exec_arn=$(get_stack_output "${EXEC_STACK}" "ExecutionAgentRuntimeArn")
     [[ -z "${exec_arn}" ]] && { log_error "ExecutionAgentRuntimeArn not found. Is ${EXEC_STACK} deployed?"; exit 1; }
     docs_arn=$(get_stack_output "${DOCS_STACK}" "DocsAgentRuntimeArn")
     time_arn=$(get_stack_output "${TIME_STACK}" "TimeAgentRuntimeArn")
+    fetch_arn=$(get_stack_output "${WEB_FETCH_STACK}" "WebFetchAgentRuntimeArn")
 
     account_id=$(aws sts get-caller-identity ${PROFILE_ARGS} --query Account --output text 2>/dev/null || echo "")
     [[ -z "${account_id}" ]] && { log_error "Failed to get AWS account ID."; exit 1; }
@@ -673,6 +700,7 @@ cmd_policy() {
     log_info "Execution Agent: ${exec_arn}"
     [[ -n "${docs_arn}" ]] && log_info "Docs Agent: ${docs_arn}"
     [[ -n "${time_arn}" ]] && log_info "Time Agent: ${time_arn}"
+    [[ -n "${fetch_arn}" ]] && log_info "Fetch URL Agent: ${fetch_arn}"
     log_info "Verification Role: ${role_arn}"
     [[ -n "${dry_run}" ]] && log_info "Dry run — printing policy only"
 
@@ -691,6 +719,13 @@ cmd_policy() {
     if [[ -n "${time_arn}" ]]; then
         python3 "${SCRIPT_DIR}/apply-resource-policy.py" \
             --execution-agent-arn "${time_arn}" \
+            --verification-role-arn "${role_arn}" \
+            --account-id "${verify_account}" \
+            --region "${AWS_REGION}" ${dry_run}
+    fi
+    if [[ -n "${fetch_arn}" ]]; then
+        python3 "${SCRIPT_DIR}/apply-resource-policy.py" \
+            --execution-agent-arn "${fetch_arn}" \
             --verification-role-arn "${role_arn}" \
             --account-id "${verify_account}" \
             --region "${AWS_REGION}" ${dry_run}

@@ -146,7 +146,7 @@
    - Signing Secret 漏洩時も Bot Token がなければ攻撃不可（Existence Check が失敗）
    - Bot Token 漏洩時も署名検証で偽造リクエストを検出
    - DynamoDB キャッシュ（5 分 TTL）でパフォーマンスを最適化
-   - **防げる攻撃**: T-01 (署名シークレット漏洩)、T-04 (API Gateway URL 漏洩)
+   - **防げる攻撃**: T-01 (署名シークレット漏洩)、T-04 (Function URL 漏洩)
 
 2. **動的検証**: Slack API による実在性確認
 
@@ -189,19 +189,19 @@ SlackBedrockStack
 
 #### 分離スタック構成（推奨）
 
-Verification Zone と Execution Zone を独立したスタックに分離。クロスアカウントデプロイに対応。
+Verification Zone と複数 Execution Zone を独立スタックに分離。クロスアカウントデプロイに対応。
 
 ```
-┌─────────────────────────────┐    ┌─────────────────────────────┐
-│ VerificationStack           │    │ ExecutionStack              │
-│ (Account A)                 │    │ (Account B)                 │
-│                             │    │                             │
-│ - SlackEventHandler Lambda  │───▶│ - Execution Agent           │
-│ - Function URL              │    │   (AgentCore Runtime)       │
-│ - DynamoDB tables (5)       │    │ - CloudWatch Alarms         │
-│ - Secrets Manager           │    │                             │
-│ - CloudWatch Alarms         │    │                             │
-└─────────────────────────────┘    └─────────────────────────────┘
+┌─────────────────────────────┐    ┌───────────────────────────────────────────┐
+│ VerificationStack           │    │ Execution Stacks                          │
+│ (Account A)                 │    │ (Account B)                               │
+│                             │    │                                           │
+│ - SlackEventHandler Lambda  │───▶│ - FileCreator (AgentCore Runtime)        │
+│ - Function URL              │    │ - Time (AgentCore Runtime)               │
+│ - DynamoDB tables (5)       │    │ - Docs (AgentCore Runtime)               │
+│ - Secrets Manager           │    │ - WebFetch (AgentCore Runtime)           │
+│ - CloudWatch Alarms         │    │ - CloudWatch Logs/Metrics                │
+└─────────────────────────────┘    └───────────────────────────────────────────┘
 ```
 
 **利点**:
@@ -244,193 +244,78 @@ Slack AI アプリケーションは、Verification Zone（検証層）と Execu
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 認証パターン（デュアル認証: IAM と API キー）
+### 3.2 認証パターン（AgentCore A2A + SigV4）
 
-Execution API は IAM 認証と API キー認証の両方をサポートしています。デフォルトは API キー認証です。
+現行構成では API Gateway / API キーを経由せず、Verification Agent Runtime から各 Execution Agent Runtime へ `InvokeAgentRuntime` を行います。認証・認可は次の 2 層です。
 
-#### IAM 認証パターン
-
-SlackEventHandler Lambda には、Execution API を呼び出すための IAM ポリシーが付与されています：
-
-```json
-{
-  "Effect": "Allow",
-  "Action": "execute-api:Invoke",
-  "Resource": "arn:aws:execute-api:REGION:ACCOUNT_B:API_ID/*"
-}
-```
-
-Lambda は AWS SDK を使用して SigV4 署名付きリクエストを送信します。
-
-API Gateway には、特定の IAM ロールからのアクセスのみを許可するリソースポリシーが設定されています：
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "AWS": "arn:aws:iam::ACCOUNT_A:role/SlackEventHandlerRole"
-      },
-      "Action": "execute-api:Invoke",
-      "Resource": "arn:aws:execute-api:REGION:ACCOUNT_B:API_ID/*",
-      "Condition": {
-        "StringEquals": {
-          "aws:PrincipalAccount": "ACCOUNT_A"
-        }
-      }
-    }
-  ]
-}
-```
-
-IAM 認証フロー:
-
-```
-1. Slack → SlackEventHandler Lambda
-2. Lambda が IAM ロールを使用して SigV4 署名を生成
-3. SigV4 署名付き HTTPS リクエストを Execution API に送信
-4. API Gateway がリソースポリシーを検証
-   - Principal (IAM ロール ARN) をチェック
-   - アカウント ID をチェック（オプション）
-5. 検証成功 → Execution Agent を呼び出し
-6. 検証失敗 → 403 Forbidden を返却
-```
-
-#### API キー認証パターン（デフォルト）
-
-SlackEventHandler Lambda には、Secrets Manager から API キーを取得する権限が付与されています：
-
-```json
-{
-  "Effect": "Allow",
-  "Action": "secretsmanager:GetSecretValue",
-  "Resource": "arn:aws:secretsmanager:REGION:ACCOUNT_A:secret:execution-api-key*"
-}
-```
-
-Lambda は環境変数 `EXECUTION_API_AUTH_METHOD=api_key` で API キー認証を使用するように設定されています。
-
-API キー認証フロー:
-
-```
-1. Slack → SlackEventHandler Lambda
-2. Lambda が Secrets Manager から API キーを取得
-3. x-api-key ヘッダーに API キーを含めて HTTPS リクエストを送信
-4. API Gateway が API キーを検証（使用量プランと関連付け）
-5. 検証成功 → Execution Agent を呼び出し
-6. 検証失敗 → 403 Forbidden を返却
-```
-
-#### 認証方法の選択
-
-認証方法は環境変数 `EXECUTION_API_AUTH_METHOD` で制御されます：
-
-- `iam`: IAM 認証を使用（既存の動作）
-- `api_key`: API キー認証を使用（デフォルト）
-
-API キー認証を使用する場合、`EXECUTION_API_KEY_SECRET_NAME` 環境変数で Secrets Manager のシークレット名を指定します（デフォルト: `execution-api-key`）。
+1. **呼び出し元 IAM（identity-based policy）**  
+   Verification 実行ロールに、`executionAgentArns` で指定された各 Runtime ARN と DEFAULT Endpoint ARN の両方への `bedrock-agentcore:InvokeAgentRuntime` を付与します。
+2. **呼び出し先リソースポリシー（resource-based policy）**  
+   各 Execution Runtime に `PutResourcePolicy` で Principal（`<VerificationStack>-ExecutionRole`）を許可します。
 
 ### 3.3 デプロイフロー
-
-#### Phase 1: Execution Stack のデプロイ
 
 ```bash
 # デプロイ環境を設定
 export DEPLOYMENT_ENV=dev  # または 'prod'
 
-# デプロイ
-npx cdk deploy SlackAI-Execution-Dev
-
-# 出力から API URL と API ARN を取得
+# 全体デプロイ（Execution 4ゾーン → Verification）
+./scripts/deploy/deploy-all.sh
 ```
 
-#### Phase 2: Verification Stack のデプロイ
+`deploy-all.sh` は以下を自動化します。
 
-```bash
-# 設定ファイル (cdk.config.{env}.json) に API URL を設定
-# または --context で指定
-npx cdk deploy SlackAI-Verification-Dev \
-  --context executionApiUrl=https://xxx.execute-api.ap-northeast-1.amazonaws.com/prod/
-
-# 出力から Lambda ロール ARN を取得
-```
-
-#### Phase 3: Execution Stack の更新
-
-```bash
-# cdk.config.{env}.json に Lambda ロール ARN を設定
-{
-  "verificationLambdaRoleArn": "arn:aws:iam::123456789012:role/..."
-}
-
-# 再デプロイ（リソースポリシーを更新）
-npx cdk deploy SlackAI-Execution-Dev
-```
+1. Execution ゾーン（file-creator / time / docs / fetch-url）を順次デプロイ
+2. 取得した Runtime ARN を Verification 設定（`executionAgentArns`）へ反映
+3. Verification ゾーンをデプロイ
+4. 各 Execution Runtime にリソースポリシーを適用
 
 ### 3.4 クロスアカウント CDK 設定
 
-異なる AWS アカウントにデプロイする場合の追加設定：
+異なる AWS アカウントに分離する場合の代表設定例：
 
 ```json
 {
   "verificationAccountId": "111111111111",
-  "executionAccountId": "222222222222"
+  "executionAccountId": "222222222222",
+  "executionAgentArns": {
+    "file-creator": "arn:aws:bedrock-agentcore:ap-northeast-1:222222222222:runtime/...",
+    "docs": "arn:aws:bedrock-agentcore:ap-northeast-1:222222222222:runtime/...",
+    "time": "arn:aws:bedrock-agentcore:ap-northeast-1:222222222222:runtime/...",
+    "fetch-url": "arn:aws:bedrock-agentcore:ap-northeast-1:222222222222:runtime/..."
+  }
 }
-```
-
-または、コマンドラインで指定：
-
-```bash
-npx cdk deploy SlackAI-Execution-Dev \
-  --context verificationAccountId=111111111111 \
-  --context executionAccountId=222222222222
-```
-
-各アカウントへのデプロイには、適切な AWS 認証情報が必要です：
-
-```bash
-# Account A (Verification)
-export AWS_PROFILE=account-a
-npx cdk deploy SlackAI-Verification
-
-# Account B (Execution)
-export AWS_PROFILE=account-b
-npx cdk deploy SlackAI-Execution
 ```
 
 ### 3.5 セキュリティ考慮事項
 
 **最小権限の原則**:
-- Verification Lambda には `execute-api:Invoke` 権限のみ付与
-- API Gateway リソースポリシーは特定のロール ARN のみを許可
-- アカウント ID 条件でさらにスコープを制限
+- Verification 実行ロールには対象 Runtime/Endpoint への `InvokeAgentRuntime` のみ付与
+- Execution 側リソースポリシーは Verification 実行ロールのみに限定
+- `aws:SourceAccount` 条件でクロスアカウント誤用を抑止
 
 **監査**:
-- CloudTrail で API Gateway 呼び出しを記録
-- CloudWatch Logs で Lambda 実行を記録
-- 相関 ID でリクエストをトレース可能
+- CloudTrail で `PutResourcePolicy` / `InvokeAgentRuntime` を追跡
+- CloudWatch Logs と相関 ID でリクエスト経路を追跡
 
 **障害対応**:
-- Execution API が利用不可の場合、Verification Lambda はタイムアウトを適切に処理
-- ユーザーには「サービス一時停止中」のメッセージを返却
-- CloudWatch アラームで障害を検知
+- 実行先 Runtime への到達失敗や AccessDenied は Verification Runtime ログに記録
+- `scripts/deploy.sh check-access` / `scripts/deploy.sh logs` で原因切り分け可能
 
 ### 3.6 トラブルシューティング
 
-**403 Forbidden エラー**:
+**AccessDenied エラー**:
 
-1. リソースポリシーを確認 — `verificationLambdaRoleArn` が正しく設定されているか、Execution Stack を再デプロイしたか
-2. IAM ポリシーを確認 — Verification Lambda に `execute-api:Invoke` 権限があるか、リソース ARN が正しいか
-3. アカウント ID を確認 — クロスアカウントの場合、`verificationAccountId` が正しいか
+1. Verification の `executionAgentArns` が実在 Runtime ARN を指しているか確認
+2. Execution 側にリソースポリシーが適用済みか確認（`./scripts/deploy.sh policy`）
+3. `verificationAccountId` と実行アカウントが一致しているか確認
 
 **タイムアウトエラー**:
 
-1. API Gateway URL を確認 — `executionApiUrl` が正しく設定されているか、URL が有効でアクセス可能か
-2. ネットワーク設定を確認 — VPC 設定がある場合、NAT Gateway が設定されているか
+1. AgentCore Runtime 状態が `READY` か確認
+2. Verification / Execution 両 Runtime の CloudWatch ログで遅延地点を確認
 
-詳細なデプロイ手順は [ランブック](./runbook.md)、一般的なトラブルシューティングは [トラブルシューティングガイド](../how-to/troubleshooting.md) を参照してください。
+詳細なデプロイ手順は [ランブック](./runbook.md)、一般的なトラブルシューティングは [トラブルシューティングガイド](./troubleshooting.md) を参照してください。
 
 ---
 
@@ -479,11 +364,10 @@ SlackEventHandler は署名検証、Existence Check、認可を行い、即座�
 - **鍵1**: HMAC SHA256 署名検証（Signing Secret）
 - **鍵2**: Slack API Existence Check（Bot Token）— team_id, user_id, channel_id の実在性確認
 
-**Execution API 認証**:
-- **デフォルト**: APIキー認証（環境変数 `EXECUTION_API_AUTH_METHOD=api_key`）
-- **代替**: IAM認証（環境変数 `EXECUTION_API_AUTH_METHOD=iam`）
-- APIキーは AWS Secrets Manager から取得（`secrets_manager_client.py`）
-- IAM認証の場合は SigV4 署名を使用（`api_gateway_client.py`）
+**Execution Runtime 認証**:
+- Verification Runtime 実行ロールの IAM ポリシーで `InvokeAgentRuntime` を許可
+- 対象は Runtime ARN と DEFAULT Endpoint ARN の両方
+- Execution Runtime 側で `PutResourcePolicy` により Principal を制限
 
 **署名検証の核心部分**:
 
@@ -537,7 +421,7 @@ def authorize_request(team_id, user_id, channel_id):
 | NFR-09 | ユーザー単位 Bedrock コスト    | ≤$10/月              | Cost Explorer         |
 | NFR-10 | コンテキスト履歴暗号化         | すべての DynamoDB データ | KMS 暗号化確認    |
 
-### 4.3 BedrockProcessor（実行層）
+### 4.3 Execution Agent（実行層）
 
 **ファイル**: `execution-zones/execution-agent/src/main.py`
 

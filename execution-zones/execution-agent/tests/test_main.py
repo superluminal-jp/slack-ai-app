@@ -386,7 +386,7 @@ class TestAgentCard:
         from agent_card import get_agent_card
 
         card = get_agent_card()
-        assert card["name"] == "SlackAI-ExecutionAgent"
+        assert card["name"] == "SlackAI-FileCreatorAgent"
         assert card["protocol"] == "A2A"
         assert card["protocolVersion"] == "1.0"
         assert "skills" in card
@@ -397,9 +397,9 @@ class TestAgentCard:
 
         card = get_agent_card()
         skill_ids = [s["id"] for s in card["skills"]]
-        assert "bedrock-conversation" in skill_ids
-        assert "attachment-processing" in skill_ids
-        assert "async-processing" in skill_ids
+        assert "generate_excel" in skill_ids
+        assert "generate_word" in skill_ids
+        assert "generate_powerpoint" in skill_ids
 
     def test_agent_card_authentication_is_sigv4(self):
         from agent_card import get_agent_card
@@ -412,7 +412,7 @@ class TestAgentCard:
 
         status = get_health_status(is_busy=False)
         assert status["status"] == "Healthy"
-        assert status["agent"] == "SlackAI-ExecutionAgent"
+        assert status["agent"] == "SlackAI-FileCreatorAgent"
 
     def test_health_status_busy(self):
         from agent_card import get_health_status
@@ -451,7 +451,7 @@ class Test020A2ARouting:
 
     def test_uvicorn_run_uses_port_9000(self):
         """uvicorn.run(app, ..., port=9000) must be present in main.py source."""
-        main_path = os.path.join(os.path.dirname(__file__), "..", "main.py")
+        main_path = os.path.join(os.path.dirname(__file__), "..", "src", "main.py")
         with open(main_path) as f:
             source = f.read()
         assert "port=9000" in source, (
@@ -485,7 +485,7 @@ class Test021FastAPIDirectRouting:
 
     def test_no_private_api_usage(self):
         """main.py source has zero occurrences of _handle_invocation."""
-        main_path = os.path.join(os.path.dirname(__file__), "..", "main.py")
+        main_path = os.path.join(os.path.dirname(__file__), "..", "src", "main.py")
         with open(main_path) as f:
             source = f.read()
         assert "_handle_invocation" not in source, (
@@ -494,7 +494,7 @@ class Test021FastAPIDirectRouting:
 
     def test_no_bedrock_agentcore_import(self):
         """main.py source has zero occurrences of bedrock_agentcore."""
-        main_path = os.path.join(os.path.dirname(__file__), "..", "main.py")
+        main_path = os.path.join(os.path.dirname(__file__), "..", "src", "main.py")
         with open(main_path) as f:
             source = f.read()
         assert "bedrock_agentcore" not in source, (
@@ -503,7 +503,7 @@ class Test021FastAPIDirectRouting:
 
     def test_uses_agent_factory_for_inference(self):
         """main.py uses create_agent from agent_factory (027 Strands Agent)."""
-        main_path = os.path.join(os.path.dirname(__file__), "..", "main.py")
+        main_path = os.path.join(os.path.dirname(__file__), "..", "src", "main.py")
         with open(main_path) as f:
             source = f.read()
         assert "create_agent" in source, "main.py should use create_agent for inference"
@@ -521,7 +521,7 @@ class TestUS3VersionConstraints:
 
     def test_no_loose_version_constraints(self):
         """requirements.txt must not contain >= constraints (all must be ~= or ==)."""
-        req_path = os.path.join(os.path.dirname(__file__), "..", "requirements.txt")
+        req_path = os.path.join(os.path.dirname(__file__), "..", "src", "requirements.txt")
         with open(req_path) as f:
             lines = f.readlines()
         for line in lines:
@@ -534,7 +534,7 @@ class TestUS3VersionConstraints:
 
     def test_no_bedrock_agentcore_dependency(self):
         """requirements.txt must not list bedrock-agentcore (unused after migration)."""
-        req_path = os.path.join(os.path.dirname(__file__), "..", "requirements.txt")
+        req_path = os.path.join(os.path.dirname(__file__), "..", "src", "requirements.txt")
         with open(req_path) as f:
             content = f.read()
         assert "bedrock-agentcore" not in content, (
