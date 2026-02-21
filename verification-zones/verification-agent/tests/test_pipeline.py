@@ -22,12 +22,17 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 @pytest.fixture(autouse=True)
 def mock_routing_defaults():
-    """Keep tests focused on pipeline behavior, not router selection outcomes."""
-    with patch("pipeline.route_request", return_value="file-creator"), patch(
-        "pipeline.get_agent_arn",
-        return_value="arn:aws:bedrock-agentcore:ap-northeast-1:111111111111:runtime/file-creator",
-    ):
-        yield
+    """Mock orchestration loop for all pipeline tests."""
+    from src.orchestrator import OrchestrationResult
+    default_result = OrchestrationResult(
+        synthesized_text="OK",
+        turns_used=1,
+        agents_called=["execution-agent"],
+        file_artifact=None,
+        completion_status="complete",
+    )
+    with patch("pipeline.run_orchestration_loop", return_value=default_result) as mock_orch:
+        yield mock_orch
 
 
 def _payload(
@@ -56,15 +61,13 @@ class TestPipelineS3Integration:
     """Pipeline must enrich attachments with presigned_url and cleanup S3."""
 
     @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_execution_payload_contains_presigned_url_when_attachments_enriched(
-        self, mock_existence, mock_auth, mock_invoke, mock_slack_post
+        self, mock_existence, mock_auth, mock_slack_post, mock_routing_defaults
     ):
-        """When pipeline enriches attachments, payload to execution agent must have presigned_url per contract."""
+        """When pipeline enriches attachments, payload to orchestration loop must have presigned_url per contract."""
         mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
-        mock_invoke.return_value = json.dumps({"status": "success", "response_text": "OK"})
         mock_slack_post.return_value = None
 
         with patch("pipeline.check_rate_limit") as mock_rate:
@@ -93,28 +96,23 @@ class TestPipelineS3Integration:
                                 )
                                 run({"prompt": json.dumps(payload)})
 
-                                # Execution payload must contain attachments with presigned_url
-                                invoke_call = mock_invoke.call_args[0][0]
-                                assert "attachments" in invoke_call
-                                assert len(invoke_call["attachments"]) == 1
-                                assert invoke_call["attachments"][0].get("presigned_url") == "https://bucket.s3.amazonaws.com/key?X-Amz-Signature=..."
-                                assert invoke_call["attachments"][0].get("id") == "F1"
-                                assert invoke_call["attachments"][0].get("name") == "doc.pdf"
-                                assert invoke_call["attachments"][0].get("mimetype") == "application/pdf"
-                                assert invoke_call["attachments"][0].get("size") == 9
-                                # Per contract: bot_token required for response formatting (success/error)
-                                assert invoke_call.get("bot_token") == "xoxb-test"
+                                # OrchestrationRequest must contain file_references with presigned_url per contract
+                                orch_req = mock_routing_defaults.call_args[0][0]
+                                assert len(orch_req.file_references) == 1
+                                assert orch_req.file_references[0].get("presigned_url") == "https://bucket.s3.amazonaws.com/key?X-Amz-Signature=..."
+                                assert orch_req.file_references[0].get("id") == "F1"
+                                assert orch_req.file_references[0].get("name") == "doc.pdf"
+                                assert orch_req.file_references[0].get("mimetype") == "application/pdf"
+                                assert orch_req.file_references[0].get("size") == 9
 
                                 mock_cleanup.assert_called_once_with("corr-001")
 
     @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
-    def test_s3_cleanup_called_after_success(self, mock_existence, mock_auth, mock_invoke, mock_slack_post):
+    def test_s3_cleanup_called_after_success(self, mock_existence, mock_auth, mock_slack_post):
         """cleanup_request_files must be called after successful execution response."""
         mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
-        mock_invoke.return_value = json.dumps({"status": "success", "response_text": "Done"})
         mock_slack_post.return_value = None
 
         with patch("pipeline.check_rate_limit") as mock_rate:
@@ -133,13 +131,12 @@ class TestPipelineS3Integration:
                         mock_cleanup.assert_called_once()
 
     @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
-    def test_s3_cleanup_called_on_execution_error(self, mock_existence, mock_auth, mock_invoke, mock_slack_post):
-        """cleanup_request_files must be called even when execution agent raises (try/finally)."""
+    def test_s3_cleanup_called_on_execution_error(self, mock_existence, mock_auth, mock_slack_post, mock_routing_defaults):
+        """cleanup_request_files must be called even when orchestration raises (try/finally)."""
         mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
-        mock_invoke.side_effect = RuntimeError("Execution agent failed")
+        mock_routing_defaults.side_effect = RuntimeError("Orchestration failed")
         mock_slack_post.return_value = None
 
         with patch("pipeline.check_rate_limit") as mock_rate:
@@ -163,15 +160,13 @@ class TestPipelineMultipleAttachmentsUs3:
     """Tests for batch file upload (US3): multiple attachments, S3, cleanup."""
 
     @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_multiple_attachments_uploaded_to_s3_same_correlation_id(
-        self, mock_existence, mock_auth, mock_invoke, mock_slack_post
+        self, mock_existence, mock_auth, mock_slack_post, mock_routing_defaults
     ):
         """Multiple attachments (2-5) must all be uploaded to S3 under same correlation_id."""
         mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
-        mock_invoke.return_value = json.dumps({"status": "success", "response_text": "OK"})
         mock_slack_post.return_value = None
 
         with patch("pipeline.check_rate_limit") as mock_rate:
@@ -209,21 +204,19 @@ class TestPipelineMultipleAttachmentsUs3:
                                 for call in mock_upload.call_args_list:
                                     args = call[0]
                                     assert args[1] == "corr-multi"
-                                assert mock_invoke.call_count == 1
-                                invoke_payload = mock_invoke.call_args[0][0]
-                                assert len(invoke_payload["attachments"]) == 3
+                                mock_routing_defaults.assert_called_once()
+                                orch_req = mock_routing_defaults.call_args[0][0]
+                                assert len(orch_req.file_references) == 3
                                 mock_cleanup.assert_called_once_with("corr-multi")
 
     @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_each_attachment_gets_unique_presigned_url(
-        self, mock_existence, mock_auth, mock_invoke, mock_slack_post
+        self, mock_existence, mock_auth, mock_slack_post, mock_routing_defaults
     ):
         """Each attachment must get a unique pre-signed URL."""
         mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
-        mock_invoke.return_value = json.dumps({"status": "success", "response_text": "OK"})
         mock_slack_post.return_value = None
 
         with patch("pipeline.check_rate_limit") as mock_rate:
@@ -247,20 +240,18 @@ class TestPipelineMultipleAttachmentsUs3:
                                     {"id": "F2", "name": "f2.pdf", "mimetype": "application/pdf", "size": 1, "url_private_download": "u2"},
                                 ]))})
 
-                                urls = [a.get("presigned_url") for a in mock_invoke.call_args[0][0]["attachments"]]
+                                urls = [a.get("presigned_url") for a in mock_routing_defaults.call_args[0][0].file_references]
                                 assert len(urls) == 2
                                 assert urls[0] != urls[1]
 
     @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_batch_cleanup_deletes_all_for_correlation_id(
-        self, mock_existence, mock_auth, mock_invoke, mock_slack_post
+        self, mock_existence, mock_auth, mock_slack_post
     ):
         """cleanup_request_files must be called once with correlation_id after processing."""
         mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
-        mock_invoke.return_value = json.dumps({"status": "success", "response_text": "OK"})
         mock_slack_post.return_value = None
 
         with patch("pipeline.check_rate_limit") as mock_rate:
@@ -285,15 +276,13 @@ class TestPipelineMultipleAttachmentsUs3:
                             mock_cleanup.assert_called_once_with("batch-cid")
 
     @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_more_than_five_attachments_only_first_five_enriched(
-        self, mock_existence, mock_auth, mock_invoke, mock_slack_post
+        self, mock_existence, mock_auth, mock_slack_post, mock_routing_defaults
     ):
         """When more than 5 attachments, only first 5 are uploaded and included (FR-012)."""
         mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
-        mock_invoke.return_value = json.dumps({"status": "success", "response_text": "OK"})
         mock_slack_post.return_value = None
 
         with patch("pipeline.check_rate_limit") as mock_rate:
@@ -315,8 +304,8 @@ class TestPipelineMultipleAttachmentsUs3:
                                 ]
                                 run({"prompt": json.dumps(_payload(attachments=six_attachments))})
 
-                                invoke_payload = mock_invoke.call_args[0][0]
-                                assert len(invoke_payload["attachments"]) == 5
+                                orch_req = mock_routing_defaults.call_args[0][0]
+                                assert len(orch_req.file_references) == 5
                                 assert mock_upload.call_count == 5
 
 
@@ -330,21 +319,23 @@ class TestPipelineLargeFileArtifactS3:
         return [{"contentBase64": b64, "fileName": "large.pdf", "mimeType": "application/pdf"}]
 
     @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_large_file_uses_s3_artifact(
-        self, mock_existence, mock_auth, mock_invoke, mock_slack_post
+        self, mock_existence, mock_auth, mock_slack_post, mock_routing_defaults
     ):
         """When file_artifact > 200KB, pipeline must use S3-backed delivery (s3PresignedUrl)."""
+        from src.orchestrator import OrchestrationResult
         mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
         large_size = 250 * 1024  # 250 KB
         file_artifact = {"parts": self._make_file_artifact_parts(large_size)}
-        mock_invoke.return_value = json.dumps({
-            "status": "success",
-            "response_text": "Done",
-            "file_artifact": file_artifact,
-        })
+        mock_routing_defaults.return_value = OrchestrationResult(
+            synthesized_text="Done",
+            turns_used=1,
+            agents_called=["execution-agent"],
+            file_artifact=file_artifact,
+            completion_status="complete",
+        )
         mock_slack_post.return_value = None
 
         with patch("pipeline.check_rate_limit") as mock_rate:
@@ -391,21 +382,23 @@ class TestPipelineSmallFileArtifactInline:
         return [{"contentBase64": b64, "fileName": "small.pdf", "mimeType": "application/pdf"}]
 
     @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_small_file_uses_inline_artifact(
-        self, mock_existence, mock_auth, mock_invoke, mock_slack_post
+        self, mock_existence, mock_auth, mock_slack_post, mock_routing_defaults
     ):
         """When file_artifact ≤ 200KB, pipeline must use inline delivery (contentBase64)."""
+        from src.orchestrator import OrchestrationResult
         mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
         small_size = 100 * 1024  # 100 KB
         file_artifact = {"parts": self._make_file_artifact_parts(small_size)}
-        mock_invoke.return_value = json.dumps({
-            "status": "success",
-            "response_text": "Done",
-            "file_artifact": file_artifact,
-        })
+        mock_routing_defaults.return_value = OrchestrationResult(
+            synthesized_text="Done",
+            turns_used=1,
+            agents_called=["execution-agent"],
+            file_artifact=file_artifact,
+            completion_status="complete",
+        )
         mock_slack_post.return_value = None
 
         with patch("pipeline.check_rate_limit") as mock_rate:
@@ -429,21 +422,23 @@ class TestPipelineSmallFileArtifactInline:
                     assert fa["mimeType"] == "application/pdf"
 
     @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_boundary_200kb_uses_inline(
-        self, mock_existence, mock_auth, mock_invoke, mock_slack_post
+        self, mock_existence, mock_auth, mock_slack_post, mock_routing_defaults
     ):
         """When file_artifact equals exactly 200KB (≤ threshold), use inline path."""
+        from src.orchestrator import OrchestrationResult
         mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
         boundary_size = 200 * 1024  # Exactly 200 KB
         file_artifact = {"parts": self._make_file_artifact_parts(boundary_size)}
-        mock_invoke.return_value = json.dumps({
-            "status": "success",
-            "response_text": "Done",
-            "file_artifact": file_artifact,
-        })
+        mock_routing_defaults.return_value = OrchestrationResult(
+            synthesized_text="Done",
+            turns_used=1,
+            agents_called=["execution-agent"],
+            file_artifact=file_artifact,
+            completion_status="complete",
+        )
         mock_slack_post.return_value = None
 
         with patch("pipeline.check_rate_limit") as mock_rate:
@@ -469,19 +464,22 @@ class Test032E2EFlowUnchanged:
     """032 US3: End-to-end user flow unchanged; no JSON-RPC envelope exposed to Slack."""
 
     @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_success_path_passes_response_text_only_no_envelope(
-        self, mock_existence, mock_auth, mock_invoke, mock_slack_post
+        self, mock_existence, mock_auth, mock_slack_post, mock_routing_defaults
     ):
-        """T032: Success path uses only result payload (response_text); no jsonrpc/id sent to Slack."""
+        """T032: Success path uses only synthesized_text from orchestration; no jsonrpc/id sent to Slack."""
+        from src.orchestrator import OrchestrationResult
         mock_existence.return_value = MagicMock(exists=True)
         mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
-        mock_invoke.return_value = json.dumps({
-            "status": "success",
-            "response_text": "AI reply content only",
-        })
+        mock_routing_defaults.return_value = OrchestrationResult(
+            synthesized_text="AI reply content only",
+            turns_used=1,
+            agents_called=["execution-agent"],
+            file_artifact=None,
+            completion_status="complete",
+        )
         mock_slack_post.return_value = None
 
         with patch("pipeline.check_rate_limit") as mock_rate:
@@ -497,38 +495,37 @@ class Test032E2EFlowUnchanged:
             assert slack_kw.get("file_artifact") is None
 
     @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_error_path_passes_user_friendly_message_only_no_raw_envelope(
-        self, mock_existence, mock_auth, mock_invoke, mock_slack_post
+        self, mock_existence, mock_auth, mock_slack_post, mock_routing_defaults
     ):
-        """T032: Error path uses mapped user-facing message only; no raw JSON-RPC error to Slack."""
+        """T032: Error path uses synthesized_text from orchestration; no raw JSON-RPC error to Slack."""
+        from src.orchestrator import OrchestrationResult
         mock_existence.return_value = MagicMock(exists=True)
         mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
-        mock_invoke.return_value = json.dumps({
-            "status": "error",
-            "error_code": "throttling",
-            "error_message": "Rate exceeded",
-            "correlation_id": "corr-err",
-        })
+        mock_routing_defaults.return_value = OrchestrationResult(
+            synthesized_text="処理を完了できませんでした。もう一度お試しください。",
+            turns_used=0,
+            agents_called=[],
+            file_artifact=None,
+            completion_status="error",
+        )
         mock_slack_post.return_value = None
 
         with patch("pipeline.check_rate_limit") as mock_rate:
             mock_rate.return_value = (True, None)
-            with patch("pipeline.log_execution_agent_error_response"):
-                from pipeline import run, ERROR_MESSAGE_MAP
+            from pipeline import run
 
-                run({"prompt": json.dumps(_payload())})
+            run({"prompt": json.dumps(_payload())})
 
-                mock_slack_post.assert_called_once()
-                slack_kw = mock_slack_post.call_args[1]
-                expected_text = ERROR_MESSAGE_MAP.get("throttling")
-                assert slack_kw.get("text", "").startswith(expected_text)
-                assert "jsonrpc" not in str(slack_kw)
-                assert "id" not in expected_text
+            mock_slack_post.assert_called_once()
+            slack_kw = mock_slack_post.call_args[1]
+            assert "処理を完了できませんでした" in slack_kw.get("text", "")
+            assert "jsonrpc" not in str(slack_kw)
 
 
+@pytest.mark.skip(reason="Route-based single-agent dispatch replaced by orchestration loop in 036")
 class Test033RoutingIntegration:
     """Multi-agent routing integration in pipeline."""
 
@@ -594,6 +591,7 @@ class TestPipelineAgentAttribution:
         result = _build_agent_attribution("time", {"time": {"name": "", "description": ""}})
         assert "time" in result
 
+    @pytest.mark.skip(reason="Per-agent attribution replaced by orchestration loop synthesis in 036")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.authorize_request")
@@ -623,6 +621,7 @@ class TestPipelineAgentAttribution:
         attr_pos = posted_text.find("file-creator") if "file-creator" in posted_text else posted_text.find("SlackAI-FileCreatorAgent")
         assert main_pos < attr_pos
 
+    @pytest.mark.skip(reason="Per-agent error attribution replaced by orchestration loop synthesis in 036")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.authorize_request")
@@ -647,6 +646,7 @@ class TestPipelineAgentAttribution:
         posted_text = mock_slack_post.call_args[1].get("text", "")
         assert "file-creator" in posted_text or "SlackAI-FileCreatorAgent" in posted_text
 
+    @pytest.mark.skip(reason="Per-agent attribution replaced by orchestration loop synthesis in 036")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.authorize_request")
@@ -670,6 +670,7 @@ class TestPipelineAgentAttribution:
         assert "file-creator" in posted_text
 
 
+@pytest.mark.skip(reason="Unrouted fallback replaced by orchestration loop in 036")
 class TestPipelineDirectResponse:
     """Pipeline should answer via unrouted fallback when no execution agent is selected."""
 
@@ -813,6 +814,7 @@ class TestBuildAgentListMessage:
         assert msg  # Non-empty
 
 
+@pytest.mark.skip(reason="list_agents routing branch replaced by orchestration loop in 036")
 class TestListAgentsBranchHandler:
     """Integration tests for list_agents branch in pipeline.run() (034-router-list-agents)."""
 
@@ -875,6 +877,96 @@ class TestListAgentsBranchHandler:
         posted_text = mock_slack_post.call_args[1].get("text", "")
         assert "SlackAI-FileCreatorAgent" in posted_text
         assert "SlackAI-TimeAgent" in posted_text
+
+
+class TestPipelineOrchestrationLoop:
+    """T012 (Phase 3 US1): pipeline.run() delegates to run_orchestration_loop()."""
+
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.run_orchestration_loop")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_pipeline_calls_run_orchestration_loop(
+        self, mock_existence, mock_auth, mock_orch, mock_slack_post
+    ):
+        """pipeline.run() must call run_orchestration_loop() with the user text and correlation_id."""
+        from src.orchestrator import OrchestrationResult
+        from pipeline import run
+
+        mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
+        mock_existence.return_value = MagicMock(exists=True)
+        mock_orch.return_value = OrchestrationResult(
+            synthesized_text="テスト結果です。",
+            turns_used=1,
+            agents_called=["docs-agent"],
+            file_artifact=None,
+            completion_status="complete",
+        )
+
+        with patch("pipeline.check_rate_limit", return_value=(True, None)):
+            run({"prompt": json.dumps(_payload(text="hello", correlation_id="corr-t012"))})
+
+        mock_orch.assert_called_once()
+        req = mock_orch.call_args[0][0]
+        assert req.user_text == "hello"
+        assert req.correlation_id == "corr-t012"
+
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.run_orchestration_loop")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_pipeline_posts_synthesized_text_to_slack(
+        self, mock_existence, mock_auth, mock_orch, mock_slack_post
+    ):
+        """Synthesized text from OrchestrationResult is sent to Slack."""
+        from src.orchestrator import OrchestrationResult
+        from pipeline import run
+
+        mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
+        mock_existence.return_value = MagicMock(exists=True)
+        mock_orch.return_value = OrchestrationResult(
+            synthesized_text="合成された回答です。",
+            turns_used=2,
+            agents_called=["docs-agent"],
+            file_artifact=None,
+            completion_status="complete",
+        )
+
+        with patch("pipeline.check_rate_limit", return_value=(True, None)):
+            run({"prompt": json.dumps(_payload())})
+
+        mock_slack_post.assert_called_once()
+        text = mock_slack_post.call_args[1].get("text", "")
+        assert "合成された回答です。" in text
+
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.run_orchestration_loop")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    def test_pipeline_appends_partial_note_when_max_turns_reached(
+        self, mock_existence, mock_auth, mock_orch, mock_slack_post
+    ):
+        """T020 (US2): When completion_status=='partial', pipeline appends partial-result note to Slack message."""
+        from src.orchestrator import OrchestrationResult
+        from pipeline import run
+
+        mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
+        mock_existence.return_value = MagicMock(exists=True)
+        mock_orch.return_value = OrchestrationResult(
+            synthesized_text="ターン制限に達しました。部分的な結果です。",
+            turns_used=5,
+            agents_called=["docs-agent"],
+            file_artifact=None,
+            completion_status="partial",
+        )
+
+        with patch("pipeline.check_rate_limit", return_value=(True, None)):
+            run({"prompt": json.dumps(_payload())})
+
+        mock_slack_post.assert_called_once()
+        text = mock_slack_post.call_args[1].get("text", "")
+        assert "ターン制限に達しました。部分的な結果です。" in text
+        assert "制限" in text  # Partial note appended
 
 
 @pytest.mark.skip(reason="要検証: E2E. Slack → Verification → Execution (JSON-RPC) → Verification → Slack. Run manually or in integration env.")

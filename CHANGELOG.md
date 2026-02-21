@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Iterative multi-agent orchestration** (`verification-agent`, `036-iterative-reasoning`): Replaced single-pass routing with a Strands agentic loop. A single user request can now dispatch to multiple specialist agents in parallel, synthesize their results, and iterate across up to `MAX_AGENT_TURNS` turns (default 5) until complete. Partial results are returned with an explanatory note when the turn limit fires. New modules: `src/orchestrator.py` (`OrchestrationAgent`, `run_orchestration_loop`, `OrchestrationRequest`, `OrchestrationResult`, `ToolCallRecord`), `src/hooks.py` (`MaxTurnsHook`, `ToolLoggingHook`), `src/agent_tools.py` (`build_agent_tools`). CDK env var `MAX_AGENT_TURNS` added to the verification-agent container.
+
+### Changed
+
+- **Pipeline routing replaced by orchestration loop** (`verification-agent`): `pipeline.py` now calls `run_orchestration_loop()` instead of `route_request()` + `invoke_execution_agent()`. The router-based single-agent dispatch path (including `list_agents`, `UNROUTED`, per-agent attribution) is superseded. `router.py` is retained for backward-compatible imports but deprecated.
+
 - **Web Fetch Agent** (`fetch-url-agent`): New standalone execution zone that handles URL content retrieval via the `fetch_url` tool. The agent runs as an independent AgentCore Runtime (A2A, port 9000) with SSRF protection, 512 KB download limit, and 14,000-character text truncation. The `fetch_url` tool has been removed from `execution-agent` to maintain single-responsibility per zone. Verification-agent now supports `WEB_FETCH_AGENT_ARN` env var for agent registration.
 - **Agent list Slack reply** (`verification-agent`): Users can ask the bot what it can do (e.g., "何ができる？", "agent list") and receive a formatted Slack reply listing all registered agents with their names, descriptions, and skills. The router LLM detects this intent and selects the new `list_agents` special route; the verification agent compiles the reply from the in-memory agent card cache without invoking any execution agent.
 - **Platform tooling package** (`@slack-ai-app/cdk-tooling`): Shared npm package at `platform/tooling/` exporting `cdk-logger`, `cdk-error`, `cost-allocation-tags`, `config-loader`, and `log-retention-aspect`. All zones import shared utilities from this package instead of local copies.
