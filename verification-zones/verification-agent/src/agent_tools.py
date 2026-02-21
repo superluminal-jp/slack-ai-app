@@ -1,6 +1,7 @@
 """Dynamic tool generation for execution agents used by OrchestrationAgent."""
 import asyncio
 import inspect
+import json
 
 try:
     from strands import tool
@@ -39,12 +40,21 @@ def make_agent_tool(agent_id: str, card: dict):
         if not target_arn:
             return f"ERROR: agent_not_found — No ARN found for agent '{agent_id}'"
         try:
-            result = await asyncio.to_thread(
+            raw = await asyncio.to_thread(
                 invoke_execution_agent,
                 {"text": task},
                 target_arn,
             )
-            return result
+            # invoke_execution_agent returns JSON; extract plain response_text for the LLM
+            try:
+                parsed = json.loads(raw)
+                if parsed.get("status") == "error":
+                    code = parsed.get("error_code", "invocation_failed")
+                    msg = parsed.get("error_message", str(parsed))
+                    return f"ERROR: {code} — {msg}"
+                return parsed.get("response_text", raw)
+            except (json.JSONDecodeError, AttributeError):
+                return raw
         except Exception as e:
             _log("WARN", "agent_tool_error", {
                 "agent_id": agent_id,
