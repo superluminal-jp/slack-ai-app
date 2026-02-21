@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# deploy.sh — Deploy Execution Agent zone
+# deploy.sh — Deploy File Creator Agent zone
 #
 # Usage:
 #   export DEPLOYMENT_ENV=dev
@@ -37,7 +37,7 @@ for arg in "$@"; do
     [[ "${arg}" == "--force-rebuild" ]] && FORCE_REBUILD=true
 done
 
-log_info "Deploying Execution Agent zone (env: ${DEPLOYMENT_ENV})"
+log_info "Deploying File Creator Agent zone (env: ${DEPLOYMENT_ENV})"
 
 if [[ ! -x "${CDK_CLI}" ]]; then
     log_info "Installing CDK dependencies..."
@@ -47,19 +47,19 @@ fi
 
 CONTEXT_ARGS="--context deploymentEnv=${DEPLOYMENT_ENV}"
 if [[ "${FORCE_REBUILD}" == "true" ]]; then
-    CONTEXT_ARGS="${CONTEXT_ARGS} --context forceExecutionImageRebuild=$(date +%s)"
+    CONTEXT_ARGS="${CONTEXT_ARGS} --context forceFileCreatorImageRebuild=$(date +%s)"
     log_info "Force image rebuild enabled"
 fi
 
 ENV_SUFFIX=$([[ "${DEPLOYMENT_ENV}" == "prod" ]] && echo "Prod" || echo "Dev")
-EXEC_STACK="SlackAI-Execution-${ENV_SUFFIX}"
+FILE_CREATOR_STACK="SlackAI-FileCreator-${ENV_SUFFIX}"
 
-log_info "Deploying stack: ${EXEC_STACK}"
+log_info "Deploying stack: ${FILE_CREATOR_STACK}"
 cd "${CDK_DIR}"
-DEPLOYMENT_ENV="${DEPLOYMENT_ENV}" "${CDK_CLI}" deploy "${EXEC_STACK}" \
+DEPLOYMENT_ENV="${DEPLOYMENT_ENV}" "${CDK_CLI}" deploy "${FILE_CREATOR_STACK}" \
     --require-approval never \
     ${CONTEXT_ARGS} \
     ${PROFILE_ARGS:+${PROFILE_ARGS}} \
     --region "${AWS_REGION}"
 
-log_success "Execution Agent zone deployed successfully"
+log_success "File Creator Agent zone deployed successfully"

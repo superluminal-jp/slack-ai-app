@@ -6,7 +6,7 @@
 
 ## 現状
 
-- **Execution Agent のビルド**: `cdk/lib/execution/constructs/execution-agent-ecr.ts` で Docker イメージのビルドコンテキストは `cdk/lib/execution/agent/execution-agent` のみ。**リポジトリルートの `docs/` はイメージに含まれていない**。
+- **Execution Agent のビルド**: `execution-zones/execution-agent/cdk/lib/constructs/execution-agent-ecr.ts` で Docker イメージのビルドコンテキストは `execution-zones/execution-agent/src` のみ。**リポジトリルートの `docs/` はイメージに含まれていない**。
 - **ランタイム**: AgentCore Runtime 上のコンテナ（FastAPI, port 9000）。Strands ツールで「ドキュメント検索」を追加する前提で検討する。
 
 ---
@@ -19,7 +19,7 @@
 
 **やり方の例**:
 - **A. ビルド前コピー**: デプロイスクリプトや CDK のアセット準備で、`docs/` を `execution-agent/docs/` にコピーしてから Docker ビルド。Dockerfile で `COPY docs/ /app/docs/` を追加。
-- **B. ビルドコンテキストをリポジトリルートに変更**: `ExecutionAgentEcr` の `directory` をリポジトリルートにし、Dockerfile の場所を `dockerfilePath` で指定。Dockerfile 内で `COPY docs/ /app/docs/` と `COPY cdk/lib/execution/agent/execution-agent/... /app` のようにコピー。コンテキストが大きくなるので `.dockerignore` で不要なものを除外する。
+- **B. ビルドコンテキストをリポジトリルートに変更**: `ExecutionAgentEcr` の `directory` をリポジトリルートにし、Dockerfile の場所を `dockerfilePath` で指定。Dockerfile 内で `COPY docs/ /app/docs/` と `COPY execution-zones/execution-agent/src/... /app` のようにコピー。コンテキストが大きくなるので `.dockerignore` で不要なものを除外する。
 
 **ツール案**: `search_docs(query: str)` または `get_doc(path_or_topic: str)`  
 - 実装: `/app/docs` 以下の `.md` 等を走査し、キーワードに一致するファイルを読む、またはパス指定で 1 ファイル返す。簡易には `pathlib` + テキスト検索（`query in content`）や、事前にビルド時に JSON インデックス（パス・見出し・要約）を作って同梱し、ツールはそのインデックス + 該当ファイル読みで対応。

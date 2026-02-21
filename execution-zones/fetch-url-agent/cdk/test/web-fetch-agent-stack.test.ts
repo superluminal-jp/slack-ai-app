@@ -1,16 +1,16 @@
 import * as cdk from "aws-cdk-lib";
 import { Template, Match } from "aws-cdk-lib/assertions";
 import { REQUIRED_COST_ALLOCATION_TAG_KEYS } from "@slack-ai-app/cdk-tooling";
-import { ExecutionAgentStack } from "../lib/execution-agent-stack";
+import { WebFetchAgentStack } from "../lib/web-fetch-agent-stack";
 
-describe("ExecutionAgentStack", () => {
+describe("WebFetchAgentStack", () => {
   let app: cdk.App;
-  let stack: ExecutionAgentStack;
+  let stack: WebFetchAgentStack;
   let template: Template;
 
   beforeEach(() => {
     app = new cdk.App();
-    stack = new ExecutionAgentStack(app, "TestExecutionAgentStack", {
+    stack = new WebFetchAgentStack(app, "TestWebFetchAgentStack", {
       env: { account: "123456789012", region: "ap-northeast-1" },
     });
     template = Template.fromStack(stack);
@@ -22,17 +22,17 @@ describe("ExecutionAgentStack", () => {
       expect(Object.keys(restApis).length).toBe(0);
     });
 
-    it("must have output ExecutionAgentRuntimeArn", () => {
-      template.hasOutput("ExecutionAgentRuntimeArn", {
-        Description: Match.stringLikeRegexp("Execution Agent.*Runtime ARN"),
+    it("must have output WebFetchAgentRuntimeArn", () => {
+      template.hasOutput("WebFetchAgentRuntimeArn", {
+        Description: Match.stringLikeRegexp("Web Fetch Agent.*Runtime ARN"),
       });
     });
   });
 
-  describe("Execution Agent AgentCore Runtime", () => {
+  describe("Web Fetch Agent AgentCore Runtime", () => {
     it("should create AgentCore Runtime with A2A protocol", () => {
       template.hasResourceProperties("AWS::BedrockAgentCore::Runtime", {
-        AgentRuntimeName: Match.stringLikeRegexp("SlackAI_ExecutionAgent"),
+        AgentRuntimeName: Match.stringLikeRegexp("SlackAI_WebFetchAgent"),
         ProtocolConfiguration: Match.anyValue(),
       });
     });
@@ -49,21 +49,26 @@ describe("ExecutionAgentStack", () => {
         }
       }
     });
+
+    it("should NOT create Lambda functions", () => {
+      const lambdas = template.findResources("AWS::Lambda::Function");
+      expect(Object.keys(lambdas).length).toBe(0);
+    });
   });
 
   describe("Cross-account support", () => {
-    it("should create stack with verificationAccountId", () => {
-      const crossAccountApp = new cdk.App();
-      const crossAccountStack = new ExecutionAgentStack(
-        crossAccountApp,
-        "CrossAccountExecutionAgentStack",
-        {
-          env: { account: "123456789012", region: "ap-northeast-1" },
-          verificationAccountId: "987654321098",
-        }
-      );
-      const crossAccountTemplate = Template.fromStack(crossAccountStack);
-      crossAccountTemplate.hasOutput("ExecutionAgentRuntimeArn", {});
+    it("should create cross-account outputs when verificationAccountId provided", () => {
+      const crossApp = new cdk.App();
+      const crossStack = new WebFetchAgentStack(crossApp, "CrossAccountStack", {
+        env: { account: "123456789012", region: "ap-northeast-1" },
+        verificationAccountId: "999888777666",
+      });
+      const crossTemplate = Template.fromStack(crossStack);
+      // Output logical ID includes construct path prefix
+      const outputs = crossTemplate.findOutputs("*", {
+        Description: Match.stringLikeRegexp("AgentCore Runtime ARN"),
+      });
+      expect(Object.keys(outputs).length).toBeGreaterThanOrEqual(1);
     });
   });
 });

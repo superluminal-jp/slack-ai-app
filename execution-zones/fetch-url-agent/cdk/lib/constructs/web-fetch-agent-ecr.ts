@@ -1,27 +1,27 @@
 /**
- * Execution Agent ECR Docker Image construct.
+ * Web Fetch Agent ECR Docker Image construct.
  *
- * @module execution-zones/execution-agent/cdk/lib/constructs/execution-agent-ecr
+ * @module execution-zones/fetch-url-agent/cdk/lib/constructs/web-fetch-agent-ecr
  */
 
 import { DockerImageAsset, Platform } from "aws-cdk-lib/aws-ecr-assets";
 import { Construct } from "constructs";
 import * as path from "path";
 
-export interface ExecutionAgentEcrProps {
+export interface WebFetchAgentEcrProps {
   /** Optional: Override the path to the Dockerfile directory */
   readonly dockerfilePath?: string;
   /** Optional: Force image rebuild by changing asset hash */
   readonly extraHash?: string;
 }
 
-export class ExecutionAgentEcr extends Construct {
+export class WebFetchAgentEcr extends Construct {
   /** The Docker image asset (includes ECR repo and image URI) */
   public readonly imageAsset: DockerImageAsset;
   /** The ECR image URI for use in AgentCore Runtime ContainerUri */
   public readonly imageUri: string;
 
-  constructor(scope: Construct, id: string, props?: ExecutionAgentEcrProps) {
+  constructor(scope: Construct, id: string, props?: WebFetchAgentEcrProps) {
     super(scope, id);
 
     const dockerDir =

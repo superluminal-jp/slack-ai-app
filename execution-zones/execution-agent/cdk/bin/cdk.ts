@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * Execution Agent Zone CDK Application Entry Point
+ * File Creator Agent Zone CDK Application Entry Point
  *
- * Standalone CDK app for the Execution Agent zone.
- * Deploys a single ExecutionAgentStack with AgentCore Runtime (A2A).
+ * Standalone CDK app for the File Creator Agent zone.
+ * Deploys a single FileCreatorAgentStack with AgentCore Runtime (A2A).
  *
  * @module execution-zones/execution-agent/cdk/bin/cdk
  */
@@ -11,7 +11,7 @@
 import * as cdk from "aws-cdk-lib";
 import { Aspects } from "aws-cdk-lib";
 import * as path from "path";
-import { ExecutionAgentStack } from "../lib/execution-agent-stack";
+import { FileCreatorAgentStack } from "../lib/file-creator-agent-stack";
 import {
   loadCdkConfig,
   applyEnvOverrides,
@@ -35,7 +35,7 @@ const outdir =
   process.env.CDK_OUTDIR || path.join(path.dirname(__dirname), "cdk.out");
 const app = new cdk.App({ outdir });
 
-logInfo("Execution Agent CDK app starting", { phase: "config" });
+logInfo("File Creator Agent CDK app starting", { phase: "config" });
 
 Aspects.of(app).add(new LogRetentionAspect());
 Aspects.of(app).add(new CostAllocationTagAspect());
@@ -114,17 +114,17 @@ function getConfigString(key: string, defaultValue = ""): string {
 }
 
 const region = getConfigValue("awsRegion", DEFAULT_REGION);
-const baseExecutionStackName = getConfigValue(
-  "executionStackName",
-  "SlackAI-Execution",
+const baseFileCreatorStackName = getConfigValue(
+  "fileCreatorStackName",
+  "SlackAI-FileCreator",
 );
 const environmentSuffix = deploymentEnv === "prod" ? "Prod" : "Dev";
-const executionStackName = `${baseExecutionStackName}-${environmentSuffix}`;
+const fileCreatorStackName = `${baseFileCreatorStackName}-${environmentSuffix}`;
 const verificationAccountId = getConfigString("verificationAccountId");
-const executionAccountId = getConfigString("executionAccountId");
-const executionAgentName = getConfigString(
-  "executionAgentName",
-  `SlackAI_ExecutionAgent_${environmentSuffix}`,
+const fileCreatorAccountId = getConfigString("fileCreatorAccountId");
+const fileCreatorAgentName = getConfigString(
+  "fileCreatorAgentName",
+  `SlackAI_FileCreatorAgent_${environmentSuffix}`,
 );
 const bedrockModelId = getConfigString(
   "bedrockModelId",
@@ -135,30 +135,30 @@ if (config) {
   app.node.setContext("awsRegion", region);
   app.node.setContext("bedrockModelId", config.bedrockModelId);
   app.node.setContext("deploymentEnv", deploymentEnv);
-  app.node.setContext("executionStackName", baseExecutionStackName);
+  app.node.setContext("fileCreatorStackName", baseFileCreatorStackName);
   app.node.setContext("verificationAccountId", verificationAccountId);
-  app.node.setContext("executionAccountId", executionAccountId);
-  app.node.setContext("executionAgentName", executionAgentName);
+  app.node.setContext("fileCreatorAccountId", fileCreatorAccountId);
+  app.node.setContext("fileCreatorAgentName", fileCreatorAgentName);
 }
 
 const defaultEnv: cdk.Environment = {
   account: process.env.CDK_DEFAULT_ACCOUNT,
   region: region,
 };
-const executionEnv: cdk.Environment = executionAccountId
-  ? { account: executionAccountId, region: region }
+const fileCreatorEnv: cdk.Environment = fileCreatorAccountId
+  ? { account: fileCreatorAccountId, region: region }
   : defaultEnv;
 
-new ExecutionAgentStack(app, executionStackName, {
-  env: executionEnv,
+new FileCreatorAgentStack(app, fileCreatorStackName, {
+  env: fileCreatorEnv,
   awsRegion: region,
   bedrockModelId: bedrockModelId || undefined,
   verificationAccountId: verificationAccountId || undefined,
-  executionAgentName: executionAgentName || undefined,
+  fileCreatorAgentName: fileCreatorAgentName || undefined,
 });
-logInfo("Execution Agent stack created.", {
+logInfo("File Creator Agent stack created.", {
   phase: "stack",
-  context: { stackName: executionStackName },
+  context: { stackName: fileCreatorStackName },
 });
 
 app.synth();

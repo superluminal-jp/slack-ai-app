@@ -1,0 +1,266 @@
+openapi: "3.0.3"
+info:
+  title: "SlackAI-WebFetchAgent A2A Contract"
+  description: |
+    A2A JSON-RPC 2.0 contract for the Web Fetch Agent.
+    All endpoints use SigV4 authentication (bedrock-agentcore service).
+  version: "1.0.0"
+
+servers:
+  - url: "{agentcore_runtime_url}"
+    variables:
+      agentcore_runtime_url:
+        default: "https://bedrock-agentcore.ap-northeast-1.amazonaws.com"
+        description: "AgentCore Runtime endpoint (resolved at deploy time)"
+
+paths:
+  /:
+    post:
+      summary: "Execute task (JSON-RPC 2.0)"
+      description: |
+        Main A2A invocation endpoint. Accepts JSON-RPC 2.0 requests.
+        The agent fetches the URL mentioned in the user message and returns the text content.
+      security:
+        - SigV4: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JsonRpcRequest"
+            example:
+              jsonrpc: "2.0"
+              method: "execute_task"
+              id: "req-abc-123"
+              params:
+                messages:
+                  - role: "user"
+                    content:
+                      - type: "text"
+                        text: "https://example.com の内容を教えて"
+                context:
+                  correlation_id: "corr-xyz-456"
+      responses:
+        "200":
+          description: "Success — JSON-RPC 2.0 result"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JsonRpcSuccessResponse"
+              example:
+                jsonrpc: "2.0"
+                id: "req-abc-123"
+                result:
+                  messages:
+                    - role: "agent"
+                      content:
+                        - type: "text"
+                          text: "Example Domain\n\nThis domain is for use in illustrative examples..."
+        "200-error":
+          description: "JSON-RPC 2.0 error (HTTP 200 with error body)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JsonRpcErrorResponse"
+              example:
+                jsonrpc: "2.0"
+                id: "req-abc-123"
+                error:
+                  code: -32603
+                  message: "URLの取得中にエラーが発生しました: タイムアウト"
+
+  /ping:
+    get:
+      summary: "Health check"
+      description: "Returns agent health status. No authentication required."
+      responses:
+        "200":
+          description: "Agent is healthy"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PingResponse"
+              example:
+                status: "Healthy"
+                agent: "SlackAI-WebFetchAgent"
+                version: "1.0.0"
+                timestamp: 1740124800.0
+
+  /.well-known/agent-card.json:
+    get:
+      summary: "Agent Card (A2A discovery)"
+      description: |
+        Returns the A2A Agent Card for this agent.
+        Used by verification-agent's agent_registry.py for dynamic discovery.
+      responses:
+        "200":
+          description: "Agent Card"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentCard"
+
+components:
+  securitySchemes:
+    SigV4:
+      type: "apiKey"
+      in: "header"
+      name: "Authorization"
+      description: "AWS SigV4 signature (service: bedrock-agentcore)"
+
+  schemas:
+    JsonRpcRequest:
+      type: "object"
+      required: ["jsonrpc", "method", "id", "params"]
+      properties:
+        jsonrpc:
+          type: "string"
+          enum: ["2.0"]
+        method:
+          type: "string"
+          enum: ["execute_task"]
+        id:
+          type: "string"
+          description: "Unique request ID (UUID)"
+        params:
+          type: "object"
+          required: ["messages"]
+          properties:
+            messages:
+              type: "array"
+              items:
+                $ref: "#/components/schemas/Message"
+            context:
+              type: "object"
+              properties:
+                correlation_id:
+                  type: "string"
+                thread_ts:
+                  type: "string"
+
+    Message:
+      type: "object"
+      required: ["role", "content"]
+      properties:
+        role:
+          type: "string"
+          enum: ["user", "agent"]
+        content:
+          type: "array"
+          items:
+            type: "object"
+            required: ["type", "text"]
+            properties:
+              type:
+                type: "string"
+                enum: ["text"]
+              text:
+                type: "string"
+
+    JsonRpcSuccessResponse:
+      type: "object"
+      required: ["jsonrpc", "id", "result"]
+      properties:
+        jsonrpc:
+          type: "string"
+          enum: ["2.0"]
+        id:
+          type: "string"
+        result:
+          type: "object"
+          properties:
+            messages:
+              type: "array"
+              items:
+                $ref: "#/components/schemas/Message"
+
+    JsonRpcErrorResponse:
+      type: "object"
+      required: ["jsonrpc", "id", "error"]
+      properties:
+        jsonrpc:
+          type: "string"
+          enum: ["2.0"]
+        id:
+          type: "string"
+        error:
+          type: "object"
+          required: ["code", "message"]
+          properties:
+            code:
+              type: "integer"
+              description: "JSON-RPC error code (-32603 = internal error)"
+            message:
+              type: "string"
+              description: "User-friendly error message (Japanese)"
+
+    PingResponse:
+      type: "object"
+      properties:
+        status:
+          type: "string"
+          enum: ["Healthy", "HealthyBusy"]
+        agent:
+          type: "string"
+        version:
+          type: "string"
+        timestamp:
+          type: "number"
+          format: "float"
+
+    AgentCard:
+      type: "object"
+      properties:
+        name:
+          type: "string"
+          example: "SlackAI-WebFetchAgent"
+        description:
+          type: "string"
+        url:
+          type: "string"
+        version:
+          type: "string"
+          example: "1.0.0"
+        protocol:
+          type: "string"
+          enum: ["A2A"]
+        protocolVersion:
+          type: "string"
+          enum: ["1.0"]
+        authentication:
+          type: "object"
+          properties:
+            type:
+              type: "string"
+              enum: ["SIGV4"]
+            service:
+              type: "string"
+              enum: ["bedrock-agentcore"]
+        capabilities:
+          type: "object"
+          properties:
+            streaming:
+              type: "boolean"
+            asyncProcessing:
+              type: "boolean"
+            attachments:
+              type: "boolean"
+        skills:
+          type: "array"
+          items:
+            type: "object"
+            properties:
+              id:
+                type: "string"
+              name:
+                type: "string"
+              description:
+                type: "string"
+              inputModes:
+                type: "array"
+                items:
+                  type: "string"
+              outputModes:
+                type: "array"
+                items:
+                  type: "string"

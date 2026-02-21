@@ -41,7 +41,7 @@ This application enables teams to use AI capabilities directly from Slack. Team 
 
 ### Deploy
 
-This project uses four independent CDK apps (one per agent zone) deployed sequentially. Execution zones deploy first, then the Verification zone.
+This project uses five independent CDK apps (one per agent zone) deployed sequentially. Execution zones deploy first, then the Verification zone.
 
 **Deployment Steps**:
 
@@ -59,6 +59,7 @@ See [docs/developer/quickstart.md](docs/developer/quickstart.md) for detailed de
 # execution-zones/execution-agent/cdk/cdk.config.dev.json
 # execution-zones/time-agent/cdk/cdk.config.dev.json
 # execution-zones/docs-agent/cdk/cdk.config.dev.json
+# execution-zones/fetch-url-agent/cdk/cdk.config.dev.json
 # verification-zones/verification-agent/cdk/cdk.config.dev.json
 
 # 2. Set deployment environment (dev or prod)
@@ -77,8 +78,8 @@ export AWS_PROFILE=your-profile-name  # Optional: if using AWS profiles
 
 This project supports environment separation for development (`dev`) and production (`prod`) deployments:
 
-- **Stack Names**: Automatically suffixed with `-Dev` or `-Prod` (e.g., `SlackAI-Execution-Dev`, `SlackAI-Verification-Prod`)
-- **Resource Isolation**: All resources (Lambda functions, DynamoDB tables, Secrets Manager, API Gateway, etc.) are automatically separated by environment
+- **Stack Names**: Automatically suffixed with `-Dev` or `-Prod` (e.g., `SlackAI-FileCreator-Dev`, `SlackAI-WebFetch-Dev`, `SlackAI-Verification-Prod`)
+- **Resource Isolation**: All resources (Lambda functions, DynamoDB tables, Secrets Manager, AgentCore runtimes, etc.) are automatically separated by environment
 - **Resource Tagging**: All resources are tagged with:
   - `Environment`: `dev` or `prod`
   - `Project`: `SlackAI`
@@ -218,12 +219,13 @@ This separation enables:
 
 ## Architecture
 
-The application uses **four independent CDK apps** (one per agent zone), each deployable separately:
+The application uses **five independent CDK apps** (one per agent zone), each deployable separately:
 
 - **Verification Zone** (`verification-zones/verification-agent/cdk`): SlackEventHandler Lambda + Verification Agent (AgentCore) + DynamoDB + Secrets Manager
 - **Execution Agent Zone** (`execution-zones/execution-agent/cdk`): File-creator agent (AgentCore Runtime + ECR)
 - **Time Agent Zone** (`execution-zones/time-agent/cdk`): Current-time agent (AgentCore Runtime + ECR)
 - **Docs Agent Zone** (`execution-zones/docs-agent/cdk`): Document-search agent (AgentCore Runtime + ECR)
+- **Web Fetch Agent Zone** (`execution-zones/fetch-url-agent/cdk`): URL-fetch agent (AgentCore Runtime + ECR)
 
 This structure supports:
 
@@ -260,7 +262,8 @@ slack-ai-app/
 │   │   ├── tests/                # Python unit tests
 │   │   └── scripts/deploy.sh     # Zone-specific deploy script
 │   ├── time-agent/               # Same structure — current-time agent
-│   └── docs-agent/               # Same structure — docs-search agent
+│   ├── docs-agent/               # Same structure — docs-search agent
+│   └── fetch-url-agent/          # Same structure — URL-fetch agent
 ├── verification-zones/           # Verification agent CDK app
 │   └── verification-agent/
 │       ├── cdk/                  # Standalone CDK app (TypeScript)
@@ -300,12 +303,14 @@ slack-ai-app/
 cd execution-zones/execution-agent/cdk && npm test
 cd execution-zones/time-agent/cdk && npm test
 cd execution-zones/docs-agent/cdk && npm test
+cd execution-zones/fetch-url-agent/cdk && npm test
 cd verification-zones/verification-agent/cdk && npm test
 
 # Python agent tests (pytest) — per zone
 cd execution-zones/execution-agent && python -m pytest tests/ -v
 cd execution-zones/time-agent && python -m pytest tests/ -v
 cd execution-zones/docs-agent && python -m pytest tests/ -v
+cd execution-zones/fetch-url-agent && python -m pytest tests/ -v
 cd verification-zones/verification-agent && python -m pytest tests/ -v
 ```
 
@@ -313,7 +318,7 @@ cd verification-zones/verification-agent && python -m pytest tests/ -v
 
 ```bash
 aws logs tail /aws/lambda/SlackAI-Verification-Dev-SlackEventHandler --follow
-aws logs tail /aws/lambda/SlackAI-Verification-Dev-SlackEventHandler --follow
+aws logs tail /aws/bedrock-agentcore/runtimes/SlackAI_VerificationAgent_Dev-<runtime-id>-DEFAULT --follow
 ```
 
 ## Environment Variables
@@ -324,7 +329,7 @@ aws logs tail /aws/lambda/SlackAI-Verification-Dev-SlackEventHandler --follow
 | `SLACK_BOT_TOKEN`               | Slack bot OAuth token (first deploy only)                       | -                                                |
 | `BEDROCK_MODEL_ID`              | Bedrock model (configured in cdk.json)                          | -                                                |
 | `VERIFICATION_AGENT_ARN`        | Verification Agent AgentCore Runtime ARN (set by CDK) | - |
-| `EXECUTION_AGENT_ARN`           | Execution Agent AgentCore Runtime ARN (cross-stack or config)    | - |
+| `EXECUTION_AGENT_ARNS`          | Execution agent ARN map (file-creator/docs/time/fetch-url)       | - |
 
 Secrets are stored in AWS Secrets Manager after first deployment.
 
@@ -548,7 +553,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 ## Recent Updates
 
 - **2026-02-19**: Zone-based CDK restructuring
-  - Migrated from single `cdk/` monolith to four independent CDK apps: `execution-zones/{execution-agent,time-agent,docs-agent}/cdk` and `verification-zones/verification-agent/cdk`
+  - Migrated from single `cdk/` monolith to five independent CDK apps: `execution-zones/{execution-agent,time-agent,docs-agent,fetch-url-agent}/cdk` and `verification-zones/verification-agent/cdk`
   - Added `platform/tooling` shared npm package (`@slack-ai-app/cdk-tooling`) for common CDK utilities (logger, error, cost-allocation-tags, log-retention-aspect, config-loader)
   - Added unified deploy scripts: `scripts/deploy/deploy-all.sh`, `deploy-execution-all.sh`, `deploy-verification-all.sh`
   - Each zone has independent `src/`, `tests/`, `scripts/deploy.sh` and zone-specific `cdk.config.dev.json`
@@ -587,4 +592,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
   - Agent Card (`/.well-known/agent-card.json`) for Agent Discovery
   - AgentCore A2A as the only communication path
   - 97 TDD tests all passing (Python 73 + CDK/Jest 24, since expanded to 187+)
-- **2025-12-28**: Added dual authentication support (IAM and API key) for Execution API Gateway
+- **2025-12-28**: Added dual authentication support (IAM and API key) for Execution API Gateway *(legacy; replaced by AgentCore A2A in 2026-02-19)*

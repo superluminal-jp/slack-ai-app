@@ -14,7 +14,7 @@ Bedrock の処理時間（モデル、入力長、負荷状況に依存し、予
 
 ### 決定
 
-**SlackEventHandler が即座に応答 + BedrockProcessor が Slack API に POST**の非同期パターンを採用
+**SlackEventHandler が即座に応答 + Verification/Execution Agent が非同期で処理して Slack API に POST** のパターンを採用
 
 ### 代替案の検討
 

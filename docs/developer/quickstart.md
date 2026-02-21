@@ -247,7 +247,7 @@ cdk bootstrap aws://123456789012/ap-northeast-1
 
 ### ステップ 1: CDK スタックのデプロイ
 
-このプロジェクトは 2 つの独立したスタック（VerificationStack と ExecutionStack）を使用します。3 段階のデプロイプロセスが必要です。
+このプロジェクトは 5 つの独立したスタック（Verification 1 + Execution 4）を使用します。デプロイは「実行ゾーン群 → 検証ゾーン」の順で行います。
 
 #### 方法 1: デプロイスクリプトを使用（推奨）
 
@@ -270,35 +270,42 @@ export AWS_PROFILE=your-profile-name
 
 # 特定ゾーンのみ（Docker イメージ強制再ビルド付き）
 ./execution-zones/execution-agent/scripts/deploy.sh --force-rebuild
+./execution-zones/fetch-url-agent/scripts/deploy.sh --force-rebuild
 ```
 
 **注意**: 各ゾーンのデプロイスクリプトはゾーン固有の `cdk.config.{env}.json` から設定を自動的に読み込みます。
 
 **デプロイ順序**:
 
-1. 実行ゾーン（execution-agent → time-agent → docs-agent）をデプロイし、出力された AgentCore Runtime ARN をメモ
+1. 実行ゾーン（execution-agent → time-agent → docs-agent → fetch-url-agent）をデプロイし、出力された AgentCore Runtime ARN をメモ
 2. 検証ゾーンの `cdk.config.dev.json` の `executionAgentArns` に実行ゾーンの ARN を設定
 3. 検証ゾーンをデプロイ
 
 #### 方法 2: 手動デプロイ
 
 ```bash
-# 1. 実行ゾーンをデプロイ
-cd execution-zones/execution-agent/cdk
+# 1. 実行ゾーンを順番にデプロイ
 export DEPLOYMENT_ENV=dev
-npx cdk deploy SlackAI-Execution-Dev --require-approval never
 
-# 出力から ExecutionAgentRuntimeArn を取得し、
-# verification-zones/verification-agent/cdk/cdk.config.dev.json の
-# executionAgentArns.file-creator に設定
+cd execution-zones/execution-agent/cdk
+npx cdk deploy SlackAI-FileCreator-Dev --require-approval never
 
-# 同様に time-agent, docs-agent もデプロイ
+cd ../../time-agent/cdk
+npx cdk deploy SlackAI-TimeExecution-Dev --require-approval never
 
-# 2. 検証ゾーンをデプロイ（executionAgentArns 設定済みの状態で）
-cd verification-zones/verification-agent/cdk
-npx cdk deploy SlackAI-Verification-Dev \
-  --profile YOUR_PROFILE \
-  --require-approval never
+cd ../../docs-agent/cdk
+npx cdk deploy SlackAI-DocsExecution-Dev --require-approval never
+
+cd ../../fetch-url-agent/cdk
+npx cdk deploy SlackAI-WebFetch-Dev --require-approval never
+
+# 2. 各スタックの Runtime ARN を verification 側設定へ反映
+# verification-zones/verification-agent/cdk/cdk.config.dev.json
+# executionAgentArns.file-creator / docs / time / fetch-url を設定
+
+# 3. 検証ゾーンをデプロイ
+cd ../../../verification-zones/verification-agent/cdk
+npx cdk deploy SlackAI-Verification-Dev --require-approval never
 ```
 
 **重要**:
@@ -309,9 +316,12 @@ npx cdk deploy SlackAI-Verification-Dev \
 
 デプロイ中に以下のリソースが作成されます：
 
-**ExecutionStack**（A2A のみ）:
+**Execution Stacks**（A2A のみ）:
 
-- Execution Agent（AgentCore Runtime + ECR）
+- File Creator Agent（`SlackAI-FileCreator-{Env}`）
+- Time Agent（`SlackAI-TimeExecution-{Env}`）
+- Docs Agent（`SlackAI-DocsExecution-{Env}`）
+- Web Fetch Agent（`SlackAI-WebFetch-{Env}`）
 - CloudWatch ログ・メトリクス
 
 **VerificationStack**:
@@ -335,13 +345,16 @@ SlackAI-Verification-Dev.VerificationAgentRuntimeArn = arn:aws:bedrock-agentcore
 SlackAI-Verification-Dev.VerificationLambdaRoleArn = arn:aws:iam::123456789012:role/...
 ```
 
-**ExecutionStack の出力**:
+**Execution Stacks の出力**:
 
 ```
-SlackAI-Execution-Dev.ExecutionAgentRuntimeArn = arn:aws:bedrock-agentcore:...
+SlackAI-FileCreator-Dev.FileCreatorAgentRuntimeArn = arn:aws:bedrock-agentcore:...
+SlackAI-TimeExecution-Dev.TimeAgentRuntimeArn = arn:aws:bedrock-agentcore:...
+SlackAI-DocsExecution-Dev.DocsAgentRuntimeArn = arn:aws:bedrock-agentcore:...
+SlackAI-WebFetch-Dev.WebFetchAgentRuntimeArn = arn:aws:bedrock-agentcore:...
 ```
 
-（クロスアカウント時は `ExecutionEndpointArn` も出力されます。Runtime と Endpoint の両方にリソースポリシー設定が必要です。詳細は [VALIDATION.md §5.1](../specs/015-agentcore-a2a-migration/VALIDATION.md#51-agentcore-とアカウント間通信のベストプラクティスaws-mcp-準拠) を参照。）
+（クロスアカウント時は各実行ゾーンで Runtime/Endpoint の追加出力が作成されます。詳細は [VALIDATION.md §5.1](../specs/015-agentcore-a2a-migration/VALIDATION.md#51-agentcore-とアカウント間通信のベストプラクティスaws-mcp-準拠) を参照。）
 
 **重要**: `SlackEventHandlerUrl` をコピーして、Slack App の Event Subscriptions に設定してください。
 

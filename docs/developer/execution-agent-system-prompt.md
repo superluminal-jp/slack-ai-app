@@ -9,7 +9,7 @@
 
 ## Lambda は不要か
 
-**不要です。** 現在の Execution Stack は **コンテナ（AgentCore Runtime）のみ** をデプロイしています（spec 015 で BedrockProcessor Lambda は削除済み）。本番の AI 処理はすべて Execution Agent コンテナ経由です。
+**不要です。** 現在の Execution Stack は **コンテナ（AgentCore Runtime）のみ** をデプロイしています（spec 015 で旧 Lambda 実行パスは削除済み）。本番の AI 処理はすべて Execution Agent コンテナ経由です。
 
 ## 運用
 

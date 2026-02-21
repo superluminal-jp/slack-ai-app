@@ -260,6 +260,21 @@ export function applyEnvOverrides(config: CdkConfig): CdkConfig {
     }
   };
 
+  const normalizeExecutionAgentArns = (
+    raw: Record<string, string> | undefined
+  ): Record<string, string> | undefined => {
+    if (!raw || Object.keys(raw).length === 0) {
+      return undefined;
+    }
+    const normalized = { ...raw };
+    // Backward compatibility: legacy key "web-fetch" is normalized to "fetch-url".
+    if (normalized["web-fetch"] && !normalized["fetch-url"]) {
+      normalized["fetch-url"] = normalized["web-fetch"];
+    }
+    delete normalized["web-fetch"];
+    return Object.keys(normalized).length > 0 ? normalized : undefined;
+  };
+
   const mergedExecutionAgentArns = (
     config.executionAgentArns && Object.keys(config.executionAgentArns).length > 0
       ? { ...config.executionAgentArns }
@@ -279,11 +294,17 @@ export function applyEnvOverrides(config: CdkConfig): CdkConfig {
   if (timeArn) {
     fromSingles.time = timeArn;
   }
+  const webFetchArn = process.env.WEB_FETCH_AGENT_ARN?.trim();
+  if (webFetchArn) {
+    fromSingles["fetch-url"] = webFetchArn;
+  }
   const fromSingleMap =
     Object.keys(fromSingles).length > 0 ? fromSingles : undefined;
 
   const resolvedExecutionAgentArns =
-    fromJson ?? fromSingleMap ?? mergedExecutionAgentArns;
+    normalizeExecutionAgentArns(
+      fromJson ?? fromSingleMap ?? mergedExecutionAgentArns
+    );
 
   return {
     ...config,

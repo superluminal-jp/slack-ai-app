@@ -1,8 +1,8 @@
 import * as cdk from "aws-cdk-lib";
 import { Template, Match } from "aws-cdk-lib/assertions";
-import { ExecutionAgentRuntime } from "../lib/constructs/execution-agent-runtime";
+import { FileCreatorAgentRuntime } from "../lib/constructs/file-creator-agent-runtime";
 
-describe("ExecutionAgentRuntime", () => {
+describe("FileCreatorAgentRuntime", () => {
   let stack: cdk.Stack;
   let template: Template;
 
@@ -15,16 +15,16 @@ describe("ExecutionAgentRuntime", () => {
 
   describe("Basic Runtime Creation", () => {
     beforeEach(() => {
-      new ExecutionAgentRuntime(stack, "ExecAgent", {
-        agentRuntimeName: "test-execution-agent",
-        containerImageUri: "111111111111.dkr.ecr.ap-northeast-1.amazonaws.com/exec-agent:latest",
+      new FileCreatorAgentRuntime(stack, "FileCreatorAgent", {
+        agentRuntimeName: "test-file-creator-agent",
+        containerImageUri: "111111111111.dkr.ecr.ap-northeast-1.amazonaws.com/file-creator-agent:latest",
       });
       template = Template.fromStack(stack);
     });
 
     it("should create AgentCore Runtime with A2A protocol", () => {
       template.hasResourceProperties("AWS::BedrockAgentCore::Runtime", {
-        AgentRuntimeName: "test-execution-agent",
+        AgentRuntimeName: "test-file-creator-agent",
         ProtocolConfiguration: Match.anyValue(),
       });
     });
@@ -82,8 +82,8 @@ describe("ExecutionAgentRuntime", () => {
   });
 
   describe("Cross-Account Resource Policy", () => {
-    it("should output ExecutionRuntimeArn and ExecutionEndpointArn when verificationAccountId is set", () => {
-      new ExecutionAgentRuntime(stack, "ExecAgentPolicy", {
+    it("should output FileCreatorRuntimeArn and FileCreatorEndpointArn when verificationAccountId is set", () => {
+      new FileCreatorAgentRuntime(stack, "FileCreatorAgentPolicy", {
         agentRuntimeName: "test-policy",
         containerImageUri: "111111111111.dkr.ecr.ap-northeast-1.amazonaws.com/agent:latest",
         verificationAccountId: "333333333333",

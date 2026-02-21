@@ -1,8 +1,11 @@
 """
-Agent factory for Execution Agent with file generation, guidelines, and URL tools.
+Agent factory for Execution Agent with file generation and guidelines tools.
 
 Creates a Strands Agent configured with Bedrock and tools:
-generate_text_file, generate_excel, generate_word, generate_powerpoint, generate_chart_image, get_business_document_guidelines, get_presentation_slide_guidelines, fetch_url.
+generate_text_file, generate_excel, generate_word, generate_powerpoint,
+generate_chart_image, get_business_document_guidelines, get_presentation_slide_guidelines.
+
+Note: fetch_url was moved to the dedicated fetch-url-agent (035-fetch-url-agent).
 """
 
 import os
@@ -19,11 +22,10 @@ from tools.generate_powerpoint import generate_powerpoint
 from tools.generate_chart_image import generate_chart_image
 from tools.get_business_document_guidelines import get_business_document_guidelines
 from tools.get_presentation_slide_guidelines import get_presentation_slide_guidelines
-from tools.fetch_url import fetch_url
 
 
 def get_tools() -> List[Any]:
-    """Return list of @tool functions for file generation, guidelines, and URL fetch."""
+    """Return list of @tool functions for file generation and guidelines."""
     return [
         generate_text_file,
         generate_excel,
@@ -32,7 +34,6 @@ def get_tools() -> List[Any]:
         generate_chart_image,
         get_business_document_guidelines,
         get_presentation_slide_guidelines,
-        fetch_url,
     ]
 
 

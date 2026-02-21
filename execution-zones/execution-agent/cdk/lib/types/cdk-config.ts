@@ -1,7 +1,7 @@
 /**
- * Execution Agent CDK Configuration Management
+ * File Creator Agent CDK Configuration Management
  *
- * Zone-specific configuration loading for the Execution Agent standalone CDK app.
+ * Zone-specific configuration loading for the File Creator Agent standalone CDK app.
  * Uses shared config-loader from @slack-ai-app/cdk-tooling.
  *
  * @module execution-zones/execution-agent/cdk/lib/types/cdk-config
@@ -12,7 +12,7 @@ import { z } from "zod";
 import { loadJsonFile, mergeConfigs } from "@slack-ai-app/cdk-tooling";
 
 /**
- * Validated CDK configuration shape for Execution Agent zone.
+ * Validated CDK configuration shape for File Creator Agent zone.
  */
 export interface CdkConfig {
   /** AWS Region for deployment */
@@ -21,14 +21,14 @@ export interface CdkConfig {
   bedrockModelId: string;
   /** Deployment environment: "dev" or "prod" */
   deploymentEnv: "dev" | "prod";
-  /** Base name for Execution Stack (without environment suffix) */
-  executionStackName: string;
+  /** Base name for File Creator Stack (without environment suffix) */
+  fileCreatorStackName: string;
   /** AWS Account ID for Verification Stack (for cross-account A2A resource policy) */
   verificationAccountId: string;
-  /** AWS Account ID for Execution Stack */
-  executionAccountId: string;
-  /** Name for the Execution Agent AgentCore Runtime (optional) */
-  executionAgentName?: string;
+  /** AWS Account ID for File Creator Stack */
+  fileCreatorAccountId: string;
+  /** Name for the File Creator Agent AgentCore Runtime (optional) */
+  fileCreatorAgentName?: string;
 }
 
 const CdkConfigSchema = z.object({
@@ -39,18 +39,18 @@ const CdkConfigSchema = z.object({
   deploymentEnv: z.enum(["dev", "prod"], {
     errorMap: () => ({ message: "deploymentEnv must be 'dev' or 'prod'" }),
   }),
-  executionStackName: z.string().min(1, "executionStackName is required"),
+  fileCreatorStackName: z.string().min(1, "fileCreatorStackName is required"),
   verificationAccountId: z
     .string()
     .regex(/^\d{12}$/, "verificationAccountId must be a 12-digit AWS account ID"),
-  executionAccountId: z
+  fileCreatorAccountId: z
     .string()
-    .regex(/^\d{12}$/, "executionAccountId must be a 12-digit AWS account ID"),
-  executionAgentName: z
+    .regex(/^\d{12}$/, "fileCreatorAccountId must be a 12-digit AWS account ID"),
+  fileCreatorAgentName: z
     .string()
     .regex(
       /^[a-zA-Z][a-zA-Z0-9_]{0,47}$/,
-      "executionAgentName must match pattern [a-zA-Z][a-zA-Z0-9_]{0,47}"
+      "fileCreatorAgentName must match pattern [a-zA-Z][a-zA-Z0-9_]{0,47}"
     )
     .optional(),
 });
@@ -119,7 +119,7 @@ export function applyEnvOverrides(config: CdkConfig): CdkConfig {
     bedrockModelId: process.env.BEDROCK_MODEL_ID || config.bedrockModelId,
     verificationAccountId:
       process.env.VERIFICATION_ACCOUNT_ID || config.verificationAccountId,
-    executionAccountId:
-      process.env.EXECUTION_ACCOUNT_ID || config.executionAccountId,
+    fileCreatorAccountId:
+      process.env.FILE_CREATOR_ACCOUNT_ID || config.fileCreatorAccountId,
   };
 }
