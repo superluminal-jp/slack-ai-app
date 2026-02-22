@@ -409,3 +409,93 @@ class TestOrchestrationAgentUS3:
 
         assert result.completion_status == "error"
         assert result.synthesized_text  # Non-empty fallback message
+
+
+class TestOrchestrationFileArtifactPropagation:
+    """Verify file_artifact propagates from _file_artifact_store through run()."""
+
+    def _make_request(self):
+        from src.orchestrator import OrchestrationRequest
+
+        return OrchestrationRequest(
+            user_text="ファイルを作成してください",
+            thread_context=None,
+            file_references=[],
+            available_agents={},
+            correlation_id="file-test-001",
+            max_turns=5,
+        )
+
+    def test_run_propagates_file_artifact_when_store_populated(self):
+        """OrchestrationResult.file_artifact is set when a tool writes to _file_artifact_store during run()."""
+        from src.orchestrator import OrchestrationAgent, OrchestrationResult
+
+        sample_artifact = {
+            "artifactId": "test-artifact-001",
+            "name": "generated_file",
+            "parts": [{"contentBase64": "aGVsbG8=", "fileName": "output.txt", "mimeType": "text/plain"}],
+        }
+        mock_bedrock = MagicMock()
+
+        with patch("src.orchestrator.Agent") as MockAgent, \
+             patch("hooks.MaxTurnsHook") as MockMaxTurns, \
+             patch("hooks.ToolLoggingHook") as MockLogging, \
+             patch("agent_tools.build_agent_tools", return_value=[]):
+
+            mock_max_hook = MagicMock()
+            mock_max_hook.fired = False
+            mock_max_hook._tool_call_count = 1
+            MockMaxTurns.return_value = mock_max_hook
+
+            mock_log_hook = MagicMock()
+            mock_log_hook.agents_called = ["file-creator-agent"]
+            MockLogging.return_value = mock_log_hook
+
+            mock_agent_inst = MagicMock()
+            MockAgent.return_value = mock_agent_inst
+
+            orch = OrchestrationAgent({}, mock_bedrock, max_turns=5)
+
+            # Simulate a tool writing file_artifact to the store during the agent loop
+            def _agent_side_effect(prompt):
+                orch._file_artifact_store["file_artifact"] = sample_artifact
+                return "output.txt を作成しました。"
+
+            mock_agent_inst.side_effect = _agent_side_effect
+
+            result = orch.run(self._make_request())
+
+        assert isinstance(result, OrchestrationResult)
+        assert result.file_artifact == sample_artifact
+        assert result.completion_status == "complete"
+        assert result.synthesized_text == "output.txt を作成しました。"
+
+    def test_run_returns_none_file_artifact_when_no_file_generated(self):
+        """OrchestrationResult.file_artifact is None when no tool writes to _file_artifact_store."""
+        from src.orchestrator import OrchestrationAgent
+
+        mock_bedrock = MagicMock()
+
+        with patch("src.orchestrator.Agent") as MockAgent, \
+             patch("hooks.MaxTurnsHook") as MockMaxTurns, \
+             patch("hooks.ToolLoggingHook") as MockLogging, \
+             patch("agent_tools.build_agent_tools", return_value=[]):
+
+            mock_max_hook = MagicMock()
+            mock_max_hook.fired = False
+            mock_max_hook._tool_call_count = 1
+            MockMaxTurns.return_value = mock_max_hook
+
+            mock_log_hook = MagicMock()
+            mock_log_hook.agents_called = ["time-agent"]
+            MockLogging.return_value = mock_log_hook
+
+            mock_agent_inst = MagicMock()
+            mock_agent_inst.return_value = "現在時刻は 14:00 です。"
+            MockAgent.return_value = mock_agent_inst
+
+            orch = OrchestrationAgent({}, mock_bedrock, max_turns=5)
+            result = orch.run(self._make_request())
+
+        assert result.file_artifact is None
+        assert result.completion_status == "complete"

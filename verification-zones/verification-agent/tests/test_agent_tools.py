@@ -117,3 +117,86 @@ def test_make_agent_tool_docstring_contains_agent_description():
 
     assert t.__doc__ is not None
     assert "Retrieves documentation and answers technical questions." in t.__doc__
+
+
+# ── file_artifact_store tests ──────────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_file_artifact_store_populated_when_agent_returns_artifact():
+    """file_artifact_store receives the artifact when execution agent response includes file_artifact."""
+    import json
+    from agent_tools import make_agent_tool
+
+    card = {
+        "name": "File Creator Agent",
+        "description": "Creates files on demand.",
+        "skills": [],
+    }
+    sample_artifact = {
+        "artifactId": "abc-123",
+        "name": "generated_file",
+        "parts": [{"contentBase64": "aGVsbG8=", "fileName": "hello.txt", "mimeType": "text/plain"}],
+    }
+    response_json = json.dumps({
+        "status": "success",
+        "response_text": "File created successfully.",
+        "file_artifact": sample_artifact,
+    })
+    file_artifact_store: dict = {}
+
+    with patch("agent_tools.invoke_execution_agent", return_value=response_json), \
+         patch("agent_tools.get_agent_arn", return_value="arn:aws:bedrock:us-east-1:123:agent/abc"):
+        tool_fn = make_agent_tool("file-creator-agent", card, file_artifact_store)
+        result = await tool_fn("Create hello.txt")
+
+    assert result == "File created successfully."
+    assert file_artifact_store.get("file_artifact") == sample_artifact
+
+
+@pytest.mark.anyio
+async def test_file_artifact_store_none_does_not_raise_when_artifact_present():
+    """When file_artifact_store is None, no error occurs even if agent response has file_artifact."""
+    import json
+    from agent_tools import make_agent_tool
+
+    card = {"name": "File Creator Agent", "description": "Creates files.", "skills": []}
+    sample_artifact = {
+        "artifactId": "xyz-456",
+        "name": "generated_file",
+        "parts": [{"contentBase64": "d29ybGQ=", "fileName": "world.txt", "mimeType": "text/plain"}],
+    }
+    response_json = json.dumps({
+        "status": "success",
+        "response_text": "File ready.",
+        "file_artifact": sample_artifact,
+    })
+
+    with patch("agent_tools.invoke_execution_agent", return_value=response_json), \
+         patch("agent_tools.get_agent_arn", return_value="arn:aws:bedrock:us-east-1:123:agent/abc"):
+        tool_fn = make_agent_tool("file-creator-agent", card, None)  # store is None
+        result = await tool_fn("Create world.txt")
+
+    assert result == "File ready."
+
+
+@pytest.mark.anyio
+async def test_file_artifact_store_not_modified_when_no_artifact_in_response():
+    """file_artifact_store is not modified when execution agent response has no file_artifact."""
+    import json
+    from agent_tools import make_agent_tool
+
+    card = {"name": "Time Agent", "description": "Returns the current time.", "skills": []}
+    response_json = json.dumps({
+        "status": "success",
+        "response_text": "現在時刻は 14:00 です。",
+    })
+    file_artifact_store: dict = {}
+
+    with patch("agent_tools.invoke_execution_agent", return_value=response_json), \
+         patch("agent_tools.get_agent_arn", return_value="arn:aws:bedrock:us-east-1:123:agent/time"):
+        tool_fn = make_agent_tool("time-agent", card, file_artifact_store)
+        result = await tool_fn("What time is it?")
+
+    assert result == "現在時刻は 14:00 です。"
+    assert "file_artifact" not in file_artifact_store
