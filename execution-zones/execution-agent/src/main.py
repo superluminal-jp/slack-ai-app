@@ -21,7 +21,7 @@ import uvicorn
 from botocore.exceptions import ClientError
 
 from bedrock_client_converse import build_content_blocks
-from response_formatter import format_success_response, format_error_response
+from response_formatter import format_success_response, format_error_response, build_file_artifact, validate_file_for_artifact
 from agent_factory import create_agent
 import file_config as file_config
 from attachment_processor import process_attachments, get_processing_summary
@@ -525,11 +525,16 @@ def handle_message_tool(payload_json: str) -> str:
             )
 
             if not channel:
-                return json.dumps({
+                resp = {
                     "status": "success",
                     "response_text": ai_response,
                     "correlation_id": correlation_id,
-                })
+                }
+                if file_bytes and file_name and mime_type:
+                    ok, _ = validate_file_for_artifact(file_bytes, file_name, mime_type)
+                    if ok:
+                        resp["file_artifact"] = build_file_artifact(file_bytes, file_name, mime_type)
+                return json.dumps(resp)
 
             result, file_artifact = format_success_response(
                 channel=channel,

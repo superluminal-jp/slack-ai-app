@@ -111,7 +111,8 @@ class OrchestrationAgent:
         self._max_turns = _clamp_max_turns(max_turns)
         self._registry = agent_registry
         self._model = bedrock_model
-        self._tools = build_agent_tools(agent_registry)
+        self._file_artifact_store: dict = {}
+        self._tools = build_agent_tools(agent_registry, self._file_artifact_store)
         self._max_turns_hook = MaxTurnsHook(self._max_turns)
         self._logging_hook = ToolLoggingHook()
 
@@ -142,7 +143,8 @@ class OrchestrationAgent:
 
         try:
             result = self._agent(prompt)
-            return _parse_result(result, self._max_turns_hook, self._logging_hook)
+            file_artifact = self._file_artifact_store.get("file_artifact")
+            return _parse_result(result, self._max_turns_hook, self._logging_hook, file_artifact)
         except Exception as e:
             _log("ERROR", "orchestration_loop_error", {
                 "correlation_id": request.correlation_id,
@@ -190,7 +192,7 @@ def _extract_text(result) -> str:
     return "" if text == "None" else text
 
 
-def _parse_result(result, max_turns_hook, logging_hook) -> OrchestrationResult:
+def _parse_result(result, max_turns_hook, logging_hook, file_artifact=None) -> OrchestrationResult:
     """Convert Strands agent result to OrchestrationResult."""
     synthesized_text = _extract_text(result)
     agents_called = logging_hook.agents_called
@@ -210,7 +212,7 @@ def _parse_result(result, max_turns_hook, logging_hook) -> OrchestrationResult:
         synthesized_text=synthesized_text,
         turns_used=max_turns_hook._tool_call_count,
         agents_called=agents_called,
-        file_artifact=None,
+        file_artifact=file_artifact,
         completion_status=completion_status,
     )
 

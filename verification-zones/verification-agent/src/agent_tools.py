@@ -20,7 +20,7 @@ def _log(level, event_type, data):
     log(_logger, level, event_type, data, service="verification-agent")
 
 
-def make_agent_tool(agent_id: str, card: dict):
+def make_agent_tool(agent_id: str, card: dict, file_artifact_store: dict = None):
     """Create a Strands @tool for a single registered execution agent."""
     safe_name = "invoke_" + agent_id.replace("-", "_")
     description = card.get("description", f"Execute task using {agent_id}")
@@ -45,13 +45,16 @@ def make_agent_tool(agent_id: str, card: dict):
                 {"text": task},
                 target_arn,
             )
-            # invoke_execution_agent returns JSON; extract plain response_text for the LLM
+            # invoke_execution_agent returns JSON; extract plain response_text for the LLM.
+            # file_artifact (if any) is stored out-of-band in file_artifact_store.
             try:
                 parsed = json.loads(raw)
                 if parsed.get("status") == "error":
                     code = parsed.get("error_code", "invocation_failed")
                     msg = parsed.get("error_message", str(parsed))
                     return f"ERROR: {code} — {msg}"
+                if file_artifact_store is not None and parsed.get("file_artifact"):
+                    file_artifact_store["file_artifact"] = parsed["file_artifact"]
                 return parsed.get("response_text", raw)
             except (json.JSONDecodeError, AttributeError):
                 return raw
@@ -72,11 +75,12 @@ def make_agent_tool(agent_id: str, card: dict):
     return tool(_invoke)
 
 
-def build_agent_tools(registry: dict) -> list:
+def build_agent_tools(registry: dict, file_artifact_store: dict = None) -> list:
     """Generate one @tool per registered execution agent from the registry.
 
     Args:
         registry: dict mapping agent_id -> agent_card dict
+        file_artifact_store: optional shared dict; tools write file_artifact here when present
 
     Returns:
         List of Strands tool-decorated async functions.
@@ -86,7 +90,7 @@ def build_agent_tools(registry: dict) -> list:
         if not isinstance(card, dict):
             continue
         try:
-            agent_tool = make_agent_tool(agent_id, card)
+            agent_tool = make_agent_tool(agent_id, card, file_artifact_store)
             tools.append(agent_tool)
         except Exception as e:
             _log("WARN", "agent_tool_creation_failed", {
