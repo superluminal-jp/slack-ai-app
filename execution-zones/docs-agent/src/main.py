@@ -55,16 +55,6 @@ def handle_message_tool(payload_json: str) -> str:
     bot_token = task_payload.get("bot_token", "")
     thread_ts = task_payload.get("thread_ts")
 
-    if not channel:
-        return json.dumps(
-            {
-                "status": "error",
-                "error_code": "missing_channel",
-                "error_message": ERROR_MESSAGES["missing_channel"],
-                "correlation_id": correlation_id,
-            }
-        )
-
     if not text:
         return json.dumps(
             {
@@ -93,6 +83,13 @@ def handle_message_tool(payload_json: str) -> str:
 
         if not ai_response.strip():
             ai_response = "（応答がありませんでした）"
+
+        if not channel:
+            return json.dumps({
+                "status": "success",
+                "response_text": ai_response,
+                "correlation_id": correlation_id,
+            })
 
         result, _ = format_success_response(
             channel=channel,
@@ -185,7 +182,7 @@ def handle_invocation_body(body: bytes) -> dict:
         }
 
     params = data.get("params") if isinstance(data.get("params"), dict) else {}
-    required = ("channel", "text", "bot_token")
+    required = ("text",)  # channel/bot_token are Slack-specific; kept in verification zone only
     missing = [k for k in required if not (params.get(k) and str(params.get(k)).strip())]
     if missing:
         return {

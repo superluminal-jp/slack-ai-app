@@ -21,7 +21,7 @@ import uvicorn
 from botocore.exceptions import ClientError
 
 from bedrock_client_converse import build_content_blocks
-from response_formatter import format_success_response, format_error_response
+from response_formatter import format_success_response, format_error_response, build_file_artifact, validate_file_for_artifact
 from agent_factory import create_agent
 import file_config as file_config
 from attachment_processor import process_attachments, get_processing_summary
@@ -219,25 +219,6 @@ def handle_message_tool(payload_json: str) -> str:
         )
 
         # Validate required fields
-        if not channel:
-            err = {
-                "status": "error",
-                "error_code": "missing_channel",
-                "error_message": "Missing channel",
-                "correlation_id": correlation_id,
-            }
-            if bot_token and bot_token.strip().startswith("xoxb-"):
-                return json.dumps(
-                    format_error_response(
-                        channel="unknown",
-                        error_code="missing_channel",
-                        error_message="Missing channel",
-                        bot_token=bot_token,
-                        correlation_id=correlation_id,
-                    )
-                )
-            return json.dumps(err)
-
         if not text and not (attachments and len(attachments) > 0):
             err = {
                 "status": "error",
@@ -543,6 +524,18 @@ def handle_message_tool(payload_json: str) -> str:
                 },
             )
 
+            if not channel:
+                resp = {
+                    "status": "success",
+                    "response_text": ai_response,
+                    "correlation_id": correlation_id,
+                }
+                if file_bytes and file_name and mime_type:
+                    ok, _ = validate_file_for_artifact(file_bytes, file_name, mime_type)
+                    if ok:
+                        resp["file_artifact"] = build_file_artifact(file_bytes, file_name, mime_type)
+                return json.dumps(resp)
+
             result, file_artifact = format_success_response(
                 channel=channel,
                 response_text=ai_response,
@@ -691,7 +684,7 @@ def handle_invocation_body(body: bytes) -> dict:
 
     # execute_task: params as task payload (032 US2: validate required params before calling)
     params = data.get("params") if isinstance(data.get("params"), dict) else {}
-    _REQUIRED_PARAMS = ("channel", "text", "bot_token")
+    _REQUIRED_PARAMS = ("text",)  # channel/bot_token are Slack-specific; kept in verification zone only
     missing = [k for k in _REQUIRED_PARAMS if not (params.get(k) and str(params.get(k)).strip())]
     if missing:
         return {

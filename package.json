@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "build:tooling": "cd platform/tooling && npm run build",
-    "test:execution": "cd execution-zones/execution-agent/cdk && npm test && cd ../time-agent/cdk && npm test && cd ../docs-agent/cdk && npm test",
+    "test:execution": "cd execution-zones/file-creator-agent/cdk && npm test && cd ../time-agent/cdk && npm test && cd ../docs-agent/cdk && npm test",
     "test:verification": "cd verification-zones/verification-agent/cdk && npm test"
   }
 }

@@ -23,32 +23,32 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 @pytest.fixture(autouse=True)
 def mock_routing_defaults():
-    """Keep tests focused on pipeline behavior, not router selection outcomes."""
-    with patch("pipeline.route_request", return_value="file-creator"), patch(
-        "pipeline.get_agent_arn",
-        return_value="arn:aws:bedrock-agentcore:ap-northeast-1:111111111111:runtime/file-creator",
-    ):
-        yield
+    """Mock orchestration loop for all main tests."""
+    from src.orchestrator import OrchestrationResult
+    default_result = OrchestrationResult(
+        synthesized_text="OK",
+        turns_used=1,
+        agents_called=["execution-agent"],
+        file_artifact=None,
+        completion_status="complete",
+    )
+    with patch("pipeline.run_orchestration_loop", return_value=default_result) as mock_orch:
+        yield mock_orch
 
 
 class TestHandleMessageParsing:
     """Test A2A entrypoint payload parsing."""
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_valid_payload_is_parsed(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send
     ):
         """Valid payload should be parsed and processed."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
-        mock_invoke.return_value = json.dumps({
-            "status": "success",
-            "response_text": "AI answer",
-        })
 
         from main import handle_message
 
@@ -68,7 +68,6 @@ class TestHandleMessageParsing:
         result_data = json.loads(result)
 
         assert result_data["status"] == "completed"
-        mock_invoke.assert_called_once()
         mock_send.assert_called_once()
 
     def test_malformed_prompt_handled_gracefully(self):
@@ -183,21 +182,21 @@ class TestSecurityPipeline:
 class TestExecutionDelegation:
     """Test delegation to Execution Agent and Slack posting."""
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_success_response_posted_to_slack(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
         """Successful execution response should be enqueued to Slack Poster (019)."""
+        from src.orchestrator import OrchestrationResult
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
-        mock_invoke.return_value = json.dumps({
-            "status": "success",
-            "response_text": "This is the AI answer.",
-        })
+        mock_routing_defaults.return_value = OrchestrationResult(
+            synthesized_text="This is the AI answer.",
+            turns_used=1, agents_called=[], file_artifact=None, completion_status="complete",
+        )
 
         from main import handle_message
 
@@ -222,23 +221,23 @@ class TestExecutionDelegation:
         assert call_kw["bot_token"] == "xoxb-test"
         assert call_kw.get("file_artifact") is None
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_success_with_file_artifact_posts_text_then_file(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
         """When result has response_text and file_artifact, send one request with both (019)."""
         import base64
+        from src.orchestrator import OrchestrationResult
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
         file_bytes = b"col1,col2\n1,2"
-        mock_invoke.return_value = json.dumps({
-            "status": "success",
-            "response_text": "Here is your export.",
-            "file_artifact": {
+        mock_routing_defaults.return_value = OrchestrationResult(
+            synthesized_text="Here is your export.",
+            turns_used=1, agents_called=[], completion_status="complete",
+            file_artifact={
                 "artifactId": "art-1",
                 "name": "generated_file",
                 "parts": [{
@@ -248,7 +247,7 @@ class TestExecutionDelegation:
                     "mimeType": "text/csv",
                 }],
             },
-        })
+        )
 
         from main import handle_message
 
@@ -272,21 +271,16 @@ class TestExecutionDelegation:
         assert call_kw["file_artifact"] is not None
         assert call_kw["file_artifact"].get("fileName") == "export.csv"
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_success_text_only_does_not_call_post_file_to_slack(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send
     ):
         """When result has no generated_file, only send_slack_post_request with text (019)."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
-        mock_invoke.return_value = json.dumps({
-            "status": "success",
-            "response_text": "Text only answer.",
-        })
         from main import handle_message
         payload = {
             "prompt": json.dumps({
@@ -302,22 +296,22 @@ class TestExecutionDelegation:
         mock_send.assert_called_once()
         assert mock_send.call_args[1].get("file_artifact") is None
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_success_file_only_calls_post_file_to_slack_not_post_to_slack_for_content(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
         """When only file (no/empty response_text), send one request with file_artifact only (019)."""
         import base64
+        from src.orchestrator import OrchestrationResult
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
-        mock_invoke.return_value = json.dumps({
-            "status": "success",
-            "response_text": "",
-            "file_artifact": {
+        mock_routing_defaults.return_value = OrchestrationResult(
+            synthesized_text="",
+            turns_used=1, agents_called=[], completion_status="complete",
+            file_artifact={
                 "artifactId": "a1", "name": "generated_file",
                 "parts": [{
                     "kind": "file",
@@ -326,7 +320,7 @@ class TestExecutionDelegation:
                     "mimeType": "text/csv",
                 }],
             },
-        })
+        )
         from main import handle_message
         payload = {
             "prompt": json.dumps({
@@ -343,24 +337,23 @@ class TestExecutionDelegation:
         call_kw = mock_send.call_args[1]
         assert call_kw["file_artifact"] is not None
         assert call_kw["file_artifact"]["fileName"] == "out.csv"
-        assert "_担当エージェント:" in call_kw.get("text", "")
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_post_file_to_slack_failure_posts_error_message_to_thread(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
         """019: Agent sends one message with text+file; Lambda posts and on file failure posts error (FR-007)."""
         import base64
+        from src.orchestrator import OrchestrationResult
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
-        mock_invoke.return_value = json.dumps({
-            "status": "success",
-            "response_text": "Here is the file.",
-            "file_artifact": {
+        mock_routing_defaults.return_value = OrchestrationResult(
+            synthesized_text="Here is the file.",
+            turns_used=1, agents_called=[], completion_status="complete",
+            file_artifact={
                 "artifactId": "a1", "name": "generated_file",
                 "parts": [{
                     "kind": "file",
@@ -369,7 +362,7 @@ class TestExecutionDelegation:
                     "mimeType": "text/csv",
                 }],
             },
-        })
+        )
         from main import handle_message
         payload = {
             "prompt": json.dumps({
@@ -387,22 +380,17 @@ class TestExecutionDelegation:
         assert call_kw["text"].startswith("Here is the file.")
         assert call_kw["file_artifact"] is not None
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_error_response_posts_friendly_message(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
-        """Error from Execution Agent should enqueue user-friendly message (019)."""
+        """Orchestration loop exception should post a user-friendly error message (036)."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
-        mock_invoke.return_value = json.dumps({
-            "status": "error",
-            "error_code": "bedrock_timeout",
-            "error_message": "Raw timeout error",
-        })
+        mock_routing_defaults.side_effect = Exception("timeout")
 
         from main import handle_message
 
@@ -420,20 +408,19 @@ class TestExecutionDelegation:
 
         mock_send.assert_called_once()
         posted_text = mock_send.call_args[1]["text"]
-        assert "AI サービス" in posted_text or "hourglass" in posted_text
+        assert "エラー" in posted_text
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_execution_agent_exception_posts_generic_error(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
-        """Exception from invoke should enqueue generic error (019)."""
+        """Exception from orchestration loop should enqueue generic error (036)."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
-        mock_invoke.side_effect = Exception("Connection refused")
+        mock_routing_defaults.side_effect = Exception("Connection refused")
 
         from main import handle_message
 
@@ -642,21 +629,21 @@ class Test022NormalFlowDelegation:
             })
         }
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_echo_off_delegates_to_execution_agent(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
-        """T003: Echo mode off → invoke_execution_agent called, AI response posted to Slack."""
+        """T003: Echo mode off → orchestration loop called, AI response posted to Slack."""
+        from src.orchestrator import OrchestrationResult
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
-        mock_invoke.return_value = json.dumps({
-            "status": "success",
-            "response_text": "AI answer from execution",
-        })
+        mock_routing_defaults.return_value = OrchestrationResult(
+            synthesized_text="AI answer from execution",
+            turns_used=1, agents_called=[], file_artifact=None, completion_status="complete",
+        )
 
         from main import handle_message
 
@@ -664,25 +651,25 @@ class Test022NormalFlowDelegation:
 
         result_data = json.loads(result)
         assert result_data["status"] == "completed"
-        mock_invoke.assert_called_once()
+        mock_routing_defaults.assert_called_once()
         mock_send.assert_called_once()
         assert mock_send.call_args[1]["text"].startswith("AI answer from execution")
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_echo_off_no_echo_prefix_in_response(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
         """T004: Echo mode off → response does NOT contain [Echo] prefix."""
+        from src.orchestrator import OrchestrationResult
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
-        mock_invoke.return_value = json.dumps({
-            "status": "success",
-            "response_text": "Normal AI response",
-        })
+        mock_routing_defaults.return_value = OrchestrationResult(
+            synthesized_text="Normal AI response",
+            turns_used=1, agents_called=[], file_artifact=None, completion_status="complete",
+        )
 
         from main import handle_message
 
@@ -692,22 +679,22 @@ class Test022NormalFlowDelegation:
         assert "[Echo]" not in posted_text
         assert posted_text.startswith("Normal AI response")
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_echo_off_with_file_artifact(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
-        """T005: Echo mode off → file artifact from execution agent forwarded to Slack."""
+        """T005: Echo mode off → file artifact from orchestration forwarded to Slack."""
         import base64
+        from src.orchestrator import OrchestrationResult
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
-        mock_invoke.return_value = json.dumps({
-            "status": "success",
-            "response_text": "See attached.",
-            "file_artifact": {
+        mock_routing_defaults.return_value = OrchestrationResult(
+            synthesized_text="See attached.",
+            turns_used=1, agents_called=[], completion_status="complete",
+            file_artifact={
                 "artifactId": "art-022",
                 "name": "generated_file",
                 "parts": [{
@@ -717,7 +704,7 @@ class Test022NormalFlowDelegation:
                     "mimeType": "text/csv",
                 }],
             },
-        })
+        )
 
         from main import handle_message
 
@@ -729,18 +716,16 @@ class Test022NormalFlowDelegation:
         assert call_kw["file_artifact"] is not None
         assert call_kw["file_artifact"]["fileName"] == "result.csv"
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_echo_off_payload_contains_all_fields(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
-        """T006: Execution payload includes all required fields."""
+        """T006: OrchestrationRequest includes user_text and correlation_id."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
-        mock_invoke.return_value = json.dumps({"status": "success", "response_text": "ok"})
 
         from main import handle_message
 
@@ -749,36 +734,31 @@ class Test022NormalFlowDelegation:
             team_id="T_TEAM", user_id="U_USER", correlation_id="corr-fields"
         ))
 
-        invoke_args = mock_invoke.call_args[0][0]
-        assert invoke_args["channel"] == "C_TEST"
-        assert invoke_args["text"] == "question"
-        # bot_token required for response formatting (success/error)
-        assert invoke_args.get("bot_token") == "xoxb-test"
-        assert invoke_args["thread_ts"] == "999.000"
-        assert invoke_args["correlation_id"] == "corr-fields"
-        assert invoke_args["team_id"] == "T_TEAM"
-        assert invoke_args["user_id"] == "U_USER"
-        assert invoke_args["attachments"] == [{"id": "F001", "name": "test.txt"}]
+        orch_req = mock_routing_defaults.call_args[0][0]
+        assert orch_req.user_text == "question"
+        assert orch_req.correlation_id == "corr-fields"
+        # channel and thread_ts flow to send_slack_post_request, not OrchestrationRequest
+        call_kw = mock_send.call_args[1]
+        assert call_kw["channel"] == "C_TEST"
+        assert call_kw["thread_ts"] == "999.000"
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_echo_off_env_var_case_insensitive(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
-        """T007: Normal flow (delegation to execution agent) regardless of env."""
+        """T007: Normal flow (orchestration loop delegation) regardless of env."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
-        mock_invoke.return_value = json.dumps({"status": "success", "response_text": "ok"})
 
         from main import handle_message
 
         for env_val in ["false", "False", "FALSE", "", "no", "0"]:
-            mock_invoke.reset_mock()
+            mock_routing_defaults.reset_mock()
             handle_message(self._make_payload())
-            mock_invoke.assert_called_once(), f"invoke not called for ECHO_MODE={env_val!r}"
+            mock_routing_defaults.assert_called_once(), f"orch loop not called for ECHO_MODE={env_val!r}"
 
 
 class Test022SecurityCheckPipeline:
@@ -880,18 +860,16 @@ class Test022SecurityCheckPipeline:
         assert result_data["error_code"] == "authorization_error"
         mock_invoke.assert_not_called()
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_all_checks_pass_delegates_to_execution(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
-        """T012: When all 3 security checks pass, invoke_execution_agent is called."""
+        """T012: When all 3 security checks pass, run_orchestration_loop is called."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
-        mock_invoke.return_value = json.dumps({"status": "success", "response_text": "ok"})
 
         from main import handle_message
 
@@ -910,7 +888,7 @@ class Test022SecurityCheckPipeline:
         mock_existence.assert_called_once()
         mock_auth.assert_called_once()
         mock_rate.assert_called_once()
-        mock_invoke.assert_called_once()
+        mock_routing_defaults.assert_called_once()
 
 
 # ─── 022: Echo Mode Disable — Execution Error Paths TDD ───
@@ -932,101 +910,21 @@ class Test022ExecutionErrorPaths:
             })
         }
 
-    @patch("pipeline.invoke_execution_agent")
-    @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.check_rate_limit")
-    @patch("pipeline.authorize_request")
-    @patch("pipeline.check_entity_existence")
-    def test_bedrock_throttling_error_posts_friendly_message(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
-    ):
+    @pytest.mark.skip(reason="Error code mapping from invoke response replaced by orchestration loop in 036")
+    def test_bedrock_throttling_error_posts_friendly_message(self):
         """T017: bedrock_throttling error code produces message containing '混雑'."""
-        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
-        mock_rate.return_value = (True, 9)
-        mock_invoke.return_value = json.dumps({
-            "status": "error",
-            "error_code": "bedrock_throttling",
-            "error_message": "ThrottlingException",
-        })
 
-        from main import handle_message
-
-        handle_message(self._make_payload())
-
-        mock_send.assert_called_once()
-        posted_text = mock_send.call_args[1]["text"]
-        assert "混雑" in posted_text, f"Expected '混雑' in throttling message, got: {posted_text}"
-
-    @patch("pipeline.invoke_execution_agent")
-    @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.check_rate_limit")
-    @patch("pipeline.authorize_request")
-    @patch("pipeline.check_entity_existence")
-    def test_access_denied_error_posts_friendly_message(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
-    ):
+    @pytest.mark.skip(reason="Error code mapping from invoke response replaced by orchestration loop in 036")
+    def test_access_denied_error_posts_friendly_message(self):
         """T018: access_denied error code produces message containing 'アクセス'."""
-        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
-        mock_rate.return_value = (True, 9)
-        mock_invoke.return_value = json.dumps({
-            "status": "error",
-            "error_code": "access_denied",
-            "error_message": "AccessDeniedException",
-        })
 
-        from main import handle_message
-
-        handle_message(self._make_payload())
-
-        mock_send.assert_called_once()
-        posted_text = mock_send.call_args[1]["text"]
-        assert "アクセス" in posted_text, f"Expected 'アクセス' in access_denied message, got: {posted_text}"
-
-    @patch("pipeline.invoke_execution_agent")
-    @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.check_rate_limit")
-    @patch("pipeline.authorize_request")
-    @patch("pipeline.check_entity_existence")
-    def test_invalid_json_response_from_execution_posts_generic_error(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
-    ):
+    @pytest.mark.skip(reason="Invalid JSON from invoke replaced by orchestration loop in 036")
+    def test_invalid_json_response_from_execution_posts_generic_error(self):
         """T019: Non-JSON response from execution agent posts generic error message to Slack."""
-        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
-        mock_rate.return_value = (True, 9)
-        mock_invoke.return_value = "THIS IS NOT JSON {{{"
 
-        from main import handle_message
-
-        result = handle_message(self._make_payload())
-
-        result_data = json.loads(result)
-        assert result_data["status"] == "error"
-        assert result_data["error_code"] == "invalid_response"
-        mock_send.assert_called_once()
-        posted_text = mock_send.call_args[1]["text"]
-        assert "エラー" in posted_text, f"Expected generic error message, got: {posted_text}"
-
-    @patch("pipeline.invoke_execution_agent")
-    @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.check_rate_limit")
-    @patch("pipeline.authorize_request")
-    @patch("pipeline.check_entity_existence")
-    def test_empty_response_from_execution_handles_gracefully(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
-    ):
+    @pytest.mark.skip(reason="Empty invoke response replaced by orchestration loop in 036")
+    def test_empty_response_from_execution_handles_gracefully(self):
         """T020: Empty string response from execution agent does not crash, posts error to Slack."""
-        mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
-        mock_rate.return_value = (True, 9)
-        mock_invoke.return_value = ""
-
-        from main import handle_message
-
-        result = handle_message(self._make_payload())
-
-        result_data = json.loads(result)
-        assert result_data["status"] == "error"
-        assert result_data["error_code"] == "invalid_response"
-        mock_send.assert_called_once()
 
     @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
@@ -1181,7 +1079,7 @@ class Test022StructuredLogging:
             f"No authorization log found. Event types: {event_types}"
         )
         # Verify delegation logged (confirms rate limit passed and pipeline continued)
-        assert "delegating_to_execution_agent" in event_types, (
+        assert "delegating_to_orchestration_loop" in event_types, (
             f"No delegation log found. Event types: {event_types}"
         )
 

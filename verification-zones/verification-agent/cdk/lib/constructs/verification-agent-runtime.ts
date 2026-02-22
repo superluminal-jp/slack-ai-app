@@ -234,6 +234,7 @@ export class VerificationAgentRuntime extends Construct {
       EXISTENCE_CHECK_CACHE_TABLE: props.existenceCheckCacheTable.tableName,
       RATE_LIMIT_PER_MINUTE: "10",
       ENABLE_AGENT_CARD_DISCOVERY: "true",
+      MAX_AGENT_TURNS: "5",
     };
     const executionAgentArnsMap: Record<string, string> = {
       ...(props.executionAgentArns || {}),

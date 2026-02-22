@@ -25,8 +25,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 class TestHandleMessageValidation:
     """Test A2A entrypoint input validation."""
 
-    def test_missing_channel_returns_error(self):
-        """Missing channel should return error response."""
+    def test_missing_channel_returns_success(self):
+        """Missing channel (orchestration loop path) should return success response."""
         from main import handle_message
 
         payload = {
@@ -40,7 +40,8 @@ class TestHandleMessageValidation:
         result = handle_message(payload)
         result_data = json.loads(result)
 
-        assert result_data["status"] == "error" or "error" in result_data.get("error_code", "")
+        assert result_data["status"] == "success"
+        assert "response_text" in result_data
 
     def test_missing_text_returns_error(self):
         """Missing text should return error response."""
@@ -620,13 +621,14 @@ class Test032JsonRpcZoneConnection:
             assert resp["result"].get("status") == "success"
             assert resp["result"].get("response_text") == "AI reply"
 
-    def test_jsonrpc_execute_task_missing_channel_returns_invalid_params(self):
-        """T023 [US2]: execute_task with params missing channel returns error.code -32602, request id preserved."""
+    def test_jsonrpc_execute_task_missing_text_returns_invalid_params(self):
+        """T023 [US2]: execute_task with params missing text returns error.code -32602, request id preserved.
+        Only 'text' is required; channel/bot_token are Slack-specific and kept in verification zone."""
         import main
         body = json.dumps({
             "jsonrpc": "2.0",
             "method": "execute_task",
-            "params": {"text": "Hi", "bot_token": "xoxb-test"},
+            "params": {"channel": "C123", "bot_token": "xoxb-test"},
             "id": "req-32602",
         }).encode("utf-8")
         resp = main.handle_invocation_body(body)

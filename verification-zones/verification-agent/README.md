@@ -91,6 +91,41 @@ export TIME_AGENT_ARN="arn:aws:bedrock-agentcore:..."
 npx cdk deploy
 ```
 
+## Architecture: Orchestration Loop (036)
+
+The verification agent uses a **Strands agentic loop** to dispatch requests to multiple execution agents and synthesize their results into a single Slack reply.
+
+```
+User Slack message
+       │
+       ▼
+pipeline.py (run_orchestration_loop)
+       │
+       ▼
+OrchestrationAgent (src/orchestrator.py)
+  ├── Agent(model=Bedrock, tools=[invoke_*], hooks=[MaxTurnsHook, ToolLoggingHook])
+  └── Iterates until complete or MAX_AGENT_TURNS reached
+       │
+       ├── invoke_docs-agent  ──► docs-agent (A2A)
+       ├── invoke_time-agent  ──► time-agent (A2A)
+       └── invoke_*           ──► any registered agent (A2A)
+       │
+       ▼
+synthesized reply → Slack
+```
+
+**Key components:**
+- `src/orchestrator.py` — `OrchestrationAgent`, `run_orchestration_loop`, dataclasses
+- `src/agent_tools.py` — `build_agent_tools()` generates one Strands `@tool` per registered agent
+- `src/hooks.py` — `MaxTurnsHook` (turn limiter), `ToolLoggingHook` (structured logging)
+- `MAX_AGENT_TURNS` env var — maximum reasoning turns (default: 5, range: 1–10)
+
+**Behavior:**
+- Multi-domain requests invoke multiple agents in parallel within one turn
+- Partial failures return successful results plus a note
+- Turn limit reached → `completion_status="partial"`, partial-result note appended
+- All agents fail → `completion_status="error"`, user-friendly message
+
 ## Testing
 
 ```bash

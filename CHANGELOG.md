@@ -7,7 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Renamed `execution-zones/execution-agent/` → `execution-zones/file-creator-agent/`**: Directory name now matches the agent's actual identity (CDK constructs and agent card already used `file-creator-agent`). Updated path references in `CLAUDE.md`, `package.json`, `scripts/deploy/deploy-execution-all.sh`, and `scripts/validate/preflight.sh`.
+
+### Fixed
+
+- **Thread context duplication in LLM prompt** (`verification-agent`): `pipeline.py` was prepending `thread_context` to `user_text` AND passing it as a separate `OrchestrationRequest.thread_context` field. `_build_prompt` then injected it twice — once in `## スレッドコンテキスト` and once embedded in `## ユーザーリクエスト`. Removed the redundant prepend; thread context now reaches the LLM exactly once via the structured `## スレッドコンテキスト` section.
+- **Attachment filename missing in orchestrator prompt** (`verification-agent`): `_build_prompt` used `r.get('filename', 'file')` but enriched attachments carry the `'name'` key. All attachment labels in the LLM prompt showed as "file". Fixed to `r.get('name', r.get('filename', 'file'))`.
+- **`ToolLoggingHook` status detection for string tool results** (`verification-agent`): `_after_tool` called `.get("status")` on `event.result`, which is a plain string when Strands tools return text. Updated to type-check: dicts use `.get("status") == "error"`; strings check `.startswith("ERROR:")`.
+
 ### Added
+
+- **Test coverage for `file_artifact_store` and `file_artifact` propagation** (`verification-agent`, `036-iterative-reasoning`): Added 5 new tests — 3 in `test_agent_tools.py` verifying that `file_artifact_store` is populated when an execution agent response includes a `file_artifact`, that `None` store causes no error, and that the store is unchanged when no artifact is present; 2 in `test_orchestrator.py` (`TestOrchestrationFileArtifactPropagation`) verifying that `OrchestrationAgent.run()` propagates `file_artifact` from `_file_artifact_store` into `OrchestrationResult.file_artifact`, and returns `None` when no file is generated. Total test count: 204 passed, 13 skipped (before bug-fix commits; final count is 209 passed, 13 skipped).
+
+- **Iterative multi-agent orchestration** (`verification-agent`, `036-iterative-reasoning`): Replaced single-pass routing with a Strands agentic loop. A single user request can now dispatch to multiple specialist agents in parallel, synthesize their results, and iterate across up to `MAX_AGENT_TURNS` turns (default 5) until complete. Partial results are returned with an explanatory note when the turn limit fires. New modules: `src/orchestrator.py` (`OrchestrationAgent`, `run_orchestration_loop`, `OrchestrationRequest`, `OrchestrationResult`, `ToolCallRecord`), `src/hooks.py` (`MaxTurnsHook`, `ToolLoggingHook`), `src/agent_tools.py` (`build_agent_tools`). CDK env var `MAX_AGENT_TURNS` added to the verification-agent container.
+
+### Changed
+
+- **Pipeline routing replaced by orchestration loop** (`verification-agent`): `pipeline.py` now calls `run_orchestration_loop()` instead of `route_request()` + `invoke_execution_agent()`. The router-based single-agent dispatch path (including `list_agents`, `UNROUTED`, per-agent attribution) is superseded. `router.py` is retained for backward-compatible imports but deprecated.
 
 - **Web Fetch Agent** (`fetch-url-agent`): New standalone execution zone that handles URL content retrieval via the `fetch_url` tool. The agent runs as an independent AgentCore Runtime (A2A, port 9000) with SSRF protection, 512 KB download limit, and 14,000-character text truncation. The `fetch_url` tool has been removed from `execution-agent` to maintain single-responsibility per zone. Verification-agent now supports `WEB_FETCH_AGENT_ARN` env var for agent registration.
 - **Agent list Slack reply** (`verification-agent`): Users can ask the bot what it can do (e.g., "何ができる？", "agent list") and receive a formatted Slack reply listing all registered agents with their names, descriptions, and skills. The router LLM detects this intent and selects the new `list_agents` special route; the verification agent compiles the reply from the in-memory agent card cache without invoking any execution agent.

@@ -2,7 +2,7 @@
 
 **目的**: システムの全体構成、コンポーネント、データフロー、クロスアカウント構成を説明する。
 **対象読者**: 開発者、アーキテクト
-**最終更新日**: 2026-02-14
+**最終更新日**: 2026-02-22
 
 ---
 
@@ -109,23 +109,24 @@
 
 ### 1.2 システムコンポーネント一覧
 
-| レイヤー          | 主な機能                 | 技術スタック               | 責任範囲                                                                                                                                     |
-| ----------------- | ------------------------ | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Slack             | ユーザーインターフェース | Slack API                  | コマンド受付、メッセージ表示、スレッド管理                                                                                                   |
-| SlackEventHandler | 検証層処理               | Python 3.11                | 署名検証（鍵 1）、Existence Check（鍵 2）、ホワイトリスト認可（3c）、Execution Agent 呼び出し、即座応答、添付ファイルメタデータ抽出              |
-| Function URL      | パブリックエンドポイント | Lambda Function URL        | リクエスト受付、SlackEventHandler へのルーティング                                                                                           |
-| Execution Agent   | 実行層エージェント       | AgentCore Runtime (ARM64)  | A2A エンドポイント提供、Bedrock Converse API 呼び出し、添付ファイル処理                                                                       |
-| Bedrock Converse  | AI モデル                | Foundation Model           | 統一インターフェース、マルチモーダル入力（テキスト+画像）、多様な AI 機能（会話、画像生成、コード生成、データ分析など、モデル選択可能）      |
-| DynamoDB          | データストア             | DynamoDB                   | トークンストレージ (slack-workspace-tokens)、イベント重複排除 (slack-event-dedupe)、Existence Check キャッシュ (slack-existence-check-cache) |
-| LibreOffice Layer | PPTX 変換                | Lambda Layer               | PowerPoint スライドを画像に変換（オプション）                                                                                                |
+| レイヤー                  | 主な機能                 | 技術スタック               | 責任範囲                                                                                                                                     |
+| ------------------------- | ------------------------ | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Slack                     | ユーザーインターフェース | Slack API                  | コマンド受付、メッセージ表示、スレッド管理                                                                                                   |
+| SlackEventHandler         | 検証層処理               | Python 3.11 (Lambda)       | 署名検証（鍵 1）、Existence Check（鍵 2）、ホワイトリスト認可（3c）、Verification Agent 呼び出し、即座応答、添付ファイルメタデータ抽出      |
+| Function URL              | パブリックエンドポイント | Lambda Function URL        | リクエスト受付、SlackEventHandler へのルーティング                                                                                           |
+| Verification Agent        | 検証・オーケストレーション | AgentCore Runtime (ARM64) | セキュリティパイプライン（存在確認・認可・レート制限）、Strands エージェントループ（反復推論・マルチエージェントディスパッチ）、Slack 返信  |
+| Execution Agents          | 実行層エージェント群     | AgentCore Runtime (ARM64)  | A2A エンドポイント提供（port 9000）、専門タスク実行（ファイル生成・時刻取得・ドキュメント検索・URL 取得）                                    |
+| Bedrock Converse          | AI モデル                | Foundation Model           | 統一インターフェース、マルチモーダル入力（テキスト+画像）、多様な AI 機能（会話、コード生成、データ分析など、モデル選択可能）              |
+| DynamoDB                  | データストア             | DynamoDB                   | トークンストレージ (slack-workspace-tokens)、イベント重複排除 (slack-event-dedupe)、Existence Check キャッシュ (slack-existence-check-cache) |
+| LibreOffice Layer         | PPTX 変換                | Lambda Layer               | PowerPoint スライドを画像に変換（オプション）                                                                                                |
 
 ### 1.3 主要データフロー
 
-**標準フロー**: Slack → SlackEventHandler Function URL → SlackEventHandler（署名検証、Existence Check、即座応答、添付ファイルメタデータ抽出）→ Execution Agent (A2A, SigV4) → Bedrock Converse API（テキスト+画像分析）→ A2A レスポンス → SlackResponseHandler → Slack API（スレッド返信・リアクション更新）→ Slack
+**標準フロー**: Slack → SlackEventHandler Function URL → SlackEventHandler（署名検証、Existence Check、即座応答）→ Verification Agent (A2A, SigV4) → Strands エージェントループ（最大 5 ターン、複数 Execution Agent に並列ディスパッチ可）→ 各 Execution Agent → Bedrock Converse API → 統合された AI 応答 → Slack API（スレッド返信・リアクション更新）→ Slack
 
-**スレッド処理フロー**: Slack Event (`event.thread_ts` or `event.ts`) → Execution Agent（`conversations.replies`で履歴取得）→ Bedrock Converse API（会話履歴を含む）→ A2A レスポンス → SlackResponseHandler → Slack API（`chat.postMessage` with `thread_ts`）→ Slack スレッド内に表示
+**スレッド処理フロー**: Slack Event (`event.thread_ts` or `event.ts`) → SlackEventHandler → Verification Agent（`build_current_thread_context` でスレッド履歴取得）→ Strands ループ（スレッドコンテキストを `## スレッドコンテキスト` セクションとして LLM に注入）→ Bedrock Converse API → Slack API（`chat.postMessage` with `thread_ts`）→ Slack スレッド内に表示
 
-**添付ファイル処理フロー**: Slack Event (`event.files`) → SlackEventHandler（メタデータ抽出）→ Execution Agent（Slack CDN からダウンロード、画像/ドキュメント処理）→ Bedrock Converse API（バイナリ画像データ、テキスト抽出）→ 統合された AI 応答 → SlackResponseHandler → Slack API（スレッド返信）
+**添付ファイル処理フロー**: Slack Event (`event.files`) → SlackEventHandler（メタデータ抽出）→ Verification Agent（Slack CDN からダウンロード、S3 にアップロード、署名付き URL 生成）→ Strands ループ（file_references を LLM プロンプトに注入）→ Execution Agent（S3 署名付き URL 経由でダウンロード、画像/ドキュメント処理）→ Bedrock Converse API → 統合された AI 応答 → Slack API（スレッド返信）
 
 **非同期処理の利点**: Slack の 3 秒タイムアウト制約を回避し、ユーザーに即座のフィードバックを提供しながら、バックグラウンドで AI 処理を実行できます。
 
@@ -649,4 +650,4 @@ def extract_attachment_metadata(event):
 
 ---
 
-**最終更新日**: 2026-02-14
+**最終更新日**: 2026-02-22

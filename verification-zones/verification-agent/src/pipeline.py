@@ -24,7 +24,8 @@ from agent_registry import (
     get_agent_arn,
     get_all_cards,
 )
-from router import route_request, UNROUTED_AGENT_ID, LIST_AGENTS_AGENT_ID
+from router import route_request, UNROUTED_AGENT_ID, LIST_AGENTS_AGENT_ID  # kept for backward-compat; not called in main flow
+from orchestrator import OrchestrationRequest, run_orchestration_loop
 from slack_post_request import (
     send_slack_post_request,
     build_file_artifact,
@@ -105,6 +106,9 @@ except Exception as e:
             "error_type": type(e).__name__,
         },
     )
+
+# Initialize BedrockModel for orchestration loop (fail-open).
+_bedrock_model = BedrockModel(model_id=_FALLBACK_MODEL_ID) if BedrockModel else None
 
 
 def _get_user_friendly_error(error_code: str, fallback_message: str = "") -> str:
@@ -462,6 +466,7 @@ def run(payload: dict) -> str:
             )
 
         # 3.5. Fetch current Slack thread context and inject into prompt text
+        thread_context = None
         if bot_token and channel and thread_ts:
             try:
                 thread_context = build_current_thread_context(
@@ -471,8 +476,9 @@ def run(payload: dict) -> str:
                     correlation_id=correlation_id,
                     current_message_ts=current_message_ts,
                 )
-                if thread_context:
-                    text = f"{thread_context}\n\n{text}".strip()
+                # thread_context is passed separately to OrchestrationRequest;
+                # _build_prompt injects it as ## スレッドコンテキスト.
+                # Do NOT prepend here to avoid duplication in the LLM prompt.
             except Exception as e:
                 _log(
                     "WARN",
@@ -564,150 +570,33 @@ def run(payload: dict) -> str:
                 execution_attachments = enriched
                 did_s3_upload = True
 
-        # Delegate to Execution Agent (bot_token required for response formatting; attachments use presigned_url)
+        # Orchestration loop — dispatches to multiple execution agents via A2A, iterates until done
         is_processing = True
         _log(
             "INFO",
-            "delegating_to_execution_agent",
+            "delegating_to_orchestration_loop",
             {"correlation_id": correlation_id, "channel": channel},
         )
 
-        execution_payload = {
-            "channel": channel,
-            "text": text,
-            "thread_ts": thread_ts,
-            "attachments": execution_attachments,
-            "correlation_id": correlation_id,
-            "team_id": team_id,
-            "user_id": user_id,
-            "bot_token": bot_token,
-        }
+        max_turns = int(os.environ.get("MAX_AGENT_TURNS", "5"))
+        orch_request = OrchestrationRequest(
+            user_text=text,
+            thread_context=thread_context,
+            file_references=execution_attachments,
+            available_agents=get_all_cards(),
+            correlation_id=correlation_id,
+            max_turns=max_turns,
+        )
 
         try:
-            # Route request to target execution runtime.
-            agent_id = route_request(text, correlation_id=correlation_id)
-            target_arn = get_agent_arn(agent_id)
-            target_runtime_id = target_arn.split("/")[-1] if target_arn else ""
-            _log(
-                "INFO",
-                "execution_agent_routed",
-                {
-                    "correlation_id": correlation_id,
-                    "agent_id": agent_id,
-                    "has_target_arn": bool(target_arn),
-                    "target_runtime_id": target_runtime_id,
-                },
-            )
+            orch_result = run_orchestration_loop(orch_request, get_all_cards(), _bedrock_model)
+            response_text = orch_result.synthesized_text
+            if orch_result.completion_status == "partial":
+                response_text += "\n（注: 制限により一部のタスクを完了できませんでした）"
 
-            if agent_id == LIST_AGENTS_AGENT_ID:
-                is_processing = False
-                agent_list_text = _build_agent_list_message(get_all_cards())
-                send_slack_post_request(
-                    channel=channel,
-                    thread_ts=thread_ts,
-                    text=agent_list_text,
-                    bot_token=bot_token,
-                    correlation_id=correlation_id,
-                    message_ts=message_ts,
-                )
-                _log(
-                    "INFO",
-                    "list_agents_reply_sent",
-                    {"correlation_id": correlation_id, "channel": channel},
-                )
-                return json.dumps({"status": "completed", "correlation_id": correlation_id})
-
-            if agent_id == UNROUTED_AGENT_ID or not target_arn:
-                _log(
-                    "WARN",
-                    "execution_agent_not_routed",
-                    {
-                        "correlation_id": correlation_id,
-                        "agent_id": agent_id,
-                        "reason": "no_target_agent_selected",
-                    },
-                )
-                is_processing = False
-                fallback_text = _generate_unrouted_fallback_response(
-                    text, correlation_id
-                )
-                send_slack_post_request(
-                    channel=channel,
-                    thread_ts=thread_ts,
-                    text=fallback_text
-                    or ":warning: リクエストに適したエージェントを選択できませんでした。もう少し具体的に依頼してください。",
-                    bot_token=bot_token,
-                    correlation_id=correlation_id,
-                    message_ts=message_ts,
-                )
-                _log(
-                    "INFO",
-                    "unrouted_direct_fallback_sent",
-                    {
-                        "correlation_id": correlation_id,
-                        "used_llm_response": bool(fallback_text),
-                    },
-                )
-                return json.dumps(
-                    {"status": "completed", "correlation_id": correlation_id}
-                )
-
-            # 032 US3: invoke_execution_agent returns unwrapped payload only (result or error body).
-            # No JSON-RPC envelope (jsonrpc/id) is exposed; Slack sees only status, response_text, or user-facing error.
-            execution_result = invoke_execution_agent(
-                execution_payload,
-                execution_agent_arn=target_arn,
-            )
-            try:
-                result_data = (
-                    json.loads(execution_result)
-                    if isinstance(execution_result, str)
-                    else execution_result
-                )
-            except (json.JSONDecodeError, TypeError) as e:
-                _log(
-                    "ERROR",
-                    "execution_result_parse_error",
-                    {
-                        "correlation_id": correlation_id,
-                        "error": str(e),
-                        "raw_result_preview": (
-                            str(execution_result)[:200] if execution_result else ""
-                        ),
-                    },
-                )
-                is_processing = False
-                send_slack_post_request(
-                    channel=channel,
-                    thread_ts=thread_ts,
-                    text=DEFAULT_ERROR_MESSAGE,
-                    bot_token=bot_token,
-                    correlation_id=correlation_id,
-                    message_ts=message_ts,
-                )
-                return json.dumps(
-                    {
-                        "status": "error",
-                        "error_code": "invalid_response",
-                        "error_message": "Failed to parse execution result",
-                        "correlation_id": correlation_id,
-                    }
-                )
-
-            _log(
-                "INFO",
-                "execution_result_received",
-                {
-                    "correlation_id": correlation_id,
-                    "status": result_data.get("status"),
-                    "channel": channel,
-                },
-            )
-
-            if result_data.get("status") == "success":
-                response_text = result_data.get("response_text", "")
-                file_tuple = parse_file_artifact(result_data)
-                file_artifact = None
+            file_artifact = None
+            if orch_result.file_artifact:
+                file_tuple = parse_file_artifact({"file_artifact": orch_result.file_artifact})
                 if file_tuple:
                     file_bytes, file_name, mime_type = file_tuple
                     size_bytes = len(file_bytes)
@@ -716,12 +605,8 @@ def run(payload: dict) -> str:
                             s3_key = upload_generated_file_to_s3(
                                 file_bytes, correlation_id, file_name, mime_type
                             )
-                            presigned_url = generate_presigned_url_for_generated_file(
-                                s3_key
-                            )
-                            file_artifact = build_file_artifact_s3(
-                                presigned_url, file_name, mime_type
-                            )
+                            presigned_url = generate_presigned_url_for_generated_file(s3_key)
+                            file_artifact = build_file_artifact_s3(presigned_url, file_name, mime_type)
                             _log(
                                 "INFO",
                                 "file_artifact_s3_routed",
@@ -735,10 +620,7 @@ def run(payload: dict) -> str:
                             _log(
                                 "ERROR",
                                 "file_artifact_s3_upload_failed",
-                                {
-                                    "correlation_id": correlation_id,
-                                    "error": str(e),
-                                },
+                                {"correlation_id": correlation_id, "error": str(e)},
                             )
                             send_slack_post_request(
                                 channel=channel,
@@ -758,9 +640,7 @@ def run(payload: dict) -> str:
                                 }
                             )
                     else:
-                        file_artifact = build_file_artifact(
-                            file_bytes, file_name, mime_type
-                        )
+                        file_artifact = build_file_artifact(file_bytes, file_name, mime_type)
                         _log(
                             "INFO",
                             "file_artifact_inline_routed",
@@ -770,81 +650,37 @@ def run(payload: dict) -> str:
                                 "artifact_type": "inline",
                             },
                         )
-                if not file_tuple and result_data.get("file_artifact"):
-                    _log(
-                        "WARN",
-                        "file_artifact_parse_failed",
-                        {
-                            "correlation_id": correlation_id,
-                            "channel": channel,
-                            "reason": "parse_file_artifact returned None despite file_artifact present",
-                        },
-                    )
-                attribution = _build_agent_attribution(agent_id, get_all_cards())
-                if response_text:
-                    response_text = f"{response_text}\n{attribution}"
-                else:
-                    response_text = attribution
-                send_slack_post_request(
-                    channel=channel,
-                    thread_ts=thread_ts,
-                    text=response_text,
-                    file_artifact=file_artifact,
-                    bot_token=bot_token,
-                    correlation_id=correlation_id,
-                    message_ts=message_ts,
-                )
-                _log(
-                    "INFO",
-                    "slack_post_request_sent",
-                    {
-                        "correlation_id": correlation_id,
-                        "channel": channel,
-                        "has_text": bool(response_text),
-                        "has_file": file_artifact is not None,
-                    },
-                )
-            elif result_data.get("status") == "error":
-                error_code = result_data.get("error_code", "generic")
-                raw_error_message = result_data.get("error_message", "")
-                user_friendly_message = _get_user_friendly_error(
-                    error_code, raw_error_message
-                )
-                log_execution_agent_error_response(
-                    correlation_id=correlation_id,
-                    error_code=error_code,
-                    error_message=raw_error_message,
-                    raw_response=result_data,
-                )
-                attribution = _build_agent_attribution(agent_id, get_all_cards())
-                user_friendly_message = f"{user_friendly_message}\n{attribution}"
-                send_slack_post_request(
-                    channel=channel,
-                    thread_ts=thread_ts,
-                    text=user_friendly_message,
-                    bot_token=bot_token,
-                    correlation_id=correlation_id,
-                    message_ts=message_ts,
-                )
-                _log(
-                    "INFO",
-                    "slack_error_post_request_sent",
-                    {
-                        "correlation_id": correlation_id,
-                        "channel": channel,
-                        "error_code": error_code,
-                    },
-                )
+
+            send_slack_post_request(
+                channel=channel,
+                thread_ts=thread_ts,
+                text=response_text,
+                file_artifact=file_artifact,
+                bot_token=bot_token,
+                correlation_id=correlation_id,
+                message_ts=message_ts,
+            )
+            _log(
+                "INFO",
+                "slack_post_request_sent",
+                {
+                    "correlation_id": correlation_id,
+                    "channel": channel,
+                    "has_text": bool(response_text),
+                    "has_file": file_artifact is not None,
+                },
+            )
 
             duration_ms = (time.time() - start_time) * 1000
             is_processing = False
             _log(
                 "INFO",
-                "a2a_task_completed",
+                "orchestration_completed",
                 {
                     "correlation_id": correlation_id,
                     "duration_ms": round(duration_ms, 2),
-                    "status": result_data.get("status"),
+                    "status": orch_result.completion_status,
+                    "agents_called": orch_result.agents_called,
                 },
             )
             return json.dumps({"status": "completed", "correlation_id": correlation_id})
@@ -854,7 +690,7 @@ def run(payload: dict) -> str:
             tb_str = traceback.format_exc()
             _log(
                 "ERROR",
-                "execution_agent_error",
+                "orchestration_loop_error",
                 {
                     "correlation_id": correlation_id,
                     "error": str(e),
@@ -874,7 +710,7 @@ def run(payload: dict) -> str:
             return json.dumps(
                 {
                     "status": "error",
-                    "error_code": "execution_error",
+                    "error_code": "orchestration_error",
                     "error_message": str(e),
                     "correlation_id": correlation_id,
                 }

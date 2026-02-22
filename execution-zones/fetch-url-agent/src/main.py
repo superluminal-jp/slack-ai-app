@@ -139,25 +139,6 @@ def handle_message_tool(payload_json: str) -> str:
         )
 
         # Validate required fields
-        if not channel:
-            err = {
-                "status": "error",
-                "error_code": "missing_channel",
-                "error_message": "Missing channel",
-                "correlation_id": correlation_id,
-            }
-            if bot_token and bot_token.strip().startswith("xoxb-"):
-                return json.dumps(
-                    format_error_response(
-                        channel="unknown",
-                        error_code="missing_channel",
-                        error_message="Missing channel",
-                        bot_token=bot_token,
-                        correlation_id=correlation_id,
-                    )
-                )
-            return json.dumps(err)
-
         if not text or not text.strip():
             err = {
                 "status": "error",
@@ -230,6 +211,13 @@ def handle_message_tool(payload_json: str) -> str:
                     "duration_ms": round(duration_ms, 2),
                 },
             )
+
+            if not channel:
+                return json.dumps({
+                    "status": "success",
+                    "response_text": ai_response,
+                    "correlation_id": correlation_id,
+                })
 
             result, _ = format_success_response(
                 channel=channel,
@@ -373,7 +361,7 @@ def handle_invocation_body(body: bytes) -> dict:
 
     # execute_task: validate required params
     params = data.get("params") if isinstance(data.get("params"), dict) else {}
-    _REQUIRED_PARAMS = ("channel", "text", "bot_token")
+    _REQUIRED_PARAMS = ("text",)  # channel/bot_token are Slack-specific; kept in verification zone only
     missing = [k for k in _REQUIRED_PARAMS if not (params.get(k) and str(params.get(k)).strip())]
     if missing:
         return {
