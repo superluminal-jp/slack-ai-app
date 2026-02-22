@@ -558,19 +558,21 @@ def lambda_handler(event, context):
 
             # Handle message and app_mention events
             if event_type in ["message", "app_mention"]:
-                # Ignore bot messages to prevent infinite loops
-                # Check for bot_id (bot user messages) or subtype bot_message
+                # Ignore bot messages and system message subtypes (e.g. message_deleted,
+                # message_changed, channel_join). Only plain user messages (subtype=None)
+                # should be processed. bot_id check prevents infinite loops.
+                subtype = slack_event.get("subtype")
                 if (
                     slack_event.get("bot_id")
-                    or slack_event.get("subtype") == "bot_message"
+                    or subtype is not None
                 ):
                     log_event(
                         "INFO",
                         "bot_message_ignored",
                         {
-                            "reason": "prevent_loop",
+                            "reason": "bot_id" if slack_event.get("bot_id") else "system_subtype",
                             "bot_id": slack_event.get("bot_id"),
-                            "subtype": slack_event.get("subtype"),
+                            "subtype": subtype,
                         },
                         context,
                     )

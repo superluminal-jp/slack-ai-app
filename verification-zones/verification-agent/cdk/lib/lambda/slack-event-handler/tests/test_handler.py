@@ -774,6 +774,60 @@ class Test016AsyncSqsPath:
         mock_agentcore.invoke_agent_runtime.assert_not_called()
 
 
+class TestMessageSubtypeIgnored:
+    """Test that message events with a subtype (e.g. message_deleted, message_changed) are ignored."""
+
+    def _make_subtype_event(self, subtype: str, channel: str = "C0AFSG79T8D") -> dict:
+        return {
+            "body": json.dumps({
+                "type": "event_callback",
+                "event": {
+                    "type": "message",
+                    "subtype": subtype,
+                    "channel": channel,
+                    "ts": "1234567890.000001",
+                },
+                "team_id": "T12345",
+            }),
+            "headers": {
+                "x-slack-signature": "v0=test",
+                "x-slack-request-timestamp": "1234567890",
+            },
+        }
+
+    def test_message_deleted_returns_200_without_reply(self):
+        """message_deleted subtype is silently ignored."""
+        event = self._make_subtype_event("message_deleted")
+        with patch.dict(os.environ, {"AUTO_REPLY_CHANNEL_IDS": "C0AFSG79T8D", "VERIFICATION_AGENT_ARN": "arn:aws:bedrock-agentcore:ap-northeast-1:123:runtime/test"}, clear=False):
+            with patch("handler.verify_signature", return_value=True):
+                with patch("handler.get_token", return_value="xoxb-test"):
+                    with patch("handler.store_token", return_value=None):
+                        with patch("handler.check_entity_existence", return_value=True):
+                            with patch("handler.is_duplicate_event", return_value=False):
+                                with patch("handler.mark_event_processed", return_value=True):
+                                    context = Mock()
+                                    context.aws_request_id = "req-del"
+                                    result = lambda_handler(event, context)
+        assert result["statusCode"] == 200
+        assert json.loads(result["body"]) == {"ok": True}
+
+    def test_message_changed_returns_200_without_reply(self):
+        """message_changed subtype is silently ignored."""
+        event = self._make_subtype_event("message_changed")
+        with patch.dict(os.environ, {"AUTO_REPLY_CHANNEL_IDS": "C0AFSG79T8D", "VERIFICATION_AGENT_ARN": "arn:aws:bedrock-agentcore:ap-northeast-1:123:runtime/test"}, clear=False):
+            with patch("handler.verify_signature", return_value=True):
+                with patch("handler.get_token", return_value="xoxb-test"):
+                    with patch("handler.store_token", return_value=None):
+                        with patch("handler.check_entity_existence", return_value=True):
+                            with patch("handler.is_duplicate_event", return_value=False):
+                                with patch("handler.mark_event_processed", return_value=True):
+                                    context = Mock()
+                                    context.aws_request_id = "req-chg"
+                                    result = lambda_handler(event, context)
+        assert result["statusCode"] == 200
+        assert json.loads(result["body"]) == {"ok": True}
+
+
 class TestIsAutoReplyChannel:
     """Test _is_auto_reply_channel helper function."""
 

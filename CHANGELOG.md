@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Attachment filename missing in orchestrator prompt** (`verification-agent`): `_build_prompt` used `r.get('filename', 'file')` but enriched attachments carry the `'name'` key. All attachment labels in the LLM prompt showed as "file". Fixed to `r.get('name', r.get('filename', 'file'))`.
 - **`ToolLoggingHook` status detection for string tool results** (`verification-agent`): `_after_tool` called `.get("status")` on `event.result`, which is a plain string when Strands tools return text. Updated to type-check: dicts use `.get("status") == "error"`; strings check `.startswith("ERROR:")`.
 
+### Fixed
+
+- **Bot replies to message_deleted / message_changed events** (`verification-agent`): `message` events with any non-null `subtype` (e.g. `message_deleted`, `message_changed`, `channel_join`) are now silently ignored. Previously only `bot_message` subtype was filtered, causing the bot to send a "Please send me a message" prompt on every deletion.
+
 ### Added
 
 - **Auto-reply to channel messages without mention** (`verification-agent`): The bot now responds to all messages in explicitly configured channels without requiring an `@mention`. Channel IDs are set via `AUTO_REPLY_CHANNEL_IDS` env var (comma-separated); unset means no channels are opted in (conservative default). DMs and `app_mention` events are unaffected. Configured via `autoReplyChannelIds` in `cdk.config.{env}.json`, propagated through `CdkConfig` → `VerificationStackProps` → `SlackEventHandlerProps` → Lambda env. `message.channels` added to Slack App manifest bot events.
