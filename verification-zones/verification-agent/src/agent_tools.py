@@ -20,16 +20,8 @@ def _log(level, event_type, data):
     log(_logger, level, event_type, data, service="verification-agent")
 
 
-def make_agent_tool(agent_id: str, card: dict, slack_context: dict | None = None):
-    """Create a Strands @tool for a single registered execution agent.
-
-    Args:
-        agent_id: The execution agent ID.
-        card: Agent card dict (from agent registry).
-        slack_context: Slack fields required by execution agents
-            (channel, bot_token, thread_ts, correlation_id).
-    """
-    _slack_ctx = slack_context or {}
+def make_agent_tool(agent_id: str, card: dict):
+    """Create a Strands @tool for a single registered execution agent."""
     safe_name = "invoke_" + agent_id.replace("-", "_")
     description = card.get("description", f"Execute task using {agent_id}")
     skills = card.get("skills", [])
@@ -47,17 +39,10 @@ def make_agent_tool(agent_id: str, card: dict, slack_context: dict | None = None
         target_arn = get_agent_arn(agent_id)
         if not target_arn:
             return f"ERROR: agent_not_found — No ARN found for agent '{agent_id}'"
-        payload = {
-            "text": task,
-            "channel": _slack_ctx.get("channel", ""),
-            "bot_token": _slack_ctx.get("bot_token", ""),
-            "thread_ts": _slack_ctx.get("thread_ts"),
-            "correlation_id": _slack_ctx.get("correlation_id", ""),
-        }
         try:
             raw = await asyncio.to_thread(
                 invoke_execution_agent,
-                payload,
+                {"text": task},
                 target_arn,
             )
             # invoke_execution_agent returns JSON; extract plain response_text for the LLM
@@ -87,13 +72,11 @@ def make_agent_tool(agent_id: str, card: dict, slack_context: dict | None = None
     return tool(_invoke)
 
 
-def build_agent_tools(registry: dict, slack_context: dict | None = None) -> list:
+def build_agent_tools(registry: dict) -> list:
     """Generate one @tool per registered execution agent from the registry.
 
     Args:
         registry: dict mapping agent_id -> agent_card dict
-        slack_context: Slack fields (channel, bot_token, thread_ts, correlation_id)
-            forwarded to every execution agent invocation.
 
     Returns:
         List of Strands tool-decorated async functions.
@@ -103,7 +86,7 @@ def build_agent_tools(registry: dict, slack_context: dict | None = None) -> list
         if not isinstance(card, dict):
             continue
         try:
-            agent_tool = make_agent_tool(agent_id, card, slack_context=slack_context)
+            agent_tool = make_agent_tool(agent_id, card)
             tools.append(agent_tool)
         except Exception as e:
             _log("WARN", "agent_tool_creation_failed", {

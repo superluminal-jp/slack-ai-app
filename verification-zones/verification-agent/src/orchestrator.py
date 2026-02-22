@@ -104,20 +104,14 @@ and which failed.
 class OrchestrationAgent:
     """Strands agentic loop orchestrator for multi-agent iterative reasoning."""
 
-    def __init__(
-        self,
-        agent_registry: dict,
-        bedrock_model,
-        max_turns: int = 5,
-        slack_context: dict | None = None,
-    ):
+    def __init__(self, agent_registry: dict, bedrock_model, max_turns: int = 5):
         from agent_tools import build_agent_tools
         from hooks import MaxTurnsHook, ToolLoggingHook
 
         self._max_turns = _clamp_max_turns(max_turns)
         self._registry = agent_registry
         self._model = bedrock_model
-        self._tools = build_agent_tools(agent_registry, slack_context=slack_context)
+        self._tools = build_agent_tools(agent_registry)
         self._max_turns_hook = MaxTurnsHook(self._max_turns)
         self._logging_hook = ToolLoggingHook()
 
@@ -225,10 +219,7 @@ def run_orchestration_loop(
     request: OrchestrationRequest,
     agent_registry: dict,
     bedrock_model,
-    slack_context: dict | None = None,
 ) -> OrchestrationResult:
     """Thin wrapper used by pipeline.py to run the orchestration loop."""
-    orchestrator = OrchestrationAgent(
-        agent_registry, bedrock_model, request.max_turns, slack_context=slack_context
-    )
+    orchestrator = OrchestrationAgent(agent_registry, bedrock_model, request.max_turns)
     return orchestrator.run(request)

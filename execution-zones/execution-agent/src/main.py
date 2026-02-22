@@ -691,7 +691,7 @@ def handle_invocation_body(body: bytes) -> dict:
 
     # execute_task: params as task payload (032 US2: validate required params before calling)
     params = data.get("params") if isinstance(data.get("params"), dict) else {}
-    _REQUIRED_PARAMS = ("channel", "text", "bot_token")
+    _REQUIRED_PARAMS = ("text",)  # channel/bot_token are Slack-specific; kept in verification zone only
     missing = [k for k in _REQUIRED_PARAMS if not (params.get(k) and str(params.get(k)).strip())]
     if missing:
         return {

@@ -31,13 +31,14 @@ class TestJsonRpc:
         assert resp["id"] == "card"
         assert resp["result"]["name"] == "SlackAI-DocsAgent (Slack AI App)"
 
-    def test_execute_task_missing_params_returns_32602(self):
+    def test_execute_task_missing_text_returns_32602(self):
+        """Only 'text' is required; channel/bot_token are Slack-specific and kept in verification zone."""
         import main
 
         body = json.dumps({
             "jsonrpc": "2.0",
             "method": "execute_task",
-            "params": {"text": "hello", "bot_token": "xoxb-test"},
+            "params": {"channel": "C123", "bot_token": "xoxb-test"},
             "id": "req-1",
         }).encode("utf-8")
         resp = main.handle_invocation_body(body)

@@ -184,7 +184,7 @@ def handle_invocation_body(body: bytes) -> dict:
         }
 
     params = data.get("params") if isinstance(data.get("params"), dict) else {}
-    required = ("channel", "text", "bot_token")
+    required = ("text",)  # channel/bot_token are Slack-specific; kept in verification zone only
     missing = [k for k in required if not (params.get(k) and str(params.get(k)).strip())]
     if missing:
         return {

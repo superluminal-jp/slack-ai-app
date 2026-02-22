@@ -588,17 +588,7 @@ def run(payload: dict) -> str:
         )
 
         try:
-            orch_result = run_orchestration_loop(
-                orch_request,
-                get_all_cards(),
-                _bedrock_model,
-                slack_context={
-                    "channel": channel,
-                    "bot_token": bot_token,
-                    "thread_ts": thread_ts,
-                    "correlation_id": correlation_id,
-                },
-            )
+            orch_result = run_orchestration_loop(orch_request, get_all_cards(), _bedrock_model)
             response_text = orch_result.synthesized_text
             if orch_result.completion_status == "partial":
                 response_text += "\n（注: 制限により一部のタスクを完了できませんでした）"
