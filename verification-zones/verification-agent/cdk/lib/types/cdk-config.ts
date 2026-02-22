@@ -46,6 +46,8 @@ export interface CdkConfig {
   verificationAgentName?: string;
   /** Map of execution agent IDs to runtime ARNs for A2A (optional; from stack outputs or config) */
   executionAgentArns?: Record<string, string>;
+  /** Channel IDs where the bot auto-replies without a mention (optional) */
+  autoReplyChannelIds?: string[];
 }
 
 /**
@@ -90,6 +92,7 @@ const CdkConfigSchema = z.object({
       )
     )
     .optional(),
+  autoReplyChannelIds: z.array(z.string()).optional(),
 });
 
 /**

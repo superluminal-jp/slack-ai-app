@@ -40,6 +40,11 @@ export interface SlackEventHandlerProps {
    * Ensures warm instances are retired and new ones fetch updated secrets from Secrets Manager.
    */
   configRevision?: string;
+  /**
+   * Channel IDs where the bot auto-replies to all messages without requiring a mention.
+   * Comma-separated string is set as AUTO_REPLY_CHANNEL_IDS env var.
+   */
+  autoReplyChannelIds?: string[];
 }
 
 export class SlackEventHandler extends Construct {
@@ -121,6 +126,10 @@ export class SlackEventHandler extends Construct {
         }),
         // When secrets change, configRevision changes so Lambda gets new config and drops cached secrets
         ...(props.configRevision && { CONFIG_REVISION: props.configRevision }),
+        // Channels where the bot auto-replies without requiring a mention
+        ...(props.autoReplyChannelIds && props.autoReplyChannelIds.length > 0 && {
+          AUTO_REPLY_CHANNEL_IDS: props.autoReplyChannelIds.join(","),
+        }),
       },
     });
 

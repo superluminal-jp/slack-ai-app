@@ -235,6 +235,7 @@ export class VerificationStack extends cdk.Stack {
       verificationAgentArn: this.verificationAgentRuntimeArn,
       agentInvocationQueue: this.agentInvocationQueue,
       configRevision,
+      autoReplyChannelIds: props.autoReplyChannelIds,
     });
 
     new AgentInvoker(this, "AgentInvoker", {

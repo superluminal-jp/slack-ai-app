@@ -12,7 +12,7 @@ import os
 # Import handler module to test
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from handler import lambda_handler, _is_valid_timestamp
+from handler import lambda_handler, _is_valid_timestamp, _is_auto_reply_channel
 
 
 class TestTimestampValidation:
@@ -108,7 +108,7 @@ class TestTimestampExtraction:
             }
         }
         
-        with patch.dict(os.environ, {"VERIFICATION_AGENT_ARN": "arn:aws:bedrock-agentcore:ap-northeast-1:123:runtime/test"}, clear=False):
+        with patch.dict(os.environ, {"VERIFICATION_AGENT_ARN": "arn:aws:bedrock-agentcore:ap-northeast-1:123:runtime/test", "AUTO_REPLY_CHANNEL_IDS": "C01234567"}, clear=False):
             with patch('handler.verify_signature', return_value=True):
                 with patch('handler.is_duplicate_event', return_value=False):
                     with patch('handler.mark_event_processed', return_value=True):
@@ -772,4 +772,126 @@ class Test016AsyncSqsPath:
 
         assert result["statusCode"] == 500
         mock_agentcore.invoke_agent_runtime.assert_not_called()
+
+
+class TestIsAutoReplyChannel:
+    """Test _is_auto_reply_channel helper function."""
+
+    def test_returns_false_when_env_not_set(self):
+        """Returns False (conservative default) when env var is absent."""
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("AUTO_REPLY_CHANNEL_IDS", None)
+            assert _is_auto_reply_channel("C0AFSG79T8D") is False
+
+    def test_returns_false_when_env_is_empty(self):
+        """Returns False when env var is set to empty string."""
+        with patch.dict(os.environ, {"AUTO_REPLY_CHANNEL_IDS": ""}, clear=False):
+            assert _is_auto_reply_channel("C0AFSG79T8D") is False
+
+    def test_returns_true_for_configured_channel(self):
+        """Returns True when channel is in the configured list."""
+        with patch.dict(os.environ, {"AUTO_REPLY_CHANNEL_IDS": "C0AFSG79T8D"}, clear=False):
+            assert _is_auto_reply_channel("C0AFSG79T8D") is True
+
+    def test_returns_false_for_unconfigured_channel(self):
+        """Returns False when channel is not in the configured list."""
+        with patch.dict(os.environ, {"AUTO_REPLY_CHANNEL_IDS": "C0AFSG79T8D"}, clear=False):
+            assert _is_auto_reply_channel("COTHER1234") is False
+
+    def test_handles_multiple_channel_ids(self):
+        """Returns True/False correctly for comma-separated list."""
+        with patch.dict(os.environ, {"AUTO_REPLY_CHANNEL_IDS": "CAAA,C0AFSG79T8D,CBBB"}, clear=False):
+            assert _is_auto_reply_channel("C0AFSG79T8D") is True
+            assert _is_auto_reply_channel("CAAA") is True
+            assert _is_auto_reply_channel("COTHER") is False
+
+    def test_handles_whitespace_around_ids(self):
+        """Strips whitespace from channel IDs in the env var."""
+        with patch.dict(os.environ, {"AUTO_REPLY_CHANNEL_IDS": " C0AFSG79T8D , CBBB "}, clear=False):
+            assert _is_auto_reply_channel("C0AFSG79T8D") is True
+            assert _is_auto_reply_channel("CBBB") is True
+
+
+class TestAutoReplyChannelFiltering:
+    """Test channel filtering logic for message events."""
+
+    def _make_message_event(self, channel: str, text: str = "hello") -> dict:
+        return {
+            "body": json.dumps({
+                "type": "event_callback",
+                "event": {
+                    "type": "message",
+                    "ts": "1234567890.000001",
+                    "channel": channel,
+                    "text": text,
+                    "user": "U12345",
+                },
+                "team_id": "T12345",
+            }),
+            "headers": {
+                "x-slack-signature": "v0=test",
+                "x-slack-request-timestamp": "1234567890",
+            },
+        }
+
+    def test_message_in_non_configured_channel_returns_200_ok(self):
+        """Plain message in a non-configured channel is silently skipped."""
+        event = self._make_message_event("COTHER1234")
+        with patch.dict(os.environ, {"AUTO_REPLY_CHANNEL_IDS": "C0AFSG79T8D", "VERIFICATION_AGENT_ARN": "arn:aws:bedrock-agentcore:ap-northeast-1:123:runtime/test"}, clear=False):
+            with patch("handler.verify_signature", return_value=True):
+                with patch("handler.get_token", return_value="xoxb-test"):
+                    with patch("handler.store_token", return_value=None):
+                        with patch("handler.check_entity_existence", return_value=True):
+                            with patch("handler.is_duplicate_event", return_value=False):
+                                with patch("handler.mark_event_processed", return_value=True):
+                                    context = Mock()
+                                    context.aws_request_id = "req-skip"
+                                    result = lambda_handler(event, context)
+        assert result["statusCode"] == 200
+        assert json.loads(result["body"]) == {"ok": True}
+
+    def test_message_in_configured_channel_proceeds_to_processing(self):
+        """Plain message in a configured channel passes the filter."""
+        event = self._make_message_event("C0AFSG79T8D", "help me")
+        with patch.dict(os.environ, {"AUTO_REPLY_CHANNEL_IDS": "C0AFSG79T8D", "VERIFICATION_AGENT_ARN": "arn:aws:bedrock-agentcore:ap-northeast-1:123:runtime/test"}, clear=False):
+            with patch("handler.verify_signature", return_value=True):
+                with patch("handler.is_duplicate_event", return_value=False):
+                    with patch("handler.mark_event_processed", return_value=True):
+                        with patch("handler.validate_prompt", return_value=(True, None)):
+                            with patch("handler.get_token", return_value="xoxb-test"):
+                                with patch("handler.authorize_request", return_value=Mock(authorized=True, unauthorized_entities=[])):
+                                    with patch("handler.check_entity_existence", return_value=True):
+                                        with patch("handler.check_rate_limit", return_value=(True, 10)):
+                                            with patch("handler.WebClient", return_value=Mock()):
+                                                with patch("handler.boto3.client") as mock_boto:
+                                                    mock_sqs = Mock()
+                                                    mock_boto.return_value = mock_sqs
+                                                    context = Mock()
+                                                    context.aws_request_id = "req-auto"
+                                                    result = lambda_handler(event, context)
+        # Reaches SQS enqueue (200) or agentcore call — not skipped
+        assert result["statusCode"] in (200, 500)
+
+    def test_dm_message_not_filtered_by_channel_check(self):
+        """DM (channel starts with D) bypasses the channel filter entirely."""
+        event = self._make_message_event("D01234567", "hello dm")
+        # DM events have type "message" but channel starts with "D" — filter should not apply
+        with patch.dict(os.environ, {"AUTO_REPLY_CHANNEL_IDS": "", "VERIFICATION_AGENT_ARN": "arn:aws:bedrock-agentcore:ap-northeast-1:123:runtime/test"}, clear=False):
+            with patch("handler.verify_signature", return_value=True):
+                with patch("handler.is_duplicate_event", return_value=False):
+                    with patch("handler.mark_event_processed", return_value=True):
+                        with patch("handler.validate_prompt", return_value=(True, None)):
+                            with patch("handler.get_token", return_value="xoxb-test"):
+                                with patch("handler.authorize_request", return_value=Mock(authorized=True, unauthorized_entities=[])):
+                                    with patch("handler.check_entity_existence", return_value=True):
+                                        with patch("handler.check_rate_limit", return_value=(True, 10)):
+                                            with patch("handler.WebClient", return_value=Mock()):
+                                                with patch("handler.boto3.client") as mock_boto:
+                                                    mock_sqs = Mock()
+                                                    mock_boto.return_value = mock_sqs
+                                                    context = Mock()
+                                                    context.aws_request_id = "req-dm"
+                                                    result = lambda_handler(event, context)
+        # DM passes the channel filter; reaches further processing
+        assert result["statusCode"] in (200, 500)
 

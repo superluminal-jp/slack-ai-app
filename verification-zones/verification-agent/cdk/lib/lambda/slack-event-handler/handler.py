@@ -25,6 +25,19 @@ from logger import (
 )
 
 
+def _is_auto_reply_channel(channel: str) -> bool:
+    """Return True if channel is configured for auto-reply (no mention required).
+
+    Reads AUTO_REPLY_CHANNEL_IDS env var (comma-separated channel IDs).
+    Returns False (conservative default) when the env var is unset or empty.
+    """
+    raw = os.environ.get("AUTO_REPLY_CHANNEL_IDS", "").strip()
+    if not raw:
+        return False
+    channel_ids = {c.strip() for c in raw.split(",") if c.strip()}
+    return channel in channel_ids
+
+
 def _is_valid_timestamp(ts: Optional[str]) -> bool:
     """
     Validate Slack timestamp format.
@@ -566,6 +579,23 @@ def lambda_handler(event, context):
                         "headers": {"Content-Type": "application/json"},
                         "body": json.dumps({"ok": True}),
                     }
+
+                # For plain channel message events (not app_mention, not DM),
+                # only process if the channel is configured for auto-reply.
+                if event_type == "message":
+                    ch = slack_event.get("channel", "")
+                    if (ch.startswith("C") or ch.startswith("G")) and not _is_auto_reply_channel(ch):
+                        log_event(
+                            "INFO",
+                            "auto_reply_skipped",
+                            {"channel": ch, "reason": "not_in_auto_reply_list"},
+                            context,
+                        )
+                        return {
+                            "statusCode": 200,
+                            "headers": {"Content-Type": "application/json"},
+                            "body": json.dumps({"ok": True}),
+                        }
 
                 # Extract channel and text from event
                 channel = slack_event.get("channel")

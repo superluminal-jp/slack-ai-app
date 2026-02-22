@@ -43,6 +43,12 @@ export interface VerificationStackProps extends cdk.StackProps {
    * e.g. { "file-creator": "...", "docs": "...", "time": "..." }
    */
   readonly executionAgentArns?: Record<string, string>;
+
+  /**
+   * Channel IDs where the bot auto-replies without requiring a mention.
+   * e.g. ["C0AFSG79T8D"]
+   */
+  readonly autoReplyChannelIds?: string[];
 }
 
 /**

@@ -268,6 +268,7 @@ new VerificationStack(app, verificationStackName, {
   executionAgentArns:
     Object.keys(executionAgentArns).length > 0 ? executionAgentArns : undefined,
   bedrockModelId: bedrockModelId || undefined,
+  autoReplyChannelIds: config?.autoReplyChannelIds,
 });
 logInfo("Verification stack created.", {
   phase: "stack",
