@@ -253,19 +253,21 @@ class TestPipelineIntegration:
     """Verify pipeline.py calls resolve_slack_urls correctly and handles exceptions."""
 
     @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.run_orchestration_loop")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.resolve_slack_urls")
-    @patch("pipeline.route_request", return_value="file-creator")
-    @patch("pipeline.get_agent_arn", return_value="arn:aws:bedrock-agentcore:ap-northeast-1:111111111111:runtime/file-creator")
     def test_pipeline_calls_resolver(
-        self, _mock_arn, _mock_route, mock_resolve, mock_rate, mock_existence, mock_auth, mock_invoke, mock_slack_post
+        self, mock_resolve, mock_rate, mock_existence, mock_auth, mock_orch, mock_slack_post
     ):
+        from src.orchestrator import OrchestrationResult
         mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, None)
-        mock_invoke.return_value = json.dumps({"status": "success", "response_text": "OK"})
+        mock_orch.return_value = OrchestrationResult(
+            synthesized_text="OK", turns_used=1, agents_called=["execution-agent"],
+            file_artifact=None, completion_status="complete",
+        )
         mock_slack_post.return_value = None
         mock_resolve.return_value = "enriched text"
 
@@ -288,24 +290,26 @@ class TestPipelineIntegration:
             "xoxb-test",
             "corr-1",
         )
-        # Verify enriched text was passed to execution agent
-        call_args = mock_invoke.call_args[0][0]
-        assert call_args["text"] == "enriched text"
+        # Verify enriched text was passed to orchestration request
+        orch_req = mock_orch.call_args[0][0]
+        assert orch_req.user_text == "enriched text"
 
     @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.run_orchestration_loop")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.resolve_slack_urls")
-    @patch("pipeline.route_request", return_value="file-creator")
-    @patch("pipeline.get_agent_arn", return_value="arn:aws:bedrock-agentcore:ap-northeast-1:111111111111:runtime/file-creator")
     def test_pipeline_continues_on_resolver_exception(
-        self, _mock_arn, _mock_route, mock_resolve, mock_rate, mock_existence, mock_auth, mock_invoke, mock_slack_post
+        self, mock_resolve, mock_rate, mock_existence, mock_auth, mock_orch, mock_slack_post
     ):
+        from src.orchestrator import OrchestrationResult
         mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, None)
-        mock_invoke.return_value = json.dumps({"status": "success", "response_text": "OK"})
+        mock_orch.return_value = OrchestrationResult(
+            synthesized_text="OK", turns_used=1, agents_called=["execution-agent"],
+            file_artifact=None, completion_status="complete",
+        )
         mock_slack_post.return_value = None
         mock_resolve.side_effect = RuntimeError("resolver crashed")
 
@@ -325,5 +329,5 @@ class TestPipelineIntegration:
         # Pipeline should still complete despite resolver failure
         assert result["status"] == "completed"
         # Original text should be used (not enriched)
-        call_args = mock_invoke.call_args[0][0]
-        assert call_args["text"] == "hello"
+        orch_req = mock_orch.call_args[0][0]
+        assert orch_req.user_text == "hello"

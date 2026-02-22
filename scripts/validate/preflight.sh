@@ -54,7 +54,7 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-for agent in execution-agent time-agent docs-agent; do
+for agent in file-creator-agent time-agent docs-agent; do
     config_file="${PROJECT_ROOT}/execution-zones/${agent}/cdk/cdk.config.${DEPLOYMENT_ENV}.json"
     if [[ -f "${config_file}" ]]; then
         log_success "Config: execution-zones/${agent}/cdk/cdk.config.${DEPLOYMENT_ENV}.json"

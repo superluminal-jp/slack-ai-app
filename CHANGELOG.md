@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Renamed `execution-zones/execution-agent/` → `execution-zones/file-creator-agent/`**: Directory name now matches the agent's actual identity (CDK constructs and agent card already used `file-creator-agent`). Updated path references in `CLAUDE.md`, `package.json`, `scripts/deploy/deploy-execution-all.sh`, and `scripts/validate/preflight.sh`.
+
 ### Added
 
 - **Iterative multi-agent orchestration** (`verification-agent`, `036-iterative-reasoning`): Replaced single-pass routing with a Strands agentic loop. A single user request can now dispatch to multiple specialist agents in parallel, synthesize their results, and iterate across up to `MAX_AGENT_TURNS` turns (default 5) until complete. Partial results are returned with an explanatory note when the turn limit fires. New modules: `src/orchestrator.py` (`OrchestrationAgent`, `run_orchestration_loop`, `OrchestrationRequest`, `OrchestrationResult`, `ToolCallRecord`), `src/hooks.py` (`MaxTurnsHook`, `ToolLoggingHook`), `src/agent_tools.py` (`build_agent_tools`). CDK env var `MAX_AGENT_TURNS` added to the verification-agent container.

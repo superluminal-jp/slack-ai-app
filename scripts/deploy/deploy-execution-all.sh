@@ -48,10 +48,10 @@ discover_execution_zones() {
         exit 1
     fi
 
-    # Ensure file-creator (execution-agent) deploys first when present.
+    # Ensure file-creator-agent deploys first when present.
     local ordered=()
     for i in "${!zones[@]}"; do
-        if [[ "${zones[$i]}" == "execution-agent" ]]; then
+        if [[ "${zones[$i]}" == "file-creator-agent" ]]; then
             ordered+=("${zones[$i]}")
             unset 'zones[$i]'
             break

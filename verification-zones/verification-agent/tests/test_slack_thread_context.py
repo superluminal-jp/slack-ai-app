@@ -56,32 +56,32 @@ class TestSlackThreadContext:
 
 class TestPipelineThreadContextIntegration:
     @patch("pipeline.send_slack_post_request")
-    @patch("pipeline.invoke_execution_agent")
+    @patch("pipeline.run_orchestration_loop")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.resolve_slack_urls")
     @patch("pipeline.build_current_thread_context")
-    @patch("pipeline.route_request", return_value="file-creator")
-    @patch(
-        "pipeline.get_agent_arn",
-        return_value="arn:aws:bedrock-agentcore:ap-northeast-1:111111111111:runtime/file-creator",
-    )
     def test_pipeline_injects_thread_context_before_delegate(
         self,
-        _mock_arn,
-        _mock_route,
         mock_thread_context,
         mock_resolve,
         mock_rate,
         mock_existence,
         mock_auth,
-        mock_invoke,
+        mock_orch,
         mock_slack_post,
     ):
+        from src.orchestrator import OrchestrationResult
         mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, None)
-        mock_invoke.return_value = json.dumps({"status": "success", "response_text": "OK"})
+        mock_orch.return_value = OrchestrationResult(
+            synthesized_text="OK",
+            turns_used=1,
+            agents_called=["execution-agent"],
+            file_artifact=None,
+            completion_status="complete",
+        )
         mock_slack_post.return_value = None
         mock_thread_context.return_value = "[Current Slack Thread Context]\nUser: 過去文脈\n[End Current Slack Thread Context]"
         mock_resolve.side_effect = lambda text, _token, _cid: text
@@ -109,6 +109,6 @@ class TestPipelineThreadContextIntegration:
             correlation_id="corr-ctx-1",
             current_message_ts="123.789",
         )
-        invoke_payload = mock_invoke.call_args[0][0]
-        assert "[Current Slack Thread Context]" in invoke_payload["text"]
-        assert "現在の質問" in invoke_payload["text"]
+        orch_req = mock_orch.call_args[0][0]
+        assert "[Current Slack Thread Context]" in orch_req.user_text
+        assert "現在の質問" in orch_req.user_text
