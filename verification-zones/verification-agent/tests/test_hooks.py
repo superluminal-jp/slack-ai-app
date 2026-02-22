@@ -240,3 +240,33 @@ class TestToolLoggingHook:
 
         assert hook.agents_called == ["execution-agent"]
         assert len(hook.agents_called) == 1
+
+    def test_status_is_error_when_tool_returns_error_string(self):
+        """When tool returns a string starting with 'ERROR:', status in log entry must be 'error'."""
+        ToolLoggingHook = self._get_hook()
+        hook = ToolLoggingHook(correlation_id="corr-err")
+
+        event = MagicMock()
+        event.tool_use = {"name": "invoke_docs_agent", "input": {}, "toolUseId": "id-err"}
+        event.result = "ERROR: agent_not_found — No ARN for docs-agent"
+
+        with patch("src.hooks._log") as mock_log:
+            hook._after_tool(event)
+
+        data = mock_log.call_args[0][2]
+        assert data["status"] == "error"
+
+    def test_status_is_success_when_tool_returns_success_string(self):
+        """When tool returns a non-error string, status in log entry must be 'success'."""
+        ToolLoggingHook = self._get_hook()
+        hook = ToolLoggingHook(correlation_id="corr-ok")
+
+        event = MagicMock()
+        event.tool_use = {"name": "invoke_time_agent", "input": {}, "toolUseId": "id-ok"}
+        event.result = "現在時刻は 14:00 です。"
+
+        with patch("src.hooks._log") as mock_log:
+            hook._after_tool(event)
+
+        data = mock_log.call_args[0][2]
+        assert data["status"] == "success"

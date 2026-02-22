@@ -973,3 +973,39 @@ class TestPipelineOrchestrationLoop:
 def test_e2e_slack_verification_execution_slack_unchanged():
     """T031/T033: E2E flow unchanged. Reply content and error messages equivalent to pre-JSON-RPC baseline."""
     pass
+
+
+class TestThreadContextNotDuplicated:
+    """Thread context must reach the LLM once — via OrchestrationRequest.thread_context only.
+
+    Bug: pipeline.py prepended thread_context to `text` AND passed it as a separate field,
+    causing _build_prompt to duplicate it: once in ## スレッドコンテキスト, once in ## ユーザーリクエスト.
+    """
+
+    @patch("pipeline.send_slack_post_request")
+    @patch("pipeline.authorize_request")
+    @patch("pipeline.check_entity_existence")
+    @patch("pipeline.check_rate_limit", return_value=(True, None))
+    @patch("pipeline.build_current_thread_context", return_value="過去の会話履歴")
+    def test_user_text_does_not_contain_thread_context(
+        self,
+        mock_thread_ctx,
+        mock_rate,
+        mock_existence,
+        mock_auth,
+        mock_slack_post,
+        mock_routing_defaults,
+    ):
+        """OrchestrationRequest.user_text must be the original message only, not thread_context prepended."""
+        mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
+        mock_slack_post.return_value = None
+
+        from pipeline import run
+
+        run({"prompt": json.dumps(_payload(text="hello", thread_ts="123.456"))})
+
+        orch_req = mock_routing_defaults.call_args[0][0]
+        assert orch_req.user_text == "hello"
+        assert orch_req.thread_context == "過去の会話履歴"
+        # thread_context must NOT be embedded inside user_text
+        assert "過去の会話履歴" not in orch_req.user_text

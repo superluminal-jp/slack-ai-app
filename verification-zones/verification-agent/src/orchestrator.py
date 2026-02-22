@@ -167,7 +167,7 @@ def _build_prompt(request: OrchestrationRequest) -> str:
         parts.append(f"## スレッドコンテキスト\n{request.thread_context}")
     if request.file_references:
         refs = "\n".join(
-            f"- {r.get('filename', 'file')} ({r.get('presigned_url', '')})"
+            f"- {r.get('name', r.get('filename', 'file'))} ({r.get('presigned_url', '')})"
             if isinstance(r, dict) else str(r)
             for r in request.file_references
         )

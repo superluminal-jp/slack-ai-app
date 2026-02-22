@@ -411,6 +411,55 @@ class TestOrchestrationAgentUS3:
         assert result.synthesized_text  # Non-empty fallback message
 
 
+class TestBuildPrompt:
+    """_build_prompt structures the LLM prompt correctly."""
+
+    def _make_request(self, **kwargs):
+        from src.orchestrator import OrchestrationRequest
+
+        defaults = dict(
+            user_text="ユーザーの質問",
+            thread_context=None,
+            file_references=[],
+            available_agents={},
+            correlation_id="build-prompt-test",
+            max_turns=5,
+        )
+        defaults.update(kwargs)
+        return OrchestrationRequest(**defaults)
+
+    def test_file_references_use_name_key_for_label(self):
+        """_build_prompt must use attachment['name'] to label file references (not 'filename')."""
+        from src.orchestrator import _build_prompt
+
+        request = self._make_request(
+            file_references=[
+                {
+                    "name": "report.pdf",
+                    "mimetype": "application/pdf",
+                    "presigned_url": "https://example.com/file",
+                },
+            ]
+        )
+        prompt = _build_prompt(request)
+
+        assert "report.pdf" in prompt
+        assert "- file (" not in prompt  # Must not fall back to generic label
+
+    def test_thread_context_appears_once_in_prompt(self):
+        """When thread_context is given, it appears exactly once — not duplicated."""
+        from src.orchestrator import _build_prompt
+
+        request = self._make_request(
+            user_text="ユーザーの質問",
+            thread_context="過去の会話履歴",
+        )
+        prompt = _build_prompt(request)
+
+        assert "過去の会話履歴" in prompt
+        assert prompt.count("過去の会話履歴") == 1  # Must not appear twice
+
+
 class TestOrchestrationFileArtifactPropagation:
     """Verify file_artifact propagates from _file_artifact_store through run()."""
 

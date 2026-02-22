@@ -92,8 +92,13 @@ class ToolLoggingHook(HookProvider):
         start = self._call_starts.pop(tool_use_id, time.time())
         duration_ms = int((time.time() - start) * 1000)
 
-        result = event.result or {}
-        status = "error" if result.get("status") == "error" else "success"
+        result = event.result
+        if isinstance(result, dict):
+            status = "error" if result.get("status") == "error" else "success"
+        elif isinstance(result, str) and result.startswith("ERROR:"):
+            status = "error"
+        else:
+            status = "success"
 
         if tool_name.startswith("invoke_"):
             agent_id = tool_name[len("invoke_"):].replace("_", "-")

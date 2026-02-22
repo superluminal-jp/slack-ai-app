@@ -110,5 +110,7 @@ class TestPipelineThreadContextIntegration:
             current_message_ts="123.789",
         )
         orch_req = mock_orch.call_args[0][0]
-        assert "[Current Slack Thread Context]" in orch_req.user_text
+        # thread_context is passed as a separate field; must NOT be prepended to user_text
+        assert orch_req.user_text == "現在の質問"
+        assert "[Current Slack Thread Context]" in orch_req.thread_context
         assert "現在の質問" in orch_req.user_text

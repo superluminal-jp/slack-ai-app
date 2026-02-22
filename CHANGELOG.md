@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Renamed `execution-zones/execution-agent/` → `execution-zones/file-creator-agent/`**: Directory name now matches the agent's actual identity (CDK constructs and agent card already used `file-creator-agent`). Updated path references in `CLAUDE.md`, `package.json`, `scripts/deploy/deploy-execution-all.sh`, and `scripts/validate/preflight.sh`.
 
+### Fixed
+
+- **Thread context duplication in LLM prompt** (`verification-agent`): `pipeline.py` was prepending `thread_context` to `user_text` AND passing it as a separate `OrchestrationRequest.thread_context` field. `_build_prompt` then injected it twice — once in `## スレッドコンテキスト` and once embedded in `## ユーザーリクエスト`. Removed the redundant prepend; thread context now reaches the LLM exactly once via the structured `## スレッドコンテキスト` section.
+- **Attachment filename missing in orchestrator prompt** (`verification-agent`): `_build_prompt` used `r.get('filename', 'file')` but enriched attachments carry the `'name'` key. All attachment labels in the LLM prompt showed as "file". Fixed to `r.get('name', r.get('filename', 'file'))`.
+- **`ToolLoggingHook` status detection for string tool results** (`verification-agent`): `_after_tool` called `.get("status")` on `event.result`, which is a plain string when Strands tools return text. Updated to type-check: dicts use `.get("status") == "error"`; strings check `.startswith("ERROR:")`.
+
 ### Added
 
 - **Test coverage for `file_artifact_store` and `file_artifact` propagation** (`verification-agent`, `036-iterative-reasoning`): Added 5 new tests — 3 in `test_agent_tools.py` verifying that `file_artifact_store` is populated when an execution agent response includes a `file_artifact`, that `None` store causes no error, and that the store is unchanged when no artifact is present; 2 in `test_orchestrator.py` (`TestOrchestrationFileArtifactPropagation`) verifying that `OrchestrationAgent.run()` propagates `file_artifact` from `_file_artifact_store` into `OrchestrationResult.file_artifact`, and returns `None` when no file is generated. Total test count: 204 passed, 13 skipped.

@@ -476,8 +476,9 @@ def run(payload: dict) -> str:
                     correlation_id=correlation_id,
                     current_message_ts=current_message_ts,
                 )
-                if thread_context:
-                    text = f"{thread_context}\n\n{text}".strip()
+                # thread_context is passed separately to OrchestrationRequest;
+                # _build_prompt injects it as ## スレッドコンテキスト.
+                # Do NOT prepend here to avoid duplication in the LLM prompt.
             except Exception as e:
                 _log(
                     "WARN",
