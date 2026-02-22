@@ -524,6 +524,13 @@ def handle_message_tool(payload_json: str) -> str:
                 },
             )
 
+            if not channel:
+                return json.dumps({
+                    "status": "success",
+                    "response_text": ai_response,
+                    "correlation_id": correlation_id,
+                })
+
             result, file_artifact = format_success_response(
                 channel=channel,
                 response_text=ai_response,

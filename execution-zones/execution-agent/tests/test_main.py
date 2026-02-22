@@ -25,8 +25,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 class TestHandleMessageValidation:
     """Test A2A entrypoint input validation."""
 
-    def test_missing_channel_returns_error(self):
-        """Missing channel should return error response."""
+    def test_missing_channel_returns_success(self):
+        """Missing channel (orchestration loop path) should return success response."""
         from main import handle_message
 
         payload = {
@@ -40,7 +40,8 @@ class TestHandleMessageValidation:
         result = handle_message(payload)
         result_data = json.loads(result)
 
-        assert result_data["status"] == "error" or "error" in result_data.get("error_code", "")
+        assert result_data["status"] == "success"
+        assert "response_text" in result_data
 
     def test_missing_text_returns_error(self):
         """Missing text should return error response."""
