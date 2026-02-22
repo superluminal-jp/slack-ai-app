@@ -219,25 +219,6 @@ def handle_message_tool(payload_json: str) -> str:
         )
 
         # Validate required fields
-        if not channel:
-            err = {
-                "status": "error",
-                "error_code": "missing_channel",
-                "error_message": "Missing channel",
-                "correlation_id": correlation_id,
-            }
-            if bot_token and bot_token.strip().startswith("xoxb-"):
-                return json.dumps(
-                    format_error_response(
-                        channel="unknown",
-                        error_code="missing_channel",
-                        error_message="Missing channel",
-                        bot_token=bot_token,
-                        correlation_id=correlation_id,
-                    )
-                )
-            return json.dumps(err)
-
         if not text and not (attachments and len(attachments) > 0):
             err = {
                 "status": "error",

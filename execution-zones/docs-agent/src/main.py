@@ -55,16 +55,6 @@ def handle_message_tool(payload_json: str) -> str:
     bot_token = task_payload.get("bot_token", "")
     thread_ts = task_payload.get("thread_ts")
 
-    if not channel:
-        return json.dumps(
-            {
-                "status": "error",
-                "error_code": "missing_channel",
-                "error_message": ERROR_MESSAGES["missing_channel"],
-                "correlation_id": correlation_id,
-            }
-        )
-
     if not text:
         return json.dumps(
             {
