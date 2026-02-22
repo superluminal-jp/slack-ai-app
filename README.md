@@ -56,7 +56,7 @@ See [docs/developer/quickstart.md](docs/developer/quickstart.md) for detailed de
 
 ```bash
 # 1. Configure each zone (edit account IDs, Slack tokens, etc.)
-# execution-zones/execution-agent/cdk/cdk.config.dev.json
+# execution-zones/file-creator-agent/cdk/cdk.config.dev.json
 # execution-zones/time-agent/cdk/cdk.config.dev.json
 # execution-zones/docs-agent/cdk/cdk.config.dev.json
 # execution-zones/fetch-url-agent/cdk/cdk.config.dev.json
@@ -207,6 +207,7 @@ This separation enables:
 - **Multi-model support**: Works with Claude, Nova, and other Bedrock models
 - **Thread context**: Maintains conversation history within Slack threads
 - **Attachment processing** (024): Images (PNG, JPEG, GIF, WebP) and documents (PDF, DOCX, XLSX, CSV, TXT, PPTX). Files flow via S3 pre-signed URLs; max 5 files per message, 10 MB for images, 5 MB for documents. Native Bedrock document blocks for high-quality Q&A.
+- **Iterative multi-agent reasoning** (036): The verification agent runs a Strands agentic loop that can dispatch a single request to multiple specialist agents in parallel, synthesize all results, and iterate across up to 5 reasoning turns until the task is complete. Partial results are returned with an explanatory note when the turn limit fires.
 
 ### Infrastructure
 
@@ -222,7 +223,7 @@ This separation enables:
 The application uses **five independent CDK apps** (one per agent zone), each deployable separately:
 
 - **Verification Zone** (`verification-zones/verification-agent/cdk`): SlackEventHandler Lambda + Verification Agent (AgentCore) + DynamoDB + Secrets Manager
-- **Execution Agent Zone** (`execution-zones/execution-agent/cdk`): File-creator agent (AgentCore Runtime + ECR)
+- **File-Creator Agent Zone** (`execution-zones/file-creator-agent/cdk`): File-creator agent (AgentCore Runtime + ECR)
 - **Time Agent Zone** (`execution-zones/time-agent/cdk`): Current-time agent (AgentCore Runtime + ECR)
 - **Docs Agent Zone** (`execution-zones/docs-agent/cdk`): Document-search agent (AgentCore Runtime + ECR)
 - **Web Fetch Agent Zone** (`execution-zones/fetch-url-agent/cdk`): URL-fetch agent (AgentCore Runtime + ECR)
@@ -253,7 +254,7 @@ For technical details, see [Architecture Overview](docs/developer/architecture.m
 ```
 slack-ai-app/
 ├── execution-zones/              # Execution agent CDK apps (one per agent)
-│   ├── execution-agent/          # File-creator / general AI agent
+│   ├── file-creator-agent/       # File-creator / general AI agent
 │   │   ├── cdk/                  # Standalone CDK app (TypeScript)
 │   │   │   ├── bin/cdk.ts        # Entry point
 │   │   │   ├── lib/              # Stack, constructs, types
@@ -307,7 +308,7 @@ cd execution-zones/fetch-url-agent/cdk && npm test
 cd verification-zones/verification-agent/cdk && npm test
 
 # Python agent tests (pytest) — per zone
-cd execution-zones/execution-agent && python -m pytest tests/ -v
+cd execution-zones/file-creator-agent && python -m pytest tests/ -v
 cd execution-zones/time-agent && python -m pytest tests/ -v
 cd execution-zones/docs-agent && python -m pytest tests/ -v
 cd execution-zones/fetch-url-agent && python -m pytest tests/ -v
@@ -548,9 +549,18 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-02-22
 
 ## Recent Updates
+
+- **2026-02-22**: Iterative multi-agent reasoning (036)
+  - Replaced single-pass routing with a Strands agentic loop in the verification agent (`orchestrator.py`, `hooks.py`, `agent_tools.py`)
+  - A single request can now dispatch to multiple specialist agents in parallel and iterate across up to 5 reasoning turns
+  - Partial results returned with explanatory note when turn limit fires (`MaxTurnsHook`)
+  - Structured per-turn observability via `ToolLoggingHook` (agents called, duration, status per tool call)
+  - Bug fixes: thread context appeared twice in LLM prompt; attachment filename label always showed "file"; hook status detection failed on string tool results
+  - Renamed `execution-zones/execution-agent/` → `execution-zones/file-creator-agent/` to match agent identity
+  - Test count: 209 passed, 13 skipped
 
 - **2026-02-19**: Zone-based CDK restructuring
   - Migrated from single `cdk/` monolith to five independent CDK apps: `execution-zones/{execution-agent,time-agent,docs-agent,fetch-url-agent}/cdk` and `verification-zones/verification-agent/cdk`
