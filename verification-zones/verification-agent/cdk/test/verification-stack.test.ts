@@ -308,10 +308,59 @@ describe("VerificationStack", () => {
     });
   });
 
+
+  describe("API Gateway ingress with WAF", () => {
+    it("should create a Regional API Gateway REST API", () => {
+      template.hasResourceProperties("AWS::ApiGateway::RestApi", {
+        Name: Match.stringLikeRegexp("slack-ingress"),
+        EndpointConfiguration: {
+          Types: ["REGIONAL"],
+        },
+      });
+    });
+
+    it("should configure API Gateway stage throttling", () => {
+      template.hasResourceProperties("AWS::ApiGateway::Stage", {
+        MethodSettings: Match.arrayWith([
+          Match.objectLike({
+            HttpMethod: "*",
+            ResourcePath: "/*",
+            ThrottlingBurstLimit: 50,
+            ThrottlingRateLimit: 25,
+          }),
+        ]),
+      });
+    });
+
+    it("should create WAF Web ACL and associate it with API Gateway stage", () => {
+      template.hasResourceProperties("AWS::WAFv2::WebACL", {
+        Scope: "REGIONAL",
+        Rules: Match.arrayWith([
+          Match.objectLike({
+            Name: "AWS-AWSManagedRulesCommonRuleSet",
+          }),
+          Match.objectLike({
+            Name: "SlackIngressRateLimit",
+          }),
+        ]),
+      });
+
+      template.hasResourceProperties("AWS::WAFv2::WebACLAssociation", {
+        ResourceArn: Match.stringLikeRegexp(":apigateway:"),
+      });
+    });
+  });
+
   describe("Stack Outputs", () => {
     it("should output SlackEventHandlerUrl", () => {
       template.hasOutput("SlackEventHandlerUrl", {
         Description: Match.stringLikeRegexp("Slack Event Handler Function URL"),
+      });
+    });
+
+    it("should output SlackEventHandlerApiGatewayUrl", () => {
+      template.hasOutput("SlackEventHandlerApiGatewayUrl", {
+        Description: Match.stringLikeRegexp("API Gateway URL"),
       });
     });
 

@@ -4,6 +4,8 @@ import * as logs from "aws-cdk-lib/aws-logs";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as sqs from "aws-cdk-lib/aws-sqs";
+import * as apigateway from "aws-cdk-lib/aws-apigateway";
+import * as wafv2 from "aws-cdk-lib/aws-wafv2";
 import { Construct } from "constructs";
 import { applyCostAllocationTags } from "@slack-ai-app/cdk-tooling";
 import { SlackEventHandler } from "./constructs/slack-event-handler";
@@ -23,10 +25,10 @@ import { VerificationStackProps } from "./types/stack-config";
  * Verification Stack (Account A / Verification Zone)
  *
  * Purpose: Handles Slack events, validates and authorizes requests, and invokes the Verification Agent
- * (AgentCore A2A). Communicates with Execution Stack only via AgentCore A2A (SigV4); no API Gateway or SQS.
+ * (AgentCore A2A). Communicates with Execution Stack only via AgentCore A2A (SigV4); ingress is exposed via Function URL and API Gateway (Regional + WAF).
  *
  * Responsibilities:
- * - Slack event ingestion (SlackEventHandler Lambda with Function URL)
+ * - Slack event ingestion (SlackEventHandler Lambda with Function URL and API Gateway)
  * - DynamoDB (token storage, event dedupe, existence check cache, whitelist, rate limit)
  * - Secrets Manager (Slack credentials)
  * - Verification Agent AgentCore Runtime (A2A) and ECR image
@@ -46,6 +48,9 @@ export class VerificationStack extends cdk.Stack {
 
   /** The Function URL (for Slack Event Subscriptions) */
   public readonly functionUrl: string;
+
+  /** API Gateway URL (recommended ingress for high-security environments) */
+  public readonly apiGatewayUrl: string;
 
   /** AgentCore Runtime for Verification Agent (A2A) */
   public readonly verificationAgentRuntime: VerificationAgentRuntime;
@@ -238,6 +243,110 @@ export class VerificationStack extends cdk.Stack {
       autoReplyChannelIds: props.autoReplyChannelIds,
     });
 
+    const slackIngressApiAccessLogGroup = new logs.LogGroup(
+      this,
+      "SlackIngressApiAccessLogs",
+      {
+        retention: logs.RetentionDays.ONE_MONTH,
+      },
+    );
+
+    const slackIngressApi = new apigateway.RestApi(this, "SlackIngressApi", {
+      endpointConfiguration: {
+        types: [apigateway.EndpointType.REGIONAL],
+      },
+      restApiName: `${this.stackName}-slack-ingress`,
+      description: "Slack ingress endpoint for SlackEventHandler (API Gateway)",
+      deployOptions: {
+        stageName: "prod",
+        throttlingBurstLimit: 50,
+        throttlingRateLimit: 25,
+        accessLogDestination: new apigateway.LogGroupLogDestination(
+          slackIngressApiAccessLogGroup,
+        ),
+        accessLogFormat: apigateway.AccessLogFormat.jsonWithStandardFields({
+          caller: true,
+          httpMethod: true,
+          ip: true,
+          protocol: true,
+          requestTime: true,
+          resourcePath: true,
+          responseLength: true,
+          status: true,
+          user: true,
+        }),
+      },
+      cloudWatchRole: true,
+    });
+
+    const slackIngressLambdaIntegration = new apigateway.LambdaIntegration(
+      this.slackEventHandler.function,
+      { proxy: true },
+    );
+
+    const slackResource = slackIngressApi.root
+      .addResource("slack")
+      .addResource("events");
+    slackResource.addMethod("POST", slackIngressLambdaIntegration);
+
+    const slackIngressAclName = `${this.stackName}-slack-ingress-acl`;
+    const slackIngressAclMetricName = `${this.stackName}SlackIngressAcl`.replace(
+      /[^A-Za-z0-9]/g,
+      "",
+    );
+
+    const slackIngressAcl = new wafv2.CfnWebACL(this, "SlackIngressWebAcl", {
+      name: slackIngressAclName,
+      defaultAction: { allow: {} },
+      scope: "REGIONAL",
+      visibilityConfig: {
+        cloudWatchMetricsEnabled: true,
+        metricName: slackIngressAclMetricName,
+        sampledRequestsEnabled: true,
+      },
+      rules: [
+        {
+          name: "AWS-AWSManagedRulesCommonRuleSet",
+          priority: 0,
+          statement: {
+            managedRuleGroupStatement: {
+              vendorName: "AWS",
+              name: "AWSManagedRulesCommonRuleSet",
+            },
+          },
+          overrideAction: { none: {} },
+          visibilityConfig: {
+            cloudWatchMetricsEnabled: true,
+            metricName: "AWSManagedRulesCommonRuleSet",
+            sampledRequestsEnabled: true,
+          },
+        },
+        {
+          name: "SlackIngressRateLimit",
+          priority: 10,
+          statement: {
+            rateBasedStatement: {
+              aggregateKeyType: "IP",
+              limit: 2000,
+            },
+          },
+          action: { block: {} },
+          visibilityConfig: {
+            cloudWatchMetricsEnabled: true,
+            metricName: "SlackIngressRateLimit",
+            sampledRequestsEnabled: true,
+          },
+        },
+      ],
+    });
+
+    const slackIngressStageArn = `arn:aws:apigateway:${this.region}::/restapis/${slackIngressApi.restApiId}/stages/${slackIngressApi.deploymentStage.stageName}`;
+
+    new wafv2.CfnWebACLAssociation(this, "SlackIngressWebAclAssociation", {
+      webAclArn: slackIngressAcl.attrArn,
+      resourceArn: slackIngressStageArn,
+    });
+
     new AgentInvoker(this, "AgentInvoker", {
       agentInvocationQueue: this.agentInvocationQueue,
       verificationAgentArn: this.verificationAgentRuntimeArn,
@@ -259,6 +368,7 @@ export class VerificationStack extends cdk.Stack {
 
     this.lambdaRoleArn = this.slackEventHandler.function.role!.roleArn;
     this.functionUrl = this.slackEventHandler.functionUrl.url;
+    this.apiGatewayUrl = slackIngressApi.url;
 
     new cloudwatch.Alarm(this, "WhitelistAuthorizationFailureAlarm", {
       alarmName: `${this.stackName}-WhitelistAuthorizationFailure`,
@@ -327,11 +437,39 @@ export class VerificationStack extends cdk.Stack {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
 
+    new cloudwatch.Alarm(this, "SlackIngressWafBlockedRequestsAlarm", {
+      alarmName: `${this.stackName}-slack-ingress-waf-blocked-requests`,
+      alarmDescription:
+        "Alert when WAF blocked requests spike on Slack ingress endpoint",
+      metric: new cloudwatch.Metric({
+        namespace: "AWS/WAFV2",
+        metricName: "BlockedRequests",
+        dimensionsMap: {
+          WebACL: slackIngressAclName,
+          Region: this.region,
+          Rule: "ALL",
+        },
+        statistic: "Sum",
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 200,
+      evaluationPeriods: 1,
+      comparisonOperator:
+        cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
     new cdk.CfnOutput(this, "SlackEventHandlerUrl", {
       value: this.functionUrl,
       description:
         "Slack Event Handler Function URL (for Slack Event Subscriptions)",
       exportName: `${this.stackName}-SlackEventHandlerUrl`,
+    });
+
+    new cdk.CfnOutput(this, "SlackEventHandlerApiGatewayUrl", {
+      value: this.apiGatewayUrl,
+      description: "Slack Event Handler API Gateway URL (recommended ingress endpoint)",
+      exportName: `${this.stackName}-SlackEventHandlerApiGatewayUrl`,
     });
 
     new cdk.CfnOutput(this, "VerificationLambdaRoleArn", {
