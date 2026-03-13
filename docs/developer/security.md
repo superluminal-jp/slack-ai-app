@@ -249,6 +249,47 @@ def check_entity_existence(
 
 - Function URL が漏洩しても、署名検証で不正アクセスをブロック
 
+
+### レイヤー 2 の強化計画: API Gateway + AWS WAF への移行
+
+**背景**: 現行構成は Lambda Function URL を公開エンドポイントとして利用し、主要な検証は SlackEventHandler 内で実施しています。
+
+**方針**: セキュリティ最優先の場合、入口を API Gateway に移行し、さらに AWS WAF を前段適用することで「アプリケーション到達前」の防御を追加します。
+
+#### 移行後の想定フロー
+
+1. Slack → API Gateway (Regional)
+2. API Gateway → Lambda (SlackEventHandler)
+3. SlackEventHandler で既存の Two-Key Defense（署名検証 + Existence Check）を継続
+
+> 重要: API Gateway / WAF を導入しても、Slack 署名検証は必須です。境界防御は代替ではなく追加レイヤーです。
+
+#### API Gateway へ移行する利点
+
+- **入口制御の強化**: 認証・スロットリング・リクエストサイズ制限などをマネージドで実施可能
+- **運用ガバナンス**: ステージ・デプロイ管理、アクセスログの一元化、メトリクス可視化
+- **将来拡張性**: 他エンドポイント追加時も共通ポリシーを適用しやすい
+
+#### WAF 導入の主な利点
+
+- **L7 攻撃の事前遮断**: 既知シグネチャ、IP reputation、ボットアクセスを入口で遮断
+- **レートベース防御**: 短時間の異常トラフィックを自動緩和し、Lambda 同時実行枯渇を抑制
+- **コスト防衛**: 無効リクエストを Lambda 起動前に落とし、下流（Lambda / Bedrock）コストを削減
+- **観測性の向上**: WAF ログで攻撃傾向を追跡し、ルール改善を継続可能
+
+#### 段階的な移行プラン（推奨）
+
+1. **準備**: API Gateway と WAF Web ACL を新規構築（既存 Function URL は維持）
+2. **並行稼働**: Slack の Request URL を API Gateway 側に切替、監視しながら動作確認
+3. **最適化**: WAF ルール（managed + rate-based + allowlist）を本番トラフィックに合わせて調整
+4. **収束**: 問題がなければ Function URL 依存を削減し、運用ドキュメントを更新
+
+#### 設計上の注意点
+
+- Slack の再送戦略を考慮し、過度に厳しい WAF ルールで正規トラフィックを誤検知しない
+- API Gateway タイムアウト/統合設定が Slack の要件（3 秒以内の受領）を妨げないようにする
+- 既存のアプリ内レート制限（ユーザー単位）と WAF レート制限（IP/集約単位）の責務分離を明確化
+
 #### レイヤー 3: SlackEventHandler（検証層）
 
 ##### 3a. HMAC SHA256 署名検証

@@ -107,6 +107,7 @@
 - [4] Execution Agent が Bedrock API を呼び出し、結果を A2A レスポンスとして返す
 - [5] SlackResponseHandler が Slack API に投稿、リアクションを ✅ に更新
 
+
 ### 1.2 システムコンポーネント一覧
 
 | レイヤー                  | 主な機能                 | 技術スタック               | 責任範囲                                                                                                                                     |
@@ -129,6 +130,23 @@
 **添付ファイル処理フロー**: Slack Event (`event.files`) → SlackEventHandler（メタデータ抽出）→ Verification Agent（Slack CDN からダウンロード、S3 にアップロード、署名付き URL 生成）→ Strands ループ（file_references を LLM プロンプトに注入）→ Execution Agent（S3 署名付き URL 経由でダウンロード、画像/ドキュメント処理）→ Bedrock Converse API → 統合された AI 応答 → Slack API（スレッド返信）
 
 **非同期処理の利点**: Slack の 3 秒タイムアウト制約を回避し、ユーザーに即座のフィードバックを提供しながら、バックグラウンドで AI 処理を実行できます。
+
+### 1.4 入口レイヤーの移行計画（Function URL → API Gateway）
+
+セキュリティ最優先の運用では、Slack の入口を Function URL から API Gateway へ移行し、前段に AWS WAF を適用する構成を推奨します。
+
+**移行目的**:
+
+- 入口でのレート制御と L7 フィルタリングを強化
+- Lambda 到達前の遮断により可用性とコスト効率を向上
+- エンドポイント管理を API Gateway に統一
+
+**移行時の原則**:
+
+- Slack 署名検証（HMAC）と Existence Check は継続（アプリ層防御の中核）
+- 既存の A2A（Verification Agent → Execution Agent）経路は変更しない
+- 切替期間は並行稼働して観測データに基づき WAF ルールを調整する
+
 
 ---
 
