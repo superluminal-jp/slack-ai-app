@@ -13,5 +13,6 @@
     "docs": "arn:aws:bedrock-agentcore:ap-northeast-1:EXECUTION_ACCOUNT_ID:runtime/DOCS_RUNTIME_ID",
     "time": "arn:aws:bedrock-agentcore:ap-northeast-1:EXECUTION_ACCOUNT_ID:runtime/TIME_RUNTIME_ID",
     "fetch-url": "arn:aws:bedrock-agentcore:ap-northeast-1:EXECUTION_ACCOUNT_ID:runtime/FETCH_URL_RUNTIME_ID"
-  }
+  },
+  "autoReplyChannelIds": []
 }

@@ -239,6 +239,15 @@ export function applyEnvOverrides(config: CdkConfig): CdkConfig {
     return value && value !== "" ? value : undefined;
   };
 
+  const parseAutoReplyChannelIds = (
+    raw: string | undefined
+  ): string[] | undefined => {
+    const value = raw?.trim();
+    if (!value) return undefined;
+    const ids = value.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+    return ids.length > 0 ? ids : undefined;
+  };
+
   const parseExecutionAgentArns = (
     raw: string | undefined
   ): Record<string, string> | undefined => {
@@ -326,5 +335,8 @@ export function applyEnvOverrides(config: CdkConfig): CdkConfig {
       config.slackSigningSecret
     ),
     executionAgentArns: resolvedExecutionAgentArns,
+    autoReplyChannelIds:
+      parseAutoReplyChannelIds(process.env.AUTO_REPLY_CHANNEL_IDS) ??
+      config.autoReplyChannelIds,
   };
 }

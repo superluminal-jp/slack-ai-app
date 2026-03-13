@@ -376,4 +376,39 @@ describe("VerificationStack", () => {
       });
     });
   });
+
+  describe("Auto-reply channel configuration", () => {
+    it("should NOT set AUTO_REPLY_CHANNEL_IDS when autoReplyChannelIds is not provided", () => {
+      // The default template (created in beforeAll) has no autoReplyChannelIds
+      const lambdas = template.findResources("AWS::Lambda::Function");
+      const handlerEntry = Object.entries(lambdas).find(([id]) =>
+        id.includes("SlackEventHandler") && id.includes("Handler")
+      );
+      expect(handlerEntry).toBeDefined();
+      if (handlerEntry) {
+        const envVars: Record<string, unknown> =
+          (handlerEntry[1] as { Properties?: { Environment?: { Variables?: Record<string, unknown> } } })
+            ?.Properties?.Environment?.Variables ?? {};
+        expect(envVars["AUTO_REPLY_CHANNEL_IDS"]).toBeUndefined();
+      }
+    });
+
+    it("should set AUTO_REPLY_CHANNEL_IDS when autoReplyChannelIds is provided", () => {
+      process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+      process.env.SLACK_SIGNING_SECRET = "test-signing-secret";
+      const app2 = new cdk.App();
+      const stack2 = new VerificationStack(app2, "TestVerificationStackAutoReply", {
+        env: { account: "123456789012", region: "ap-northeast-1" },
+        autoReplyChannelIds: ["C0AFSG79T8D", "C1BBBBBBBBB"],
+      });
+      const t2 = Template.fromStack(stack2);
+      t2.hasResourceProperties("AWS::Lambda::Function", {
+        Environment: {
+          Variables: Match.objectLike({
+            AUTO_REPLY_CHANNEL_IDS: "C0AFSG79T8D,C1BBBBBBBBB",
+          }),
+        },
+      });
+    });
+  });
 });
