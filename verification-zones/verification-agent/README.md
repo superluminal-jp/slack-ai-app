@@ -91,6 +91,84 @@ export TIME_AGENT_ARN="arn:aws:bedrock-agentcore:..."
 npx cdk deploy
 ```
 
+## Channel Response Modes
+
+A single deployed stack supports two response patterns simultaneously:
+
+| Mode | Trigger | Configuration |
+|------|---------|---------------|
+| **@mention** | User writes `@BotName message` in any channel | Default — no configuration needed |
+| **Auto-reply** | Bot responds to **every post** in specified channels | Set `autoReplyChannelIds` at deploy time |
+
+Both modes can be active in the same stack at the same time. A channel listed in `autoReplyChannelIds` receives auto-replies; all other channels remain in @mention-only mode.
+
+### Configuring Auto-Reply Channels at Deploy Time
+
+Three methods are supported, applied in this priority order:
+
+**1. Environment variable (highest priority)**
+
+```bash
+AUTO_REPLY_CHANNEL_IDS=C01234567,C89ABCDEF npx cdk deploy
+```
+
+**2. CDK `--context` flag**
+
+```bash
+# Comma-separated
+npx cdk deploy --context autoReplyChannelIds=C01234567,C89ABCDEF
+
+# JSON array
+npx cdk deploy --context 'autoReplyChannelIds=["C01234567","C89ABCDEF"]'
+```
+
+**3. Config file (`cdk.config.{env}.json`)**
+
+```json
+{
+  "autoReplyChannelIds": ["C01234567", "C89ABCDEF"]
+}
+```
+
+To find a channel ID: open Slack → right-click the channel name → **Copy link**. The ID is the last segment of the URL (starts with `C` for public channels, `G` for private groups).
+
+### Removing Auto-Reply
+
+Set `autoReplyChannelIds` to an empty array (or omit the field) to revert all channels to @mention-only mode:
+
+```bash
+AUTO_REPLY_CHANNEL_IDS="" npx cdk deploy
+```
+
+## Multiple Deployments in the Same AWS Account
+
+**One stack handles both modes — a second stack is not required.** Configure `autoReplyChannelIds` on a single stack to mix @mention and auto-reply channels.
+
+When a second stack is genuinely needed (e.g., isolated Dev/Prod environments):
+
+| Requirement | Why |
+|------------|-----|
+| Unique `verificationStackName` per stack | Avoids DynamoDB table and Secrets Manager name collisions |
+| Unique `verificationAgentName` per stack | AgentCore Runtime names must be unique per AWS account |
+| Separate Slack App per stack | Slack allows only **one** event subscription URL per app — two stacks in the same workspace require two apps with different bot tokens |
+
+Example config for a second stack in the same account:
+
+```json
+// cdk.config.prod.json
+{
+  "verificationStackName": "SlackAI-Verification",
+  "verificationAgentName": "SlackAI_VerificationAgent_Prod",
+  "slackBotToken": "xoxb-PROD-TOKEN",
+  "slackSigningSecret": "PROD-SIGNING-SECRET",
+  "autoReplyChannelIds": ["CPROD00001"]
+}
+```
+
+```bash
+DEPLOYMENT_ENV=prod npx cdk deploy SlackAI-Verification-Prod
+```
+
 ## Architecture: Orchestration Loop (036)
 
 The verification agent uses a **Strands agentic loop** to dispatch requests to multiple execution agents and synthesize their results into a single Slack reply.

@@ -181,6 +181,30 @@ const verificationAgentName = getConfigString(
   `SlackAI_VerificationAgent_${environmentSuffix}`,
 );
 
+// Auto-reply channel IDs (from context, config file, or env var).
+// --context autoReplyChannelIds=C123,C456  OR  ["C123","C456"] JSON array
+const autoReplyChannelIds: string[] = (() => {
+  const ctxRaw = app.node.tryGetContext("autoReplyChannelIds");
+  if (ctxRaw !== undefined) {
+    if (typeof ctxRaw === "string") {
+      // Try JSON array first, fall back to comma-separated
+      try {
+        const parsed = JSON.parse(ctxRaw) as unknown;
+        if (Array.isArray(parsed)) {
+          return (parsed as unknown[]).map(String).filter((s) => s.trim() !== "");
+        }
+      } catch {
+        // Not JSON — treat as comma-separated
+      }
+      return ctxRaw.split(",").map((s) => s.trim()).filter((s) => s !== "");
+    }
+    if (Array.isArray(ctxRaw)) {
+      return (ctxRaw as unknown[]).map(String).filter((s) => s.trim() !== "");
+    }
+  }
+  return config?.autoReplyChannelIds ?? [];
+})();
+
 // Execution agent ARNs (from context, env vars, or config file).
 // CDK --context always passes strings; JSON-parse when needed.
 const executionAgentArns: Record<string, string> = (() => {
@@ -225,6 +249,9 @@ function setContextFromConfig(config: CdkConfig | null): void {
   if (Object.keys(executionAgentArns).length > 0) {
     app.node.setContext("executionAgentArns", executionAgentArns);
   }
+  if (autoReplyChannelIds.length > 0) {
+    app.node.setContext("autoReplyChannelIds", autoReplyChannelIds);
+  }
 }
 
 setContextFromConfig(config);
@@ -268,7 +295,7 @@ new VerificationStack(app, verificationStackName, {
   executionAgentArns:
     Object.keys(executionAgentArns).length > 0 ? executionAgentArns : undefined,
   bedrockModelId: bedrockModelId || undefined,
-  autoReplyChannelIds: config?.autoReplyChannelIds,
+  autoReplyChannelIds: autoReplyChannelIds.length > 0 ? autoReplyChannelIds : undefined,
 });
 logInfo("Verification stack created.", {
   phase: "stack",
