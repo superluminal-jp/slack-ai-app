@@ -93,8 +93,7 @@ get_verify_config_value() {
 save_execution_agent_arns_to_config() {
     local execution_arn="$1" docs_arn="$2" time_arn="$3" fetch_arn="$4"
     local config_file="${VERIFY_CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
-    local tmp_file
-    local arns_json
+    local tmp_file arns_json
     tmp_file="$(mktemp)"
 
     arns_json=$(
@@ -125,40 +124,36 @@ save_execution_agent_arns_to_config() {
     fi
 
     mv "${tmp_file}" "${config_file}"
-    log_success "Updated agent ARN config: ${config_file}"
-
-    # Also update verification zone config if it exists
-    local verify_config="${VERIFY_CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
-    if [[ -f "${verify_config}" ]]; then
-        local vtmp
-        vtmp="$(mktemp)"
-        if jq \
-            --argjson arns "${arns_json}" \
-            '.executionAgentArns = $arns' \
-            "${verify_config}" > "${vtmp}"; then
-            mv "${vtmp}" "${verify_config}"
-            log_success "Updated agent ARN config: ${verify_config}"
-        else
-            rm -f "${vtmp}"
-            log_warning "Could not update ${verify_config}"
-        fi
-    fi
+    log_success "Updated executionAgentArns in ${config_file}"
 }
 
 save_slack_search_arn_to_config() {
     local arn="$1"
     [[ -z "${arn}" ]] && return
-    local verify_config="${VERIFY_CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
-    if [[ -f "${verify_config}" ]]; then
-        local vtmp
-        vtmp="$(mktemp)"
-        if jq --arg arn "${arn}" '.slackSearchAgentArn = $arn' "${verify_config}" > "${vtmp}"; then
-            mv "${vtmp}" "${verify_config}"
-            log_success "Saved slackSearchAgentArn to ${verify_config}"
-        else
-            rm -f "${vtmp}"
-            log_warning "Could not save slackSearchAgentArn to ${verify_config}"
-        fi
+    local config_file="${VERIFY_CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
+    [[ ! -f "${config_file}" ]] && return
+    local tmp; tmp="$(mktemp)"
+    if jq --arg arn "${arn}" '.slackSearchAgentArn = $arn' "${config_file}" > "${tmp}"; then
+        mv "${tmp}" "${config_file}"
+        log_success "Updated slackSearchAgentArn in ${config_file}"
+    else
+        rm -f "${tmp}"
+        log_warning "Could not save slackSearchAgentArn to ${config_file}"
+    fi
+}
+
+save_verification_arn_to_config() {
+    local arn="$1"
+    [[ -z "${arn}" ]] && return
+    local config_file="${VERIFY_CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
+    [[ ! -f "${config_file}" ]] && return
+    local tmp; tmp="$(mktemp)"
+    if jq --arg arn "${arn}" '.verificationAgentArn = $arn' "${config_file}" > "${tmp}"; then
+        mv "${tmp}" "${config_file}"
+        log_success "Updated verificationAgentArn in ${config_file}"
+    else
+        rm -f "${tmp}"
+        log_warning "Could not save verificationAgentArn to ${config_file}"
     fi
 }
 
@@ -256,11 +251,11 @@ _fetch_logs() {
 # ── Subcommand: deploy ───────────────────────────────────────
 
 cmd_deploy() {
-    local exec_outputs docs_outputs time_outputs slack_search_outputs verify_outputs force_rebuild="false"
+    local exec_outputs docs_outputs time_outputs fetch_outputs slack_search_outputs verify_outputs force_rebuild="false"
     local pre_exec_arn pre_docs_arn pre_time_arn pre_fetch_arn preflight_execution_agent_arns_json=""
     exec_outputs="$(mktemp)"; docs_outputs="$(mktemp)"; time_outputs="$(mktemp)"
-    slack_search_outputs="$(mktemp)"; verify_outputs="$(mktemp)"
-    trap "rm -f '${exec_outputs}' '${docs_outputs}' '${time_outputs}' '${slack_search_outputs}' '${verify_outputs}'" EXIT
+    fetch_outputs="$(mktemp)"; slack_search_outputs="$(mktemp)"; verify_outputs="$(mktemp)"
+    trap "rm -f '${exec_outputs}' '${docs_outputs}' '${time_outputs}' '${fetch_outputs}' '${slack_search_outputs}' '${verify_outputs}'" EXIT
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -398,12 +393,24 @@ cmd_deploy() {
         log_warning "SlackSearchAgentRuntimeArn not found; Slack search will be disabled"
     fi
 
-    fetch_arn=$(get_stack_output "${WEB_FETCH_STACK}" "WebFetchAgentRuntimeArn")
+    # Phase 1.9: Web Fetch Agent Stack
+    log_info "========== Phase 1.9: Deploying Web Fetch Agent Stack =========="
+    local fetch_context="--context deploymentEnv=${DEPLOYMENT_ENV}"
+    if [[ "${force_rebuild}" == "true" || -n "${FORCE_WEB_FETCH_IMAGE_REBUILD:-}" ]]; then
+        local fetch_hash="${FORCE_WEB_FETCH_IMAGE_REBUILD:-$(date +%s)}"
+        fetch_context+=" --context forceWebFetchImageRebuild=${fetch_hash}"
+        [[ -d "${WEB_FETCH_CDK_DIR}/cdk.out" ]] && rm -rf "${WEB_FETCH_CDK_DIR}/cdk.out"
+    fi
+    ( cd "${WEB_FETCH_CDK_DIR}" && "${CDK_CLI}" deploy "${WEB_FETCH_STACK}" \
+        ${PROFILE_ARGS} --require-approval never \
+        --outputs-file "${fetch_outputs}" ${fetch_context} ) \
+        || { log_error "Failed to deploy ${WEB_FETCH_STACK}"; exit 1; }
+    fetch_arn=$(get_output_from_file_or_stack "${fetch_outputs}" "${WEB_FETCH_STACK}" "WebFetchAgentRuntimeArn")
     if [[ -n "${fetch_arn}" && "${fetch_arn}" != "None" ]]; then
-        log_success "Web Fetch Stack runtime detected (ARN: ${fetch_arn})"
+        log_success "Web Fetch Stack deployed (ARN: ${fetch_arn})"
     else
         fetch_arn=""
-        log_warning "Web Fetch runtime ARN not found from ${WEB_FETCH_STACK}; continuing without fetch-url route"
+        log_warning "WebFetchAgentRuntimeArn not found; continuing without fetch-url route"
     fi
 
     # Persist agent ARNs so future deploys/policy checks use the latest runtime targets.
@@ -494,6 +501,7 @@ cmd_deploy() {
     local handler_url verify_arn
     handler_url=$(get_output_from_file_or_stack "${verify_outputs}" "${VERIFY_STACK}" "SlackEventHandlerUrl")
     verify_arn=$(get_output_from_file_or_stack "${verify_outputs}" "${VERIFY_STACK}" "VerificationAgentRuntimeArn")
+    save_verification_arn_to_config "${verify_arn}"
     local eid did tid fid ssid vid
     eid=$(get_runtime_id "${exec_arn}"); did=$(get_runtime_id "${docs_arn}"); tid=$(get_runtime_id "${time_arn}")
     fid=$(get_runtime_id "${fetch_arn}"); ssid=$(get_runtime_id "${slack_search_arn:-}"); vid=$(get_runtime_id "${verify_arn}")
