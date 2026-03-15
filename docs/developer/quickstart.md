@@ -260,13 +260,13 @@ export DEPLOYMENT_ENV=dev  # 本番環境の場合は 'prod' を使用
 export AWS_PROFILE=your-profile-name
 
 # 全ゾーンをデプロイ（実行ゾーン → 検証ゾーンの順）
-./scripts/deploy/deploy-all.sh
+DEPLOYMENT_ENV=dev ./scripts/deploy.sh deploy
 
-# 実行ゾーンのみ
-./scripts/deploy/deploy-execution-all.sh
+# デプロイ後の状態確認
+DEPLOYMENT_ENV=dev ./scripts/deploy.sh status
 
-# 検証ゾーンのみ
-./scripts/deploy/deploy-verification-all.sh
+# ログの確認
+DEPLOYMENT_ENV=dev ./scripts/deploy.sh logs --latest
 
 # 特定ゾーンのみ（Docker イメージ強制再ビルド付き）
 ./execution-zones/execution-agent/scripts/deploy.sh --force-rebuild
