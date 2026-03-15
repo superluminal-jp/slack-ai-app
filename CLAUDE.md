@@ -26,6 +26,59 @@ src/
 tests/
 ```
 
+## Constitution (Non-Negotiable Rules)
+
+Full text: `.specify/memory/constitution.md` (v1.1.0). These rules apply regardless of whether speckit is used.
+
+### I. Spec-Driven Development
+Every code change starts with a spec. No PR without a corresponding spec in `specs/`.
+Workflow: **Specify → Clarify → Plan → Tasks → Implement → Validate → Sync**
+
+**Spec numbering**: Before `/speckit.specify`, find the next number:
+```bash
+ls specs/ | grep -E '^[0-9]+' | sed 's/-.*//' | sort -n | tail -1
+```
+Use N+1. Pass `--number` explicitly — do not rely on auto-detection.
+
+**PR requirement**: Every PR description MUST include a "Constitution Check" section confirming:
+- SDD traceability: spec → plan → tasks → code
+- TDD cycle completed: tests written first, all green
+- Docs/deploy scripts updated: README, CHANGELOG, CLAUDE.md, deploy.sh
+
+### II. Test-Driven Development
+Red → Green → Refactor cycle is mandatory. Tests MUST fail before implementation starts.
+Every production-code task MUST have a corresponding test task.
+
+### III. Security-First
+Security pipeline order is **non-bypassable**: existence check → whitelist → rate limit → AI invocation.
+- IAM: least-privilege only; no wildcard resource policies
+- Secrets MUST NOT be committed to source control
+- All Slack payloads MUST be validated before processing
+
+### IV. Fail-Open for Infrastructure, Fail-Closed for Security
+- Security pipeline `except` blocks → return error response (fail closed)
+- Infrastructure `except` blocks → log WARNING + safe fallback (fail open)
+- All exceptions MUST log `correlation_id`, `error`, `error_type`
+
+### V. Zone-Isolated Architecture
+- Verification-zone code MUST NOT import execution-zone code directly
+- Inter-zone communication: A2A via Bedrock AgentCore `invoke_agent_runtime` + JSON-RPC 2.0
+- New capabilities → new execution agents, not logic inside verification agent
+- Each agent MUST expose `POST /`, `GET /ping`, `GET /.well-known/agent-card.json`
+
+### VI. Documentation & Deploy-Script Parity
+Same commit as the code change MUST include:
+- `CHANGELOG.md` `[Unreleased]` entry
+- `README.md` / `README.ja.md` / zone READMEs (if architecture/behavior changed)
+- `CLAUDE.md` "Active Technologies" and "Recent Changes" (after feature merge)
+- `scripts/deploy.sh` updated to cover all deployed zones (adding a zone → same PR)
+- Deploy script output-key references validated against actual CDK `CfnOutput` names
+
+**Deploy order**: execution zones → verification zone
+```bash
+DEPLOYMENT_ENV=dev ./scripts/deploy.sh
+```
+
 ## Commands
 
 - **Python (agents)**: `cd execution-zones/file-creator-agent && python -m pytest tests/ -v` (FileCreator); `cd execution-zones/fetch-url-agent/src && python -m pytest ../tests/ -v` (WebFetch); `cd execution-zones/time-agent && python -m pytest tests/ -v` (Time); `cd execution-zones/docs-agent && python -m pytest tests/ -v` (Docs); `cd verification-zones/verification-agent && python -m pytest tests/ -v` (Verification); `cd verification-zones/slack-search-agent && python -m pytest tests/ -v` (SlackSearch)
