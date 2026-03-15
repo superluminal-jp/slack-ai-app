@@ -46,6 +46,28 @@ def test_public_channel_returns_messages():
     assert "Older message" in result
 
 
+def test_timestamps_formatted_as_jst():
+    """Timestamps are formatted as JST datetime strings, not raw Unix values."""
+    messages = [_make_message("hello", ts="1706123456.789012")]
+    with patch("tools.get_channel_history.SlackClient") as MockClient, \
+         patch("tools.get_channel_history.is_accessible") as mock_access:
+        mock_client = MagicMock()
+        mock_client.get_channel_history.return_value = messages
+        MockClient.return_value = mock_client
+        mock_access.return_value = _mock_accessible(PUBLIC_CHANNEL, True)
+
+        result = get_channel_history(
+            channel_id=PUBLIC_CHANNEL,
+            calling_channel=CALLING_CHANNEL,
+            bot_token=BOT_TOKEN,
+        )
+
+    # Raw Unix timestamp must NOT appear in output
+    assert "1706123456.789012" not in result
+    # JST marker must appear
+    assert "JST" in result
+
+
 def test_calling_channel_allowed():
     """The calling channel is always accessible."""
     messages = [_make_message("calling channel message")]

@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Slack Search Agent timestamp format**: Tools (`get_channel_history`, `get_thread`, `search_messages`) now convert raw Slack Unix timestamps (e.g. `1736759166.000200`) to human-readable JST strings (e.g. `2025年01月13日 17:26:06 JST`) before returning output to the LLM, preventing date misinterpretation in bot responses.
 - **5 pre-existing CDK test failures in verification-agent** (`038-slack-search-agent`): Recompiled stale `verification-stack.js` (was missing API Gateway/WAF code); fixed `tsconfig.json` `typeRoots` to include workspace root `node_modules/@types`; replaced `Match.stringLikeRegexp` (fails on `Fn::Join` intrinsic) with `findResources()` existence check for the WAF WebACLAssociation assertion. Result: 35/35 CDK tests pass.
 
 ### Changed

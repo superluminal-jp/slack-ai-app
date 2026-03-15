@@ -7,12 +7,25 @@ checks channel access, then fetches with conversations.replies.
 """
 
 import re
+from datetime import datetime, timezone, timedelta
 
 from strands import tool
 
 from channel_access import is_accessible
 from slack_client import SlackClient
 from slack_sdk.errors import SlackApiError
+
+
+_JST = timezone(timedelta(hours=9))
+
+
+def _ts_to_jst(ts: str) -> str:
+    """Convert a Slack Unix timestamp string to a JST datetime string."""
+    try:
+        dt = datetime.fromtimestamp(float(ts), tz=_JST)
+        return dt.strftime("%Y年%m月%d日 %H:%M:%S JST")
+    except (ValueError, OSError):
+        return ts
 
 # Slack message URL pattern:
 # https://*.slack.com/archives/CHANNEL_ID/pTIMESTAMP
@@ -98,6 +111,6 @@ def get_thread(
         user = msg.get("user") or "bot"
         text = (msg.get("text") or "").strip()
         label = "親メッセージ" if i == 0 else f"返信 {i}"
-        lines.append(f"[{label}][{ts}] {user}: {text}")
+        lines.append(f"[{label}][{_ts_to_jst(ts)}] {user}: {text}")
 
     return "\n".join(lines)

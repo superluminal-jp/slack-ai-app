@@ -459,6 +459,18 @@ class TestBuildPrompt:
         assert "過去の会話履歴" in prompt
         assert prompt.count("過去の会話履歴") == 1  # Must not appear twice
 
+    def test_current_datetime_injected_at_top(self):
+        """_build_prompt must inject the current JST datetime as the first section."""
+        from src.orchestrator import _build_prompt
+
+        request = self._make_request(user_text="今日の日付は？")
+        prompt = _build_prompt(request)
+
+        assert "## 現在日時" in prompt
+        assert "JST" in prompt
+        # Current datetime section must appear before the user request section
+        assert prompt.index("## 現在日時") < prompt.index("## ユーザーリクエスト")
+
 
 class TestOrchestrationFileArtifactPropagation:
     """Verify file_artifact propagates from _file_artifact_store through run()."""

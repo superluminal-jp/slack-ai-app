@@ -21,16 +21,14 @@ import { VerificationStackProps } from "./types/stack-config";
  * Inputs: VerificationStackProps (env, executionAccountId, verificationAgentName, executionAgentArns, etc.);
  * context: deploymentEnv, awsRegion, slackBotToken, slackSigningSecret, bedrockModelId, executionAgentArns.
  *
- * Outputs: slackEventHandler, functionUrl, lambdaRoleArn, verificationAgentRuntimeArn, agentInvocationQueue; CfnOutputs for URLs and ARNs.
+ * Outputs: slackEventHandler, lambdaRoleArn, verificationAgentRuntimeArn, agentInvocationQueue; CfnOutputs for URLs and ARNs.
  */
 export declare class VerificationStack extends cdk.Stack {
     /** The Slack Event Handler Lambda */
     readonly slackEventHandler: SlackEventHandler;
     /** The Lambda role ARN */
     readonly lambdaRoleArn: string;
-    /** The Function URL (for Slack Event Subscriptions) */
-    readonly functionUrl: string;
-    /** API Gateway URL (recommended ingress for high-security environments) */
+    /** API Gateway URL (WAF-protected ingress) */
     readonly apiGatewayUrl: string;
     /** AgentCore Runtime for Verification Agent (A2A) */
     readonly verificationAgentRuntime: VerificationAgentRuntime;

@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import os
 from dataclasses import dataclass, field
+from datetime import datetime, timezone, timedelta
 from typing import Literal, Optional
 
 try:
@@ -182,9 +183,15 @@ class OrchestrationAgent:
             )
 
 
+def _current_jst_datetime() -> str:
+    """Return the current date and time in JST (UTC+9) as a human-readable string."""
+    jst = timezone(timedelta(hours=9))
+    return datetime.now(tz=jst).strftime("%Y年%m月%d日 %H:%M JST")
+
+
 def _build_prompt(request: OrchestrationRequest) -> str:
     """Construct the LLM prompt from an OrchestrationRequest."""
-    parts = []
+    parts = [f"## 現在日時\n{_current_jst_datetime()}"]
     if request.thread_context:
         parts.append(f"## スレッドコンテキスト\n{request.thread_context}")
     if request.file_references:
