@@ -19,7 +19,7 @@ import * as fs from "fs";
  *
  * Inputs: SlackEventHandlerProps (secrets, table names, verificationAgentArn, region, model, optional queue).
  *
- * Outputs: function, functionUrl.
+ * Outputs: function.
  */
 export interface SlackEventHandlerProps {
   slackSigningSecret: secretsmanager.ISecret; // Slack app signing secret from Secrets Manager
@@ -55,7 +55,6 @@ export interface SlackEventHandlerProps {
 
 export class SlackEventHandler extends Construct {
   public readonly function: lambda.Function;
-  public readonly functionUrl: lambda.FunctionUrl;
 
   constructor(scope: Construct, id: string, props: SlackEventHandlerProps) {
     super(scope, id);
@@ -192,9 +191,5 @@ export class SlackEventHandler extends Construct {
       })
     );
 
-    // Create Function URL (no auth - signature verification in code)
-    this.functionUrl = this.function.addFunctionUrl({
-      authType: lambda.FunctionUrlAuthType.NONE,
-    });
   }
 }

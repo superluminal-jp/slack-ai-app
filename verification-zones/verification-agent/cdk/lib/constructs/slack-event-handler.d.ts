@@ -13,7 +13,7 @@ import { Construct } from "constructs";
  *
  * Inputs: SlackEventHandlerProps (secrets, table names, verificationAgentArn, region, model, optional queue).
  *
- * Outputs: function, functionUrl.
+ * Outputs: function.
  */
 export interface SlackEventHandlerProps {
     slackSigningSecret: secretsmanager.ISecret;
@@ -48,6 +48,5 @@ export interface SlackEventHandlerProps {
 }
 export declare class SlackEventHandler extends Construct {
     readonly function: lambda.Function;
-    readonly functionUrl: lambda.FunctionUrl;
     constructor(scope: Construct, id: string, props: SlackEventHandlerProps);
 }

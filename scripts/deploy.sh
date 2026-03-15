@@ -499,7 +499,7 @@ cmd_deploy() {
     # Phase 3: Validate AgentCore runtimes
     log_info "========== Phase 3: AgentCore Validation =========="
     local handler_url verify_arn
-    handler_url=$(get_output_from_file_or_stack "${verify_outputs}" "${VERIFY_STACK}" "SlackEventHandlerUrl")
+    handler_url=$(get_output_from_file_or_stack "${verify_outputs}" "${VERIFY_STACK}" "SlackEventHandlerApiGatewayUrl")
     verify_arn=$(get_output_from_file_or_stack "${verify_outputs}" "${VERIFY_STACK}" "VerificationAgentRuntimeArn")
     save_verification_arn_to_config "${verify_arn}"
     local eid did tid fid ssid vid
@@ -516,7 +516,7 @@ cmd_deploy() {
     echo ""
     log_success "========== Deployment Complete! =========="
     echo ""
-    echo "Slack Event Handler URL:   ${handler_url:-N/A}"
+    echo "Slack Event Handler URL:   ${handler_url:-N/A} (API Gateway + WAF)"
     echo "Execution Agent ARN:       ${exec_arn:-N/A}"
     echo "Docs Agent ARN:            ${docs_arn:-N/A}"
     echo "Time Agent ARN:            ${time_arn:-N/A}"

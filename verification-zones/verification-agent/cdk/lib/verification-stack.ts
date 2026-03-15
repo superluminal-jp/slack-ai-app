@@ -37,7 +37,7 @@ import { VerificationStackProps } from "./types/stack-config";
  * Inputs: VerificationStackProps (env, executionAccountId, verificationAgentName, executionAgentArns, etc.);
  * context: deploymentEnv, awsRegion, slackBotToken, slackSigningSecret, bedrockModelId, executionAgentArns.
  *
- * Outputs: slackEventHandler, functionUrl, lambdaRoleArn, verificationAgentRuntimeArn, agentInvocationQueue; CfnOutputs for URLs and ARNs.
+ * Outputs: slackEventHandler, lambdaRoleArn, verificationAgentRuntimeArn, agentInvocationQueue; CfnOutputs for URLs and ARNs.
  */
 export class VerificationStack extends cdk.Stack {
   /** The Slack Event Handler Lambda */
@@ -46,10 +46,7 @@ export class VerificationStack extends cdk.Stack {
   /** The Lambda role ARN */
   public readonly lambdaRoleArn: string;
 
-  /** The Function URL (for Slack Event Subscriptions) */
-  public readonly functionUrl: string;
-
-  /** API Gateway URL (recommended ingress for high-security environments) */
+  /** API Gateway URL (WAF-protected ingress) */
   public readonly apiGatewayUrl: string;
 
   /** AgentCore Runtime for Verification Agent (A2A) */
@@ -372,7 +369,6 @@ export class VerificationStack extends cdk.Stack {
     });
 
     this.lambdaRoleArn = this.slackEventHandler.function.role!.roleArn;
-    this.functionUrl = this.slackEventHandler.functionUrl.url;
     this.apiGatewayUrl = slackIngressApi.url;
 
     new cloudwatch.Alarm(this, "WhitelistAuthorizationFailureAlarm", {
@@ -462,13 +458,6 @@ export class VerificationStack extends cdk.Stack {
       comparisonOperator:
         cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-    });
-
-    new cdk.CfnOutput(this, "SlackEventHandlerUrl", {
-      value: this.functionUrl,
-      description:
-        "Slack Event Handler Function URL (for Slack Event Subscriptions)",
-      exportName: `${this.stackName}-SlackEventHandlerUrl`,
     });
 
     new cdk.CfnOutput(this, "SlackEventHandlerApiGatewayUrl", {

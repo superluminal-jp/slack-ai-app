@@ -352,12 +352,6 @@ describe("VerificationStack", () => {
   });
 
   describe("Stack Outputs", () => {
-    it("should output SlackEventHandlerUrl", () => {
-      template.hasOutput("SlackEventHandlerUrl", {
-        Description: Match.stringLikeRegexp("Slack Event Handler Function URL"),
-      });
-    });
-
     it("should output SlackEventHandlerApiGatewayUrl", () => {
       template.hasOutput("SlackEventHandlerApiGatewayUrl", {
         Description: Match.stringLikeRegexp("API Gateway URL"),
