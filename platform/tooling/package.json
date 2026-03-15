@@ -1,0 +1,19 @@
+{
+  "name": "@slack-ai-app/cdk-tooling",
+  "version": "0.1.0",
+  "description": "Shared CDK utilities for slack-ai-app zones",
+  "main": "index.ts",
+  "types": "index.ts",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.215.0",
+    "constructs": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "~5.9.3"
+  }
+}

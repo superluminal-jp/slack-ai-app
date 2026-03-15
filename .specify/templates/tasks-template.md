@@ -148,7 +148,7 @@ Examples of foundational tasks (adjust based on your project):
 
 ## Phase N: Polish & Cross-Cutting Concerns
 
-**Purpose**: Improvements that affect multiple user stories
+**Purpose**: Improvements that affect multiple user stories, plus mandatory doc/deploy parity (Principle VI)
 
 - [ ] TXXX [P] Documentation updates in docs/
 - [ ] TXXX Code cleanup and refactoring
@@ -156,6 +156,17 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] TXXX [P] Additional unit tests (if requested) in tests/unit/
 - [ ] TXXX Security hardening
 - [ ] TXXX Run quickstart.md validation
+
+### Mandatory: Documentation & Deploy-Script Sync (Principle VI)
+
+*These tasks MUST be included in every feature. Mark N/A only if the item is genuinely unaffected.*
+
+- [ ] TXXX [P] Update README.md and README.ja.md to reflect architecture/structure/behavior changes
+- [ ] TXXX [P] Update zone README.md(s) for any modified zones
+- [ ] TXXX Add [Unreleased] entry to CHANGELOG.md (Added/Changed/Fixed as applicable)
+- [ ] TXXX Update CLAUDE.md "Active Technologies" and "Recent Changes" sections
+- [ ] TXXX Verify/update scripts/deploy.sh covers all deployed zones; confirm output key names match CDK CfnOutput keys
+- [ ] TXXX Verify/update zone-level scripts/deploy.sh if stack name, output keys, or env vars changed
 
 ---
 

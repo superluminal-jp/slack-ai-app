@@ -41,31 +41,33 @@ This application enables teams to use AI capabilities directly from Slack. Team 
 
 ### Deploy
 
-This project uses two independent stacks (VerificationStack and ExecutionStack) that can be deployed separately, supporting cross-account deployments.
+This project uses five independent CDK apps (one per agent zone) deployed sequentially. Execution zones deploy first, then the Verification zone.
 
 **Deployment Steps**:
 
-1. Deploy ExecutionStack → Get `ExecutionApiUrl`
-2. Deploy VerificationStack → Get `VerificationLambdaRoleArn` and `ExecutionResponseQueueUrl`
-3. Update ExecutionStack → Set resource policy and SQS queue URL
+1. Configure each zone's `cdk.config.dev.json` with your account IDs and Slack credentials
+2. Deploy all execution zones → Execution Agent ARNs are output
+3. Set `executionAgentArns` in the Verification zone config
+4. Deploy Verification zone
 
-See [CDK README](cdk/README.md) for detailed deployment instructions.
+See [docs/developer/quickstart.md](docs/developer/quickstart.md) for detailed deployment instructions.
 
 **Quick start with deployment script:**
 
 ```bash
-# 1. Create configuration file
-cp cdk/cdk.config.json.example cdk/cdk.config.dev.json
-# Edit cdk/cdk.config.dev.json and set:
-# - verificationAccountId, executionAccountId
-# - slackBotToken, slackSigningSecret
+# 1. Configure each zone (edit account IDs, Slack tokens, etc.)
+# execution-zones/file-creator-agent/cdk/cdk.config.dev.json
+# execution-zones/time-agent/cdk/cdk.config.dev.json
+# execution-zones/docs-agent/cdk/cdk.config.dev.json
+# execution-zones/fetch-url-agent/cdk/cdk.config.dev.json
+# verification-zones/verification-agent/cdk/cdk.config.dev.json
 
 # 2. Set deployment environment (dev or prod)
 export DEPLOYMENT_ENV=dev  # Use 'prod' for production
 
-# 3. Run deployment script (with optional AWS profile)
+# 3. Run full deployment (execution zones → verification zone)
 export AWS_PROFILE=your-profile-name  # Optional: if using AWS profiles
-./scripts/deploy.sh
+./scripts/deploy/deploy-all.sh
 ```
 
 **Note**: Slack credentials can be set directly in `cdk.config.{env}.json` file. Environment variables are also supported, but configuration files are easier to manage.
@@ -76,8 +78,8 @@ export AWS_PROFILE=your-profile-name  # Optional: if using AWS profiles
 
 This project supports environment separation for development (`dev`) and production (`prod`) deployments:
 
-- **Stack Names**: Automatically suffixed with `-Dev` or `-Prod` (e.g., `SlackAI-Execution-Dev`, `SlackAI-Verification-Prod`)
-- **Resource Isolation**: All resources (Lambda functions, DynamoDB tables, Secrets Manager, API Gateway, etc.) are automatically separated by environment
+- **Stack Names**: Automatically suffixed with `-Dev` or `-Prod` (e.g., `SlackAI-FileCreator-Dev`, `SlackAI-WebFetch-Dev`, `SlackAI-Verification-Prod`)
+- **Resource Isolation**: All resources (Lambda functions, DynamoDB tables, Secrets Manager, AgentCore runtimes, etc.) are automatically separated by environment
 - **Resource Tagging**: All resources are tagged with:
   - `Environment`: `dev` or `prod`
   - `Project`: `SlackAI`
@@ -89,11 +91,11 @@ This project supports environment separation for development (`dev`) and product
 ```bash
 # Deploy to development environment
 export DEPLOYMENT_ENV=dev
-./scripts/deploy.sh
+./scripts/deploy/deploy-all.sh
 
 # Deploy to production environment
 export DEPLOYMENT_ENV=prod
-./scripts/deploy.sh
+./scripts/deploy/deploy-all.sh
 ```
 
 **Note**: If `DEPLOYMENT_ENV` is not set, the script defaults to `dev` environment with a warning. Each environment should use separate Slack apps/workspaces or different secrets for security.
@@ -205,6 +207,8 @@ This separation enables:
 - **Multi-model support**: Works with Claude, Nova, and other Bedrock models
 - **Thread context**: Maintains conversation history within Slack threads
 - **Attachment processing** (024): Images (PNG, JPEG, GIF, WebP) and documents (PDF, DOCX, XLSX, CSV, TXT, PPTX). Files flow via S3 pre-signed URLs; max 5 files per message, 10 MB for images, 5 MB for documents. Native Bedrock document blocks for high-quality Q&A.
+- **Iterative multi-agent reasoning** (036): The verification agent runs a Strands agentic loop that can dispatch a single request to multiple specialist agents in parallel, synthesize all results, and iterate across up to 5 reasoning turns until the task is complete. Partial results are returned with an explanatory note when the turn limit fires.
+- **Slack channel search** (038): The verification agent can search Slack channel history, retrieve thread content by URL, and fetch the latest messages from a channel via a dedicated Slack Search Agent (A2A). Access is restricted to the calling channel and public channels — private channels are never accessible.
 
 ### Infrastructure
 
@@ -217,10 +221,14 @@ This separation enables:
 
 ## Architecture
 
-The application uses **two independent stacks** that can be deployed separately:
+The application uses **six independent CDK apps** (one per agent zone), each deployable separately:
 
-- **VerificationStack**: SlackEventHandler Lambda + Verification Agent (AgentCore) + DynamoDB + Secrets Manager
-- **ExecutionStack**: Execution Agent (AgentCore Runtime + ECR)
+- **Verification Zone** (`verification-zones/verification-agent/cdk`): SlackEventHandler Lambda + Verification Agent (AgentCore) + DynamoDB + Secrets Manager
+- **Slack Search Agent Zone** (`verification-zones/slack-search-agent/cdk`): Slack channel search agent (AgentCore Runtime + ECR) — deployed within verification zone, called via A2A
+- **File-Creator Agent Zone** (`execution-zones/file-creator-agent/cdk`): File-creator agent (AgentCore Runtime + ECR)
+- **Time Agent Zone** (`execution-zones/time-agent/cdk`): Current-time agent (AgentCore Runtime + ECR)
+- **Docs Agent Zone** (`execution-zones/docs-agent/cdk`): Document-search agent (AgentCore Runtime + ECR)
+- **Web Fetch Agent Zone** (`execution-zones/fetch-url-agent/cdk`): URL-fetch agent (AgentCore Runtime + ECR)
 
 This structure supports:
 
@@ -247,44 +255,52 @@ For technical details, see [Architecture Overview](docs/developer/architecture.m
 
 ```
 slack-ai-app/
-├── cdk/                        # AWS CDK infrastructure
-│   ├── bin/                    # CDK entry point
-│   ├── lib/
-│   │   ├── execution/          # Execution Stack
-│   │   │   ├── execution-stack.ts
-│   │   │   ├── constructs/
-│   │   │   │   ├── execution-agent-runtime.ts   # AgentCore Runtime (A2A)
-│   │   │   │   └── execution-agent-ecr.ts       # ECR image build
-│   │   │   ├── agent/
-│   │   │   │   └── execution-agent/             # Execution Agent container
-│   │   │   │       ├── main.py                  # A2A server
-│   │   │   │       ├── agent_card.py            # Agent Card definition
-│   │   │   │       ├── cloudwatch_metrics.py    # Metrics
-│   │   │   │       └── tests/                   # Python tests (110 tests)
-│   │   │   └── lambda/                          # Legacy Lambda code
-│   │   ├── verification/       # Verification Stack
-│   │   │   ├── verification-stack.ts
-│   │   │   ├── constructs/
-│   │   │   │   ├── verification-agent-runtime.ts # AgentCore Runtime (A2A)
-│   │   │   │   ├── verification-agent-ecr.ts     # ECR image build
-│   │   │   │   └── slack-event-handler.ts        # Invokes Verification Agent via A2A
-│   │   │   ├── agent/
-│   │   │   │   └── verification-agent/           # Verification Agent container
-│   │   │   │       ├── main.py                   # A2A server
-│   │   │   │       ├── a2a_client.py             # Execution Agent A2A client
-│   │   │   │       ├── agent_card.py             # Agent Card definition
-│   │   │   │       ├── cloudwatch_metrics.py     # Metrics
-│   │   │   │       └── tests/                    # Python tests (93 tests)
-│   │   │   └── lambda/                           # SlackEventHandler Lambda
-│   │   └── types/              # Shared type definitions
-│   └── test/                   # CDK/Jest tests (25 tests)
-├── docs/                       # Documentation
-│   ├── reference/              # Architecture, Security, Operations
-│   ├── explanation/            # Design Principles, ADRs
-│   ├── tutorials/              # Getting Started
-│   └── how-to/                 # Troubleshooting
-├── specs/                      # Feature specifications
-└── scripts/                    # Deployment scripts
+├── execution-zones/              # Execution agent CDK apps (one per agent)
+│   ├── file-creator-agent/       # File-creator / general AI agent
+│   │   ├── cdk/                  # Standalone CDK app (TypeScript)
+│   │   │   ├── bin/cdk.ts        # Entry point
+│   │   │   ├── lib/              # Stack, constructs, types
+│   │   │   └── test/             # CDK synthesis tests (Jest)
+│   │   ├── src/                  # Python agent source (main.py, agent_card.py, …)
+│   │   ├── tests/                # Python unit tests
+│   │   └── scripts/deploy.sh     # Zone-specific deploy script
+│   ├── time-agent/               # Same structure — current-time agent
+│   ├── docs-agent/               # Same structure — docs-search agent
+│   └── fetch-url-agent/          # Same structure — URL-fetch agent
+├── verification-zones/           # Verification agent CDK apps
+│   ├── verification-agent/
+│   │   ├── cdk/                  # Standalone CDK app (TypeScript)
+│   │   │   ├── bin/cdk.ts
+│   │   │   ├── lib/
+│   │   │   │   ├── verification-stack.ts
+│   │   │   │   ├── constructs/   # AgentCore Runtime, ECR, Lambda, …
+│   │   │   │   └── lambda/       # SlackEventHandler Lambda
+│   │   │   └── test/
+│   │   ├── src/                  # Python agent source
+│   │   ├── tests/                # Python unit tests
+│   │   └── scripts/deploy.sh
+│   └── slack-search-agent/       # Slack channel search agent (A2A)
+│       ├── cdk/                  # Standalone CDK app (TypeScript)
+│       ├── src/                  # Python agent source (FastAPI + Strands)
+│       │   └── tools/            # search_messages, get_thread, get_channel_history
+│       ├── tests/                # Python unit tests
+│       └── scripts/deploy.sh
+├── platform/
+│   ├── tooling/                  # @slack-ai-app/cdk-tooling (shared npm package)
+│   │   └── src/utils/            # cdk-logger, cdk-error, cost-allocation-tags, …
+│   ├── schemas/                  # Shared JSON schemas (placeholder)
+│   └── policies/                 # Shared IAM policies (placeholder)
+├── scripts/
+│   ├── deploy/
+│   │   ├── deploy-all.sh         # Full deployment: execution → verification
+│   │   ├── deploy-execution-all.sh
+│   │   └── deploy-verification-all.sh
+│   └── validate/
+├── docs/                         # Documentation
+│   ├── developer/                # Architecture, Quickstart, Runbook, Testing, …
+│   ├── decision-maker/           # Proposal, cost, governance
+│   └── user/                     # User guide, usage policy, FAQ
+└── specs/                        # Feature specifications
 ```
 
 ## Development
@@ -292,24 +308,28 @@ slack-ai-app/
 ### Run Tests
 
 ```bash
-# CDK construct tests (Jest, 25 tests)
-cd cdk && npx jest test/agentcore-constructs.test.ts --verbose
+# CDK synthesis tests (Jest) — per zone
+cd execution-zones/file-creator-agent/cdk && npm test
+cd execution-zones/time-agent/cdk && npm test
+cd execution-zones/docs-agent/cdk && npm test
+cd execution-zones/fetch-url-agent/cdk && npm test
+cd verification-zones/verification-agent/cdk && npm test
+cd verification-zones/slack-search-agent/cdk && npm test
 
-# Execution Agent tests (pytest, 110 tests)
-cd cdk/lib/execution/agent/execution-agent && python -m pytest tests/ -v
-
-# Verification Agent tests (pytest, 93 tests)
-cd cdk/lib/verification/agent/verification-agent && python -m pytest tests/ -v
-
-# SlackEventHandler Lambda tests
-cd cdk/lib/verification/lambda/slack-event-handler && pytest tests/
+# Python agent tests (pytest) — per zone
+cd execution-zones/file-creator-agent && python -m pytest tests/ -v
+cd execution-zones/time-agent && python -m pytest tests/ -v
+cd execution-zones/docs-agent && python -m pytest tests/ -v
+cd execution-zones/fetch-url-agent && python -m pytest tests/ -v
+cd verification-zones/verification-agent && python -m pytest tests/ -v
+cd verification-zones/slack-search-agent && python -m pytest tests/ -v
 ```
 
 ### View Logs
 
 ```bash
 aws logs tail /aws/lambda/SlackAI-Verification-Dev-SlackEventHandler --follow
-aws logs tail /aws/lambda/SlackAI-Verification-Dev-SlackEventHandler --follow
+aws logs tail /aws/bedrock-agentcore/runtimes/SlackAI_VerificationAgent_Dev-<runtime-id>-DEFAULT --follow
 ```
 
 ## Environment Variables
@@ -320,7 +340,7 @@ aws logs tail /aws/lambda/SlackAI-Verification-Dev-SlackEventHandler --follow
 | `SLACK_BOT_TOKEN`               | Slack bot OAuth token (first deploy only)                       | -                                                |
 | `BEDROCK_MODEL_ID`              | Bedrock model (configured in cdk.json)                          | -                                                |
 | `VERIFICATION_AGENT_ARN`        | Verification Agent AgentCore Runtime ARN (set by CDK) | - |
-| `EXECUTION_AGENT_ARN`           | Execution Agent AgentCore Runtime ARN (cross-stack or config)    | - |
+| `EXECUTION_AGENT_ARNS`          | Execution agent ARN map (file-creator/docs/time/fetch-url)       | - |
 
 Secrets are stored in AWS Secrets Manager after first deployment.
 
@@ -539,10 +559,33 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-03-15
 
 ## Recent Updates
 
+- **2026-03-15**: Slack Search Agent (038)
+  - New `verification-zones/slack-search-agent/` zone: Bedrock AgentCore Runtime for searching Slack channel history, retrieving threads by URL, and fetching channel history
+  - Three Strands tools: `search_messages` (keyword filter, up to 100 messages), `get_thread` (Slack URL parsing), `get_channel_history` (latest N messages, max 20)
+  - Channel access control: calling channel and public channels allowed; private channels (other than calling channel) denied
+  - `SlackSearchClient` and `make_slack_search_tool` factory added to verification-agent; `SLACK_SEARCH_AGENT_ARN` env var activates the `slack_search` tool in the orchestrator
+  - `slackSearchAgentArn` optional prop added to verification-agent CDK config
+  - Fixed 5 pre-existing CDK test failures (stale compiled JS, `tsconfig.json` typeRoots, WAF `WebACLAssociation` intrinsic assertion)
+  - Test counts: slack-search-agent 46, verification-agent 219, verification-agent CDK 35
+
+- **2026-02-22**: Iterative multi-agent reasoning (036)
+  - Replaced single-pass routing with a Strands agentic loop in the verification agent (`orchestrator.py`, `hooks.py`, `agent_tools.py`)
+  - A single request can now dispatch to multiple specialist agents in parallel and iterate across up to 5 reasoning turns
+  - Partial results returned with explanatory note when turn limit fires (`MaxTurnsHook`)
+  - Structured per-turn observability via `ToolLoggingHook` (agents called, duration, status per tool call)
+  - Bug fixes: thread context appeared twice in LLM prompt; attachment filename label always showed "file"; hook status detection failed on string tool results
+  - Renamed `execution-zones/execution-agent/` → `execution-zones/file-creator-agent/` to match agent identity
+  - Test count: 209 passed, 13 skipped
+
+- **2026-02-19**: Zone-based CDK restructuring
+  - Migrated from single `cdk/` monolith to five independent CDK apps: `execution-zones/{execution-agent,time-agent,docs-agent,fetch-url-agent}/cdk` and `verification-zones/verification-agent/cdk`
+  - Added `platform/tooling` shared npm package (`@slack-ai-app/cdk-tooling`) for common CDK utilities (logger, error, cost-allocation-tags, log-retention-aspect, config-loader)
+  - Added unified deploy scripts: `scripts/deploy/deploy-all.sh`, `deploy-execution-all.sh`, `deploy-verification-all.sh`
+  - Each zone has independent `src/`, `tests/`, `scripts/deploy.sh` and zone-specific `cdk.config.dev.json`
 - **2026-02-11**: Reaction swap on reply (eyes→checkmark)
   - When posting AI response to Slack, the system removes 👀 and adds ✅ on the original message for clear completion feedback
   - Slack Poster Lambda performs reaction swap after successful post; `message_ts` added to SQS payload for reaction target
@@ -578,4 +621,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
   - Agent Card (`/.well-known/agent-card.json`) for Agent Discovery
   - AgentCore A2A as the only communication path
   - 97 TDD tests all passing (Python 73 + CDK/Jest 24, since expanded to 187+)
-- **2025-12-28**: Added dual authentication support (IAM and API key) for Execution API Gateway
+- **2025-12-28**: Added dual authentication support (IAM and API key) for Execution API Gateway *(legacy; replaced by AgentCore A2A in 2026-02-19)*

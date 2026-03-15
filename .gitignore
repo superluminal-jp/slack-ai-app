@@ -19,11 +19,16 @@ yarn-error.log*
 *.tsbuildinfo
 .npm
 
-# AWS CDK (compiled .js/.d.ts handled by cdk/.gitignore)
+# AWS CDK
 cdk.out/
 .cdk.staging/
 cdk.context.json
-cdk/cdk.config.*.json
+execution-zones/*/cdk/cdk.config.*.json
+execution-zones/*/cdk/node_modules/
+execution-zones/*/cdk/cdk.out/
+verification-zones/*/cdk/cdk.config.*.json
+verification-zones/*/cdk/node_modules/
+verification-zones/*/cdk/cdk.out/
 
 # Environment variables
 .env
@@ -64,4 +69,4 @@ coverage.xml
 *.zip
 
 # Execution Agent: copied docs/ at deploy time (Pattern 1); do not commit copy
-cdk/lib/execution/agent/execution-agent/docs/
+execution-zones/execution-agent/src/docs/

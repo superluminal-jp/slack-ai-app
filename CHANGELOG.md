@@ -7,7 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Slack Search Agent** (`038-slack-search-agent`): New standalone `verification-zones/slack-search-agent/` zone deploying a Bedrock AgentCore Runtime. Exposes three tools — `search_messages`, `get_thread`, `get_channel_history` — over A2A. Channel access is restricted to the calling channel and public channels; private channels other than the calling channel are denied. CDK stack: `SlackSearchAgentStack`.
+- **`SlackSearchClient` and `slack_search` Strands tool** (`verification-agent`, `038-slack-search-agent`): `src/slack_search_client.py` calls the Slack Search Agent via A2A; `src/slack_search_tool.py` wraps it as a Strands `@tool` registered with the orchestrator. `OrchestrationRequest` gains `channel` and `bot_token` fields. The `slack_search` tool is conditionally added when `SLACK_SEARCH_AGENT_ARN` is set.
+- **`slackSearchAgentArn` CDK configuration option** (`verification-agent`, `038-slack-search-agent`): Optional prop wired through `cdk.config.{env}.json` → `CdkConfig` → `VerificationStackProps` → runtime construct → `SLACK_SEARCH_AGENT_ARN` env var.
+
+### Fixed
+
+- **5 pre-existing CDK test failures in verification-agent** (`038-slack-search-agent`): Recompiled stale `verification-stack.js` (was missing API Gateway/WAF code); fixed `tsconfig.json` `typeRoots` to include workspace root `node_modules/@types`; replaced `Match.stringLikeRegexp` (fails on `Fn::Join` intrinsic) with `findResources()` existence check for the WAF WebACLAssociation assertion. Result: 35/35 CDK tests pass.
+
 ### Changed
+
+- **Renamed `execution-zones/execution-agent/` → `execution-zones/file-creator-agent/`**: Directory name now matches the agent's actual identity (CDK constructs and agent card already used `file-creator-agent`). Updated path references in `CLAUDE.md`, `package.json`, `scripts/deploy/deploy-execution-all.sh`, and `scripts/validate/preflight.sh`.
+
+### Fixed
+
+- **Thread context duplication in LLM prompt** (`verification-agent`): `pipeline.py` was prepending `thread_context` to `user_text` AND passing it as a separate `OrchestrationRequest.thread_context` field. `_build_prompt` then injected it twice — once in `## スレッドコンテキスト` and once embedded in `## ユーザーリクエスト`. Removed the redundant prepend; thread context now reaches the LLM exactly once via the structured `## スレッドコンテキスト` section.
+- **Attachment filename missing in orchestrator prompt** (`verification-agent`): `_build_prompt` used `r.get('filename', 'file')` but enriched attachments carry the `'name'` key. All attachment labels in the LLM prompt showed as "file". Fixed to `r.get('name', r.get('filename', 'file'))`.
+- **`ToolLoggingHook` status detection for string tool results** (`verification-agent`): `_after_tool` called `.get("status")` on `event.result`, which is a plain string when Strands tools return text. Updated to type-check: dicts use `.get("status") == "error"`; strings check `.startswith("ERROR:")`.
+
+### Fixed
+
+- **Bot replies to message_deleted / message_changed events** (`verification-agent`): `message` events with any non-null `subtype` (e.g. `message_deleted`, `message_changed`, `channel_join`) are now silently ignored. Previously only `bot_message` subtype was filtered, causing the bot to send a "Please send me a message" prompt on every deletion.
+
+### Added
+
+- **Auto-reply to channel messages without mention** (`verification-agent`): The bot now responds to all messages in explicitly configured channels without requiring an `@mention`. Channel IDs are set via `AUTO_REPLY_CHANNEL_IDS` env var (comma-separated); unset means no channels are opted in (conservative default). DMs and `app_mention` events are unaffected. Configured via `autoReplyChannelIds` in `cdk.config.{env}.json`, propagated through `CdkConfig` → `VerificationStackProps` → `SlackEventHandlerProps` → Lambda env. `message.channels` added to Slack App manifest bot events.
+
+- **Test coverage for `file_artifact_store` and `file_artifact` propagation** (`verification-agent`, `036-iterative-reasoning`): Added 5 new tests — 3 in `test_agent_tools.py` verifying that `file_artifact_store` is populated when an execution agent response includes a `file_artifact`, that `None` store causes no error, and that the store is unchanged when no artifact is present; 2 in `test_orchestrator.py` (`TestOrchestrationFileArtifactPropagation`) verifying that `OrchestrationAgent.run()` propagates `file_artifact` from `_file_artifact_store` into `OrchestrationResult.file_artifact`, and returns `None` when no file is generated. Total test count: 204 passed, 13 skipped (before bug-fix commits; final count is 209 passed, 13 skipped).
+
+- **Iterative multi-agent orchestration** (`verification-agent`, `036-iterative-reasoning`): Replaced single-pass routing with a Strands agentic loop. A single user request can now dispatch to multiple specialist agents in parallel, synthesize their results, and iterate across up to `MAX_AGENT_TURNS` turns (default 5) until complete. Partial results are returned with an explanatory note when the turn limit fires. New modules: `src/orchestrator.py` (`OrchestrationAgent`, `run_orchestration_loop`, `OrchestrationRequest`, `OrchestrationResult`, `ToolCallRecord`), `src/hooks.py` (`MaxTurnsHook`, `ToolLoggingHook`), `src/agent_tools.py` (`build_agent_tools`). CDK env var `MAX_AGENT_TURNS` added to the verification-agent container.
+
+### Changed
+
+- **Pipeline routing replaced by orchestration loop** (`verification-agent`): `pipeline.py` now calls `run_orchestration_loop()` instead of `route_request()` + `invoke_execution_agent()`. The router-based single-agent dispatch path (including `list_agents`, `UNROUTED`, per-agent attribution) is superseded. `router.py` is retained for backward-compatible imports but deprecated.
+
+- **Web Fetch Agent** (`fetch-url-agent`): New standalone execution zone that handles URL content retrieval via the `fetch_url` tool. The agent runs as an independent AgentCore Runtime (A2A, port 9000) with SSRF protection, 512 KB download limit, and 14,000-character text truncation. The `fetch_url` tool has been removed from `execution-agent` to maintain single-responsibility per zone. Verification-agent now supports `WEB_FETCH_AGENT_ARN` env var for agent registration.
+- **Agent list Slack reply** (`verification-agent`): Users can ask the bot what it can do (e.g., "何ができる？", "agent list") and receive a formatted Slack reply listing all registered agents with their names, descriptions, and skills. The router LLM detects this intent and selects the new `list_agents` special route; the verification agent compiles the reply from the in-memory agent card cache without invoking any execution agent.
+- **Platform tooling package** (`@slack-ai-app/cdk-tooling`): Shared npm package at `platform/tooling/` exporting `cdk-logger`, `cdk-error`, `cost-allocation-tags`, `config-loader`, and `log-retention-aspect`. All zones import shared utilities from this package instead of local copies.
+- **Standalone execution zone CDK apps**: Each execution agent (`execution-agent`, `time-agent`, `docs-agent`) is now an independent CDK application under `execution-zones/<agent>/cdk/` with its own `bin/`, `lib/`, `test/`, `package.json`, and deploy script.
+- **Zone deploy scripts**: `execution-zones/<agent>/scripts/deploy.sh` per zone; `scripts/deploy/deploy-all.sh`, `deploy-execution-all.sh`, `deploy-verification-all.sh`; `scripts/validate/preflight.sh` for pre-deploy checks.
+- **npm workspaces root**: Root `package.json` registers `platform/tooling`, `execution-zones/*/cdk`, and `verification-zones/*/cdk` as workspaces so a single `npm install` satisfies all CDK dependencies.
+
+### Changed
+
+- **Execution agent source layout**: Python source and tests for each execution agent moved from `cdk/lib/<type>/agent/<agent>/` to `execution-zones/<agent>/src/` and `execution-zones/<agent>/tests/`.
+- **Verification agent source layout**: Python source and tests moved from `verification-zones/verification-agent/agent/verification-agent/` to `verification-zones/verification-agent/src/` and `verification-zones/verification-agent/tests/`.
+- **Verification zone CDK imports**: `verification-zones/verification-agent/cdk/` now imports shared utilities from `@slack-ai-app/cdk-tooling` instead of local `lib/utils/` copies.
+- **Bedrock model ID**: All agents updated to use `jp.jp.anthropic.claude-sonnet-4-5-20250929-v1:0` (cross-region inference profile for ap-northeast-1).
+- **ts-jest configuration**: `isolatedModules` moved from inline Jest transform option to `tsconfig.json` `compilerOptions` per ts-jest v29+ recommendation; eliminates deprecation warning.
+
+### Removed
+
+- **Monolithic `cdk/` directory**: Replaced by independent per-zone CDK apps under `execution-zones/` and updated `verification-zones/`.
+
+### Fixed
+
+- **CDK deploy scripts**: npm workspaces hoists `aws-cdk` to root `node_modules`; deploy scripts now resolve `cdk` CLI from project root with zone-local fallback and `cd` into the zone's CDK directory before invoking `cdk deploy`.
+- **ts-node module resolution**: Added `ts-node` block to each zone's `tsconfig.json` overriding `module`/`moduleResolution` to `CommonJS`/`node` at runtime so `cdk synth` resolves TypeScript files correctly under Node.js 24.
+- **`platform/tooling` package.json `main` field**: Changed from `index.js` to `index.ts` to eliminate `DEP0128` Node.js warning when resolving the symlinked workspace package.
+- **Local import `.js` extensions**: Removed explicit `.js` extensions from intra-zone and `platform/tooling` imports; CommonJS resolution does not require them and ts-node cannot resolve `.js` → `.ts` at runtime without ESM loader.
+
+### Changed
+
+- **Documentation updated for zone-based restructuring**: All Markdown files updated to reflect the current codebase — `README.md` and `README.ja.md` project structure diagrams and Quick Start deploy commands replaced (old `cdk/` monolith → `execution-zones/*/cdk` and `verification-zones/*/cdk`); deploy commands updated from `./scripts/deploy.sh` to `./scripts/deploy/deploy-all.sh`; `docs/developer/quickstart.md` setup steps revised (npm workspaces install from root, zone-specific config files, zone-aware deploy methods); `docs/developer/architecture.md`, `requirements.md`, `troubleshooting.md`, `execution-agent-docs-access.md`, `execution-agent-system-prompt.md`, and `security.md` file-path references corrected; invalid CloudWatch log group paths (`/aws/cdk/lib/…`) fixed to actual Lambda log group names; `verification-zones/verification-agent/README.md` structure and test commands updated to reflect `src/` and `tests/` layout.
 
 - **Verification–Execution zone connection (032)**: Zone-to-zone protocol is now JSON-RPC 2.0 (method `execute_task`). Application layer is transport-agnostic; transport (e.g. InvokeAgentRuntime) remains an implementation detail. Execution Agent accepts JSON-RPC Request and returns JSON-RPC Response; Verification Agent builds Request and parses Response. Error contract unified (e.g. -32602 Invalid params, -32603 Internal error).
 - **Deploy script simplification**: Replaced two-phase synth/deploy with single `cdk deploy`, use `--outputs-file` for stack outputs instead of `describe-stacks` polling, deduplicated agent validation loop into `wait_for_agent_ready()`, removed config file mutation during deploy, and extracted inline Python resource policy into standalone `scripts/apply-resource-policy.py`
@@ -19,7 +83,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Execution Agent `fetch_url` tool**: Fetches and extracts text content from URLs so users can ask the agent to summarize web pages. Includes SSRF prevention (private IP blocking, scheme validation), HTML text extraction via BeautifulSoup, and size/truncation limits.
 - **Utility scripts**: `scripts/force-execution-redeploy.sh` (quick single-stack image rebuild), `scripts/check-execution-deploy-status.sh` (runtime status check)
-
 
 - **Execution Agent**: Single system prompt source (`system_prompt.py`), tools `get_current_time`, `get_business_document_guidelines`, `get_presentation_slide_guidelines`, `search_docs`; docs for system prompt and docs access.
 - **Documentation standards**: New [docs/DOCUMENTATION_STANDARDS.md](docs/DOCUMENTATION_STANDARDS.md) defining best practices for all project documentation (when to update, structure, writing style, CHANGELOG format, module README requirements, API docs, quality checklist). CLAUDE.md, docs/README.md, README.md, CONTRIBUTING.md, cdk/README.md, and agent READMEs updated to reference and apply these standards; CLAUDE.md Commands section corrected.
