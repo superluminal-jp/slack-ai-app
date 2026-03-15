@@ -5,11 +5,25 @@ Retrieves the latest messages from a Slack channel.
 Access is restricted to the calling channel and public channels.
 """
 
+from datetime import datetime, timezone, timedelta
+
 from strands import tool
 
 from channel_access import is_accessible
 from slack_client import SlackClient
 from slack_sdk.errors import SlackApiError
+
+
+_JST = timezone(timedelta(hours=9))
+
+
+def _ts_to_jst(ts: str) -> str:
+    """Convert a Slack Unix timestamp string to a JST datetime string."""
+    try:
+        dt = datetime.fromtimestamp(float(ts), tz=_JST)
+        return dt.strftime("%Y年%m月%d日 %H:%M:%S JST")
+    except (ValueError, OSError):
+        return ts
 
 
 @tool
@@ -60,6 +74,6 @@ def get_channel_history(
         ts = msg.get("ts", "")
         user = msg.get("user") or "bot"
         text = (msg.get("text") or "").strip()
-        lines.append(f"[{ts}] {user}: {text}")
+        lines.append(f"[{_ts_to_jst(ts)}] {user}: {text}")
 
     return "\n".join(lines)

@@ -49,6 +49,27 @@ def test_search_returns_matching_messages():
     assert "lunch menu" not in result.lower()
 
 
+def test_timestamps_formatted_as_jst():
+    """Timestamps are formatted as JST datetime strings, not raw Unix values."""
+    messages = [_make_message("test", ts="1706123456.789012")]
+    with patch("tools.search_messages.SlackClient") as MockClient, \
+         patch("tools.search_messages.is_accessible") as mock_access:
+        mock_client = MagicMock()
+        mock_client.get_channel_history.return_value = messages
+        MockClient.return_value = mock_client
+        mock_access.return_value = _mock_accessible(True)
+
+        result = search_messages(
+            query="test",
+            channel_id=PUBLIC_CHANNEL,
+            calling_channel=CALLING_CHANNEL,
+            bot_token=BOT_TOKEN,
+        )
+
+    assert "1706123456.789012" not in result
+    assert "JST" in result
+
+
 def test_calling_channel_allowed():
     """The calling channel is accessible without Slack API check."""
     messages = [_make_message("test message")]

@@ -52,6 +52,26 @@ def test_valid_url_returns_thread_messages():
     assert "Reply 2" in result
 
 
+def test_timestamps_formatted_as_jst():
+    """Timestamps are formatted as JST datetime strings, not raw Unix values."""
+    thread_messages = [_make_message("hello", ts="1706123456.789012")]
+    with patch("tools.get_thread.SlackClient") as MockClient, \
+         patch("tools.get_thread.is_accessible") as mock_access:
+        mock_client = MagicMock()
+        mock_client.get_thread_replies.return_value = thread_messages
+        MockClient.return_value = mock_client
+        mock_access.return_value = _mock_accessible(PUBLIC_CHANNEL, True)
+
+        result = get_thread(
+            slack_url=VALID_URL,
+            calling_channel=CALLING_CHANNEL,
+            bot_token=BOT_TOKEN,
+        )
+
+    assert "1706123456.789012" not in result
+    assert "JST" in result
+
+
 def test_calling_channel_url_allowed():
     """URL pointing to calling channel is always accessible."""
     thread_messages = [_make_message("test message")]
