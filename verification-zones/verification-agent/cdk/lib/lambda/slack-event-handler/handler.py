@@ -38,6 +38,20 @@ def _is_auto_reply_channel(channel: str) -> bool:
     return channel in channel_ids
 
 
+def _is_mention_allowed_channel(channel: str) -> bool:
+    """Return True if @mention responses are allowed in this channel.
+
+    Reads MENTION_CHANNEL_IDS env var (comma-separated channel IDs).
+    Returns True (permissive default) when the env var is unset or empty,
+    so that @mentions are processed in every channel unless restricted.
+    """
+    raw = os.environ.get("MENTION_CHANNEL_IDS", "").strip()
+    if not raw:
+        return True  # unrestricted: allow all channels
+    channel_ids = {c.strip() for c in raw.split(",") if c.strip()}
+    return channel in channel_ids
+
+
 def _is_valid_timestamp(ts: Optional[str]) -> bool:
     """
     Validate Slack timestamp format.
@@ -581,6 +595,23 @@ def lambda_handler(event, context):
                         "headers": {"Content-Type": "application/json"},
                         "body": json.dumps({"ok": True}),
                     }
+
+                # For app_mention events, check if the channel is in the mention allow-list.
+                # When MENTION_CHANNEL_IDS is unset the check passes for all channels.
+                if event_type == "app_mention":
+                    ch = slack_event.get("channel", "")
+                    if (ch.startswith("C") or ch.startswith("G")) and not _is_mention_allowed_channel(ch):
+                        log_event(
+                            "INFO",
+                            "mention_skipped",
+                            {"channel": ch, "reason": "not_in_mention_channel_list"},
+                            context,
+                        )
+                        return {
+                            "statusCode": 200,
+                            "headers": {"Content-Type": "application/json"},
+                            "body": json.dumps({"ok": True}),
+                        }
 
                 # For plain channel message events (not app_mention, not DM),
                 # only process if the channel is configured for auto-reply.

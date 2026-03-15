@@ -181,29 +181,40 @@ const verificationAgentName = getConfigString(
   `SlackAI_VerificationAgent_${environmentSuffix}`,
 );
 
+/** Parse a context value (string | string[] | undefined) into a string[]. */
+const parseChannelIdContext = (ctxRaw: unknown, fallback: string[]): string[] => {
+  if (ctxRaw === undefined) return fallback;
+  if (typeof ctxRaw === "string") {
+    try {
+      const parsed = JSON.parse(ctxRaw) as unknown;
+      if (Array.isArray(parsed)) {
+        return (parsed as unknown[]).map(String).filter((s) => s.trim() !== "");
+      }
+    } catch {
+      // Not JSON — treat as comma-separated
+    }
+    return ctxRaw.split(",").map((s) => s.trim()).filter((s) => s !== "");
+  }
+  if (Array.isArray(ctxRaw)) {
+    return (ctxRaw as unknown[]).map(String).filter((s) => s.trim() !== "");
+  }
+  return fallback;
+};
+
 // Auto-reply channel IDs (from context, config file, or env var).
 // --context autoReplyChannelIds=C123,C456  OR  ["C123","C456"] JSON array
-const autoReplyChannelIds: string[] = (() => {
-  const ctxRaw = app.node.tryGetContext("autoReplyChannelIds");
-  if (ctxRaw !== undefined) {
-    if (typeof ctxRaw === "string") {
-      // Try JSON array first, fall back to comma-separated
-      try {
-        const parsed = JSON.parse(ctxRaw) as unknown;
-        if (Array.isArray(parsed)) {
-          return (parsed as unknown[]).map(String).filter((s) => s.trim() !== "");
-        }
-      } catch {
-        // Not JSON — treat as comma-separated
-      }
-      return ctxRaw.split(",").map((s) => s.trim()).filter((s) => s !== "");
-    }
-    if (Array.isArray(ctxRaw)) {
-      return (ctxRaw as unknown[]).map(String).filter((s) => s.trim() !== "");
-    }
-  }
-  return config?.autoReplyChannelIds ?? [];
-})();
+const autoReplyChannelIds: string[] = parseChannelIdContext(
+  app.node.tryGetContext("autoReplyChannelIds"),
+  config?.autoReplyChannelIds ?? []
+);
+
+// Mention-allowed channel IDs (from context, config file, or env var).
+// When set, app_mention events from other channels are silently ignored.
+// --context mentionChannelIds=C123,C456  OR  ["C123","C456"] JSON array
+const mentionChannelIds: string[] = parseChannelIdContext(
+  app.node.tryGetContext("mentionChannelIds"),
+  config?.mentionChannelIds ?? []
+);
 
 // Execution agent ARNs (from context, env vars, or config file).
 // CDK --context always passes strings; JSON-parse when needed.
@@ -305,6 +316,7 @@ new VerificationStack(app, verificationStackName, {
     Object.keys(executionAgentArns).length > 0 ? executionAgentArns : undefined,
   bedrockModelId: bedrockModelId || undefined,
   autoReplyChannelIds: autoReplyChannelIds.length > 0 ? autoReplyChannelIds : undefined,
+  mentionChannelIds: mentionChannelIds.length > 0 ? mentionChannelIds : undefined,
   slackSearchAgentArn: slackSearchAgentArn || undefined,
 });
 logInfo("Verification stack created.", {

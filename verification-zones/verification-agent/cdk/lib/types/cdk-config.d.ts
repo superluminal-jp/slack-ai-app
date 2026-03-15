@@ -43,6 +43,8 @@ export interface CdkConfig {
     executionAgentArns?: Record<string, string>;
     /** Channel IDs where the bot auto-replies without a mention (optional) */
     autoReplyChannelIds?: string[];
+    /** Channel IDs where @mention responses are allowed (optional; empty = all channels) */
+    mentionChannelIds?: string[];
     /** ARN of the Slack Search Agent AgentCore Runtime (optional) */
     slackSearchAgentArn?: string;
 }

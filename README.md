@@ -67,7 +67,7 @@ export DEPLOYMENT_ENV=dev  # Use 'prod' for production
 
 # 3. Run full deployment (execution zones → verification zone)
 export AWS_PROFILE=your-profile-name  # Optional: if using AWS profiles
-./scripts/deploy/deploy-all.sh
+DEPLOYMENT_ENV=dev ./scripts/deploy.sh deploy
 ```
 
 **Note**: Slack credentials can be set directly in `cdk.config.{env}.json` file. Environment variables are also supported, but configuration files are easier to manage.
@@ -90,12 +90,10 @@ This project supports environment separation for development (`dev`) and product
 
 ```bash
 # Deploy to development environment
-export DEPLOYMENT_ENV=dev
-./scripts/deploy/deploy-all.sh
+DEPLOYMENT_ENV=dev ./scripts/deploy.sh deploy
 
 # Deploy to production environment
-export DEPLOYMENT_ENV=prod
-./scripts/deploy/deploy-all.sh
+DEPLOYMENT_ENV=prod ./scripts/deploy.sh deploy
 ```
 
 **Note**: If `DEPLOYMENT_ENV` is not set, the script defaults to `dev` environment with a warning. Each environment should use separate Slack apps/workspaces or different secrets for security.
@@ -291,10 +289,7 @@ slack-ai-app/
 │   ├── schemas/                  # Shared JSON schemas (placeholder)
 │   └── policies/                 # Shared IAM policies (placeholder)
 ├── scripts/
-│   ├── deploy/
-│   │   ├── deploy-all.sh         # Full deployment: execution → verification
-│   │   ├── deploy-execution-all.sh
-│   │   └── deploy-verification-all.sh
+│   ├── deploy.sh                 # Unified deploy CLI (deploy/status/logs/policy/check-access)
 │   └── validate/
 ├── docs/                         # Documentation
 │   ├── developer/                # Architecture, Quickstart, Runbook, Testing, …
@@ -584,7 +579,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 - **2026-02-19**: Zone-based CDK restructuring
   - Migrated from single `cdk/` monolith to five independent CDK apps: `execution-zones/{execution-agent,time-agent,docs-agent,fetch-url-agent}/cdk` and `verification-zones/verification-agent/cdk`
   - Added `platform/tooling` shared npm package (`@slack-ai-app/cdk-tooling`) for common CDK utilities (logger, error, cost-allocation-tags, log-retention-aspect, config-loader)
-  - Added unified deploy scripts: `scripts/deploy/deploy-all.sh`, `deploy-execution-all.sh`, `deploy-verification-all.sh`
+  - Added unified deploy scripts (later consolidated into `scripts/deploy.sh`)
   - Each zone has independent `src/`, `tests/`, `scripts/deploy.sh` and zone-specific `cdk.config.dev.json`
 - **2026-02-11**: Reaction swap on reply (eyes→checkmark)
   - When posting AI response to Slack, the system removes 👀 and adds ✅ on the original message for clear completion feedback

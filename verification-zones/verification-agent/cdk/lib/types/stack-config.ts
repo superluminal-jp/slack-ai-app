@@ -51,6 +51,14 @@ export interface VerificationStackProps extends cdk.StackProps {
   readonly autoReplyChannelIds?: string[];
 
   /**
+   * Channel IDs where @mention responses are allowed.
+   * When set, app_mention events from other channels are silently ignored.
+   * When unset (default), @mentions are processed in every channel.
+   * e.g. ["C0AFSG79T8D"]
+   */
+  readonly mentionChannelIds?: string[];
+
+  /**
    * ARN of the Slack Search Agent AgentCore Runtime (optional).
    * Set after deploying the slack-search-agent stack.
    */

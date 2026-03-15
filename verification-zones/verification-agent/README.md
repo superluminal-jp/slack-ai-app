@@ -100,12 +100,46 @@ A single deployed stack supports two response patterns simultaneously:
 
 | Mode | Trigger | Configuration |
 |------|---------|---------------|
-| **@mention** | User writes `@BotName message` in any channel | Default — no configuration needed |
-| **Auto-reply** | Bot responds to **every post** in specified channels | Set `autoReplyChannelIds` at deploy time |
+| **@mention** | User writes `@BotName message` in any channel | Default — no configuration needed.<br>Restrict to specific channels with `mentionChannelIds`. |
+| **Auto-reply** | Bot responds to **every post** in specified channels | Set `autoReplyChannelIds` at deploy time. |
 
-Both modes can be active in the same stack at the same time. A channel listed in `autoReplyChannelIds` receives auto-replies; all other channels remain in @mention-only mode.
+Both modes can be active in the same stack at the same time.
 
-### Configuring Auto-Reply Channels at Deploy Time
+### Configuring @Mention Channels (`mentionChannelIds`)
+
+By default, the bot responds to `@BotName` in **every** channel. Set `mentionChannelIds` to restrict @mention responses to a specific set of channels. Events from other channels are silently ignored (200 OK returned to Slack).
+
+Three methods are supported, applied in this priority order:
+
+**1. Environment variable (highest priority)**
+
+```bash
+MENTION_CHANNEL_IDS=C01234567,C89ABCDEF npx cdk deploy
+```
+
+**2. CDK `--context` flag**
+
+```bash
+npx cdk deploy --context mentionChannelIds=C01234567,C89ABCDEF
+# or JSON array:
+npx cdk deploy --context 'mentionChannelIds=["C01234567","C89ABCDEF"]'
+```
+
+**3. Config file (`cdk.config.{env}.json`)**
+
+```json
+{
+  "mentionChannelIds": ["C01234567", "C89ABCDEF"]
+}
+```
+
+To restore unrestricted @mention mode, set `mentionChannelIds` to an empty array (or omit the field):
+
+```bash
+MENTION_CHANNEL_IDS="" npx cdk deploy
+```
+
+### Configuring Auto-Reply Channels (`autoReplyChannelIds`)
 
 Three methods are supported, applied in this priority order:
 

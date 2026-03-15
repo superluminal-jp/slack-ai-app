@@ -275,19 +275,21 @@ Slack AI アプリケーションは、Verification Zone（検証層）と Execu
 ### 3.3 デプロイフロー
 
 ```bash
-# デプロイ環境を設定
-export DEPLOYMENT_ENV=dev  # または 'prod'
+# 全体デプロイ（Execution ゾーン → Verification ゾーン）
+DEPLOYMENT_ENV=dev ./scripts/deploy.sh deploy
 
-# 全体デプロイ（Execution 4ゾーン → Verification）
-./scripts/deploy/deploy-all.sh
+# 本番環境
+DEPLOYMENT_ENV=prod ./scripts/deploy.sh deploy
 ```
 
-`deploy-all.sh` は以下を自動化します。
+`scripts/deploy.sh deploy` は以下を自動化します。
 
-1. Execution ゾーン（file-creator / time / docs / fetch-url）を順次デプロイ
-2. 取得した Runtime ARN を Verification 設定（`executionAgentArns`）へ反映
-3. Verification ゾーンをデプロイ
-4. 各 Execution Runtime にリソースポリシーを適用
+1. Execution ゾーン（file-creator / docs / time / fetch-url）を順次デプロイ
+2. Slack Search Agent ゾーンをデプロイ
+3. 取得した Runtime ARN を Verification 設定（`executionAgentArns`）へ反映
+4. Verification ゾーンをデプロイ
+5. 各 AgentCore Runtime にリソースポリシーを適用
+6. 全 Runtime の READY 状態を確認
 
 ### 3.4 クロスアカウント CDK 設定
 

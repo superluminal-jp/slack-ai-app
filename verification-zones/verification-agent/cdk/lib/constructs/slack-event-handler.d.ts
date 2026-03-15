@@ -39,6 +39,12 @@ export interface SlackEventHandlerProps {
      * Comma-separated string is set as AUTO_REPLY_CHANNEL_IDS env var.
      */
     autoReplyChannelIds?: string[];
+    /**
+     * Channel IDs where @mention responses are allowed.
+     * When set, app_mention events from other channels are silently ignored.
+     * Comma-separated string is set as MENTION_CHANNEL_IDS env var.
+     */
+    mentionChannelIds?: string[];
 }
 export declare class SlackEventHandler extends Construct {
     readonly function: lambda.Function;
