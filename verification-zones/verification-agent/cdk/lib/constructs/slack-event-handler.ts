@@ -45,6 +45,12 @@ export interface SlackEventHandlerProps {
    * Comma-separated string is set as AUTO_REPLY_CHANNEL_IDS env var.
    */
   autoReplyChannelIds?: string[];
+  /**
+   * Channel IDs where @mention responses are allowed.
+   * When set, app_mention events from other channels are silently ignored.
+   * Comma-separated string is set as MENTION_CHANNEL_IDS env var.
+   */
+  mentionChannelIds?: string[];
 }
 
 export class SlackEventHandler extends Construct {
@@ -129,6 +135,10 @@ export class SlackEventHandler extends Construct {
         // Channels where the bot auto-replies without requiring a mention
         ...(props.autoReplyChannelIds && props.autoReplyChannelIds.length > 0 && {
           AUTO_REPLY_CHANNEL_IDS: props.autoReplyChannelIds.join(","),
+        }),
+        // Channels where @mention responses are allowed (empty = all channels)
+        ...(props.mentionChannelIds && props.mentionChannelIds.length > 0 && {
+          MENTION_CHANNEL_IDS: props.mentionChannelIds.join(","),
         }),
       },
     });

@@ -245,6 +245,7 @@ export class VerificationStack extends cdk.Stack {
       agentInvocationQueue: this.agentInvocationQueue,
       configRevision,
       autoReplyChannelIds: props.autoReplyChannelIds,
+      mentionChannelIds: props.mentionChannelIds,
     });
 
     const slackIngressApiAccessLogGroup = new logs.LogGroup(

@@ -48,6 +48,8 @@ export interface CdkConfig {
   executionAgentArns?: Record<string, string>;
   /** Channel IDs where the bot auto-replies without a mention (optional) */
   autoReplyChannelIds?: string[];
+  /** Channel IDs where @mention responses are allowed (optional; empty = all channels) */
+  mentionChannelIds?: string[];
   /** ARN of the Slack Search Agent AgentCore Runtime (optional) */
   slackSearchAgentArn?: string;
 }
@@ -95,6 +97,7 @@ const CdkConfigSchema = z.object({
     )
     .optional(),
   autoReplyChannelIds: z.array(z.string()).optional(),
+  mentionChannelIds: z.array(z.string()).optional(),
   slackSearchAgentArn: z
     .string()
     .regex(
@@ -349,6 +352,9 @@ export function applyEnvOverrides(config: CdkConfig): CdkConfig {
     autoReplyChannelIds:
       parseAutoReplyChannelIds(process.env.AUTO_REPLY_CHANNEL_IDS) ??
       config.autoReplyChannelIds,
+    mentionChannelIds:
+      parseAutoReplyChannelIds(process.env.MENTION_CHANNEL_IDS) ??
+      config.mentionChannelIds,
     slackSearchAgentArn:
       slackSearchAgentArnFromEnv || config.slackSearchAgentArn,
   };
