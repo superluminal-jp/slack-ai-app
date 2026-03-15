@@ -48,6 +48,8 @@ export interface CdkConfig {
   executionAgentArns?: Record<string, string>;
   /** Channel IDs where the bot auto-replies without a mention (optional) */
   autoReplyChannelIds?: string[];
+  /** ARN of the Slack Search Agent AgentCore Runtime (optional) */
+  slackSearchAgentArn?: string;
 }
 
 /**
@@ -93,6 +95,13 @@ const CdkConfigSchema = z.object({
     )
     .optional(),
   autoReplyChannelIds: z.array(z.string()).optional(),
+  slackSearchAgentArn: z
+    .string()
+    .regex(
+      /^arn:aws:bedrock-agentcore:.+:\d{12}:runtime\/.+/,
+      "slackSearchAgentArn must be a valid AgentCore Runtime ARN"
+    )
+    .optional(),
 });
 
 /**
@@ -318,6 +327,8 @@ export function applyEnvOverrides(config: CdkConfig): CdkConfig {
       fromJson ?? fromSingleMap ?? mergedExecutionAgentArns
     );
 
+  const slackSearchAgentArnFromEnv = process.env.SLACK_SEARCH_AGENT_ARN?.trim();
+
   return {
     ...config,
     awsRegion: process.env.AWS_REGION || config.awsRegion,
@@ -338,5 +349,7 @@ export function applyEnvOverrides(config: CdkConfig): CdkConfig {
     autoReplyChannelIds:
       parseAutoReplyChannelIds(process.env.AUTO_REPLY_CHANNEL_IDS) ??
       config.autoReplyChannelIds,
+    slackSearchAgentArn:
+      slackSearchAgentArnFromEnv || config.slackSearchAgentArn,
   };
 }

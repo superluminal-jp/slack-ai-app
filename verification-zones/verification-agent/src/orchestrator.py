@@ -37,6 +37,8 @@ class OrchestrationRequest:
     available_agents: dict
     correlation_id: str
     max_turns: int = 5
+    channel: str = ""
+    bot_token: str = ""
 
     def __post_init__(self):
         self.max_turns = _clamp_max_turns(self.max_turns)
@@ -93,6 +95,11 @@ retry with different parameters or try an alternative approach in the next turn.
 6. **Fail gracefully** — If all agents return errors, explain clearly which parts succeeded \
 and which failed.
 
+## Slack Search
+When the user requests a Slack search, references a Slack message URL, or asks to retrieve \
+channel history or thread content, use the `slack_search` tool. \
+Pass the full user request as the query so the Slack Search Agent can interpret the intent.
+
 ## Response guidelines
 - Respond in Japanese.
 - Be comprehensive but concise.
@@ -104,7 +111,15 @@ and which failed.
 class OrchestrationAgent:
     """Strands agentic loop orchestrator for multi-agent iterative reasoning."""
 
-    def __init__(self, agent_registry: dict, bedrock_model, max_turns: int = 5):
+    def __init__(
+        self,
+        agent_registry: dict,
+        bedrock_model,
+        max_turns: int = 5,
+        channel: str = "",
+        bot_token: str = "",
+        correlation_id: str = "",
+    ):
         from agent_tools import build_agent_tools
         from hooks import MaxTurnsHook, ToolLoggingHook
 
@@ -113,6 +128,13 @@ class OrchestrationAgent:
         self._model = bedrock_model
         self._file_artifact_store: dict = {}
         self._tools = build_agent_tools(agent_registry, self._file_artifact_store)
+
+        # Add Slack Search tool when ARN is configured and request context is available
+        if channel and bot_token and os.environ.get("SLACK_SEARCH_AGENT_ARN"):
+            from slack_search_tool import make_slack_search_tool
+            slack_tool = make_slack_search_tool(channel, bot_token, correlation_id)
+            self._tools.append(slack_tool)
+
         self._max_turns_hook = MaxTurnsHook(self._max_turns)
         self._logging_hook = ToolLoggingHook()
 
@@ -223,5 +245,12 @@ def run_orchestration_loop(
     bedrock_model,
 ) -> OrchestrationResult:
     """Thin wrapper used by pipeline.py to run the orchestration loop."""
-    orchestrator = OrchestrationAgent(agent_registry, bedrock_model, request.max_turns)
+    orchestrator = OrchestrationAgent(
+        agent_registry,
+        bedrock_model,
+        request.max_turns,
+        channel=request.channel,
+        bot_token=request.bot_token,
+        correlation_id=request.correlation_id,
+    )
     return orchestrator.run(request)

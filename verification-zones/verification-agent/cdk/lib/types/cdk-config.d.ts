@@ -41,6 +41,10 @@ export interface CdkConfig {
     verificationAgentName?: string;
     /** Map of execution agent IDs to runtime ARNs for A2A (optional; from stack outputs or config) */
     executionAgentArns?: Record<string, string>;
+    /** Channel IDs where the bot auto-replies without a mention (optional) */
+    autoReplyChannelIds?: string[];
+    /** ARN of the Slack Search Agent AgentCore Runtime (optional) */
+    slackSearchAgentArn?: string;
 }
 /**
  * Validate configuration using Zod schema

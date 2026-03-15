@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Slack Search Agent — A2A JSON-RPC 2.0 Contract",
+  "description": "verification agent から Slack Search Agent への呼び出し仕様",
+
+  "request": {
+    "jsonrpc": "2.0",
+    "method": "execute_task",
+    "id": "<uuid>",
+    "params": {
+      "text": "<自然言語の検索指示（必須）>",
+      "channel": "<呼び出し元の Slack チャンネル ID（必須）>",
+      "bot_token": "<Slack bot token (xoxb-)（必須）>",
+      "thread_ts": "<スレッドのタイムスタンプ（任意）>",
+      "correlation_id": "<リクエスト追跡 ID（任意）>"
+    },
+    "examples": [
+      {
+        "text": "Search for messages about 'release planning' in #general",
+        "channel": "C1234567890",
+        "bot_token": "xoxb-example",
+        "correlation_id": "abc-123"
+      },
+      {
+        "text": "Get the thread from this URL: https://workspace.slack.com/archives/C1234567890/p1706123456789012",
+        "channel": "C1234567890",
+        "bot_token": "xoxb-example",
+        "correlation_id": "def-456"
+      },
+      {
+        "text": "Get the last 10 messages from #announcements",
+        "channel": "C1234567890",
+        "bot_token": "xoxb-example",
+        "correlation_id": "ghi-789"
+      }
+    ]
+  },
+
+  "response_success": {
+    "jsonrpc": "2.0",
+    "id": "<uuid>",
+    "result": {
+      "status": "success",
+      "channel": "<呼び出し元の Slack チャンネル ID>",
+      "response_text": "<検索・取得結果のテキスト表現>",
+      "thread_ts": "<スレッドタイムスタンプ（任意）>",
+      "correlation_id": "<リクエスト追跡 ID（任意）>"
+    }
+  },
+
+  "response_error_access_denied": {
+    "jsonrpc": "2.0",
+    "id": "<uuid>",
+    "result": {
+      "status": "error",
+      "channel": "<呼び出し元の Slack チャンネル ID>",
+      "response_text": "指定のチャンネルはアクセス対象外です（プライベートチャンネル）。呼び出し元チャンネルと公開チャンネルのみ検索できます。",
+      "error_code": "access_denied",
+      "correlation_id": "<リクエスト追跡 ID（任意）>"
+    }
+  },
+
+  "response_error_slack_api": {
+    "jsonrpc": "2.0",
+    "id": "<uuid>",
+    "result": {
+      "status": "error",
+      "channel": "<呼び出し元の Slack チャンネル ID>",
+      "response_text": "Slack APIへのアクセスに失敗しました。しばらく経ってから再試行してください。",
+      "error_code": "slack_api_error",
+      "correlation_id": "<リクエスト追跡 ID（任意）>"
+    }
+  },
+
+  "agent_card": {
+    "name": "SlackAI-SlackSearchAgent",
+    "description": "Slack チャンネルのメッセージ検索、スレッド取得、チャンネル履歴取得を行うエージェント。アクセス可能範囲は呼び出し元チャンネルと公開チャンネルに限定。",
+    "url": "${AGENTCORE_RUNTIME_URL}",
+    "version": "1.0.0",
+    "protocol": "A2A",
+    "protocolVersion": "1.0",
+    "authentication": {
+      "type": "SIGV4",
+      "service": "bedrock-agentcore"
+    },
+    "capabilities": {
+      "streaming": false,
+      "asyncProcessing": false,
+      "attachments": false
+    },
+    "skills": [
+      {
+        "id": "search-messages",
+        "name": "Search Messages",
+        "description": "キーワードで Slack チャンネルのメッセージを検索する。呼び出し元チャンネルと公開チャンネルのみ対象。",
+        "inputModes": ["text"],
+        "outputModes": ["text"]
+      },
+      {
+        "id": "get-thread",
+        "name": "Get Thread",
+        "description": "Slack メッセージ URL からスレッド全体（親メッセージ + 返信）を取得する。",
+        "inputModes": ["text"],
+        "outputModes": ["text"]
+      },
+      {
+        "id": "get-channel-history",
+        "name": "Get Channel History",
+        "description": "指定チャンネルの最新メッセージ履歴を取得する（最大 20 件）。",
+        "inputModes": ["text"],
+        "outputModes": ["text"]
+      }
+    ],
+    "defaultInputModes": ["text"],
+    "defaultOutputModes": ["text"]
+  }
+}

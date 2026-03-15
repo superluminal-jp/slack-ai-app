@@ -220,9 +220,10 @@ export DEPLOYMENT_ENV=prod
 
 ## アーキテクチャ
 
-アプリケーションはエージェントゾーンごとに **5 つの独立した CDK アプリ**を使用し、個別にデプロイ可能です：
+アプリケーションはエージェントゾーンごとに **6 つの独立した CDK アプリ**を使用し、個別にデプロイ可能です：
 
 - **Verification Zone** (`verification-zones/verification-agent/cdk`): SlackEventHandler Lambda + Verification Agent (AgentCore) + DynamoDB + Secrets Manager
+- **Slack Search Agent Zone** (`verification-zones/slack-search-agent/cdk`): Slack チャンネル検索エージェント（AgentCore Runtime + ECR）— verification zone 内にデプロイ、A2A 経由で呼び出し
 - **File-Creator Agent Zone** (`execution-zones/file-creator-agent/cdk`): ファイル生成エージェント（AgentCore Runtime + ECR）
 - **Time Agent Zone** (`execution-zones/time-agent/cdk`): 現在時刻エージェント（AgentCore Runtime + ECR）
 - **Docs Agent Zone** (`execution-zones/docs-agent/cdk`): ドキュメント検索エージェント（AgentCore Runtime + ECR）
@@ -266,15 +267,21 @@ slack-ai-app/
 │   ├── docs-agent/               # 同じ構造 — ドキュメント検索エージェント
 │   └── fetch-url-agent/          # 同じ構造 — URL 取得エージェント
 ├── verification-zones/           # 検証エージェント CDK アプリ
-│   └── verification-agent/
+│   ├── verification-agent/
+│   │   ├── cdk/                  # 独立 CDK アプリ（TypeScript）
+│   │   │   ├── bin/cdk.ts
+│   │   │   ├── lib/
+│   │   │   │   ├── verification-stack.ts
+│   │   │   │   ├── constructs/   # AgentCore Runtime, ECR, Lambda, …
+│   │   │   │   └── lambda/       # SlackEventHandler Lambda
+│   │   │   └── test/
+│   │   ├── src/                  # Python エージェントソース
+│   │   ├── tests/                # Python ユニットテスト
+│   │   └── scripts/deploy.sh
+│   └── slack-search-agent/       # Slack チャンネル検索エージェント（A2A）
 │       ├── cdk/                  # 独立 CDK アプリ（TypeScript）
-│       │   ├── bin/cdk.ts
-│       │   ├── lib/
-│       │   │   ├── verification-stack.ts
-│       │   │   ├── constructs/   # AgentCore Runtime, ECR, Lambda, …
-│       │   │   └── lambda/       # SlackEventHandler Lambda
-│       │   └── test/
-│       ├── src/                  # Python エージェントソース
+│       ├── src/                  # Python エージェントソース（FastAPI + Strands）
+│       │   └── tools/            # search_messages, get_thread, get_channel_history
 │       ├── tests/                # Python ユニットテスト
 │       └── scripts/deploy.sh
 ├── platform/
@@ -301,11 +308,12 @@ slack-ai-app/
 
 ```bash
 # CDK 合成テスト（Jest）— ゾーンごと
-cd execution-zones/execution-agent/cdk && npm test
+cd execution-zones/file-creator-agent/cdk && npm test
 cd execution-zones/time-agent/cdk && npm test
 cd execution-zones/docs-agent/cdk && npm test
 cd execution-zones/fetch-url-agent/cdk && npm test
 cd verification-zones/verification-agent/cdk && npm test
+cd verification-zones/slack-search-agent/cdk && npm test
 
 # Python エージェントテスト（pytest）— ゾーンごと
 cd execution-zones/file-creator-agent && python -m pytest tests/ -v
@@ -313,6 +321,7 @@ cd execution-zones/time-agent && python -m pytest tests/ -v
 cd execution-zones/docs-agent && python -m pytest tests/ -v
 cd execution-zones/fetch-url-agent && python -m pytest tests/ -v
 cd verification-zones/verification-agent && python -m pytest tests/ -v
+cd verification-zones/slack-search-agent && python -m pytest tests/ -v
 ```
 
 ### ログ確認
@@ -558,9 +567,18 @@ Signing Secret + Bot Token の両方が漏洩した場合、攻撃者は：
 
 ---
 
-**最終更新日**: 2026-02-22
+**最終更新日**: 2026-03-15
 
 ## 最近の更新
+
+- **2026-03-15**: Slack Search Agent（038）
+  - 新規 `verification-zones/slack-search-agent/` ゾーン: Slack チャンネル履歴の検索・URL によるスレッド取得・チャンネル履歴取得に対応する Bedrock AgentCore Runtime エージェント
+  - Strands ツール 3 つ: `search_messages`（キーワードフィルタリング、最大 100 件）、`get_thread`（Slack URL パース）、`get_channel_history`（最新 N 件、最大 20 件）
+  - チャンネルアクセス制御: 呼び出し元チャンネルと公開チャンネルのみ許可、プライベートチャンネルは拒否
+  - `SlackSearchClient` と `make_slack_search_tool` ファクトリを verification-agent に追加; `SLACK_SEARCH_AGENT_ARN` 設定時に `slack_search` ツールが有効化
+  - verification-agent CDK に `slackSearchAgentArn` オプション設定を追加
+  - 既存の CDK テスト 5 件の失敗を修正（コンパイル済み JS の陳腐化、`tsconfig.json` typeRoots、WAF `WebACLAssociation` の Fn::Join イントリンシック対応）
+  - テスト件数: slack-search-agent 46、verification-agent 219、verification-agent CDK 35
 
 - **2026-02-22**: 反復マルチエージェント推論（036）
   - Verification Agent にて Strands エージェントループを導入（`orchestrator.py`、`hooks.py`、`agent_tools.py`）

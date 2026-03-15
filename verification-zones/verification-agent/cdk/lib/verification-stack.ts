@@ -216,6 +216,10 @@ export class VerificationStack extends cdk.Stack {
         slackPostRequestQueue: slackPoster.queue,
         errorDebugLogGroup: errorDebugLogGroup,
         fileExchangeBucket: fileExchangeBucket.bucket,
+        slackSearchAgentArn:
+          props.slackSearchAgentArn ||
+          (this.node.tryGetContext("slackSearchAgentArn") as string | undefined) ||
+          undefined,
       },
     );
     this.verificationAgentRuntimeArn = this.verificationAgentRuntime.runtimeArn;

@@ -53,6 +53,8 @@ export interface VerificationAgentRuntimeProps {
     readonly errorDebugLogGroup?: logs.ILogGroup;
     /** S3 bucket for temporary file exchange between zones (024) */
     readonly fileExchangeBucket?: s3.IBucket;
+    /** ARN of the Slack Search Agent AgentCore Runtime (optional; 038) */
+    readonly slackSearchAgentArn?: string;
 }
 export declare class VerificationAgentRuntime extends Construct {
     /** The AgentCore Runtime CFN resource */

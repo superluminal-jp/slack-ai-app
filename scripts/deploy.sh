@@ -33,17 +33,33 @@ log_error()   { echo -e "${RED}[ERROR]${NC} $1"; }
 # ── Configuration ────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-CDK_DIR="${PROJECT_ROOT}/cdk"
-CDK_CLI="${CDK_DIR}/node_modules/aws-cdk/bin/cdk"
+
+# Per-zone CDK directories (zone-based structure)
+EXEC_CDK_DIR="${PROJECT_ROOT}/execution-zones/file-creator-agent/cdk"
+DOCS_CDK_DIR="${PROJECT_ROOT}/execution-zones/docs-agent/cdk"
+TIME_CDK_DIR="${PROJECT_ROOT}/execution-zones/time-agent/cdk"
+WEB_FETCH_CDK_DIR="${PROJECT_ROOT}/execution-zones/fetch-url-agent/cdk"
 VERIFY_CDK_DIR="${PROJECT_ROOT}/verification-zones/verification-agent/cdk"
-VERIFY_CDK_CLI="${VERIFY_CDK_DIR}/node_modules/aws-cdk/bin/cdk"
+SLACK_SEARCH_CDK_DIR="${PROJECT_ROOT}/verification-zones/slack-search-agent/cdk"
+
+# CDK CLI: prefer workspace-root hoisted binary
+CDK_CLI="${PROJECT_ROOT}/node_modules/.bin/cdk"
+VERIFY_CDK_CLI="${VERIFY_CDK_DIR}/node_modules/.bin/cdk"
+if [[ ! -x "${VERIFY_CDK_CLI}" ]]; then
+    VERIFY_CDK_CLI="${CDK_CLI}"
+fi
+SLACK_SEARCH_CDK_CLI="${SLACK_SEARCH_CDK_DIR}/node_modules/.bin/cdk"
+if [[ ! -x "${SLACK_SEARCH_CDK_CLI}" ]]; then
+    SLACK_SEARCH_CDK_CLI="${CDK_CLI}"
+fi
+
 AWS_REGION="${AWS_REGION:-ap-northeast-1}"
 PROFILE_ARGS="${AWS_PROFILE:+--profile ${AWS_PROFILE}}"
 
 # Deployment environment
 DEPLOYMENT_ENV="${DEPLOYMENT_ENV:-}"
 if [[ -z "${DEPLOYMENT_ENV}" ]]; then
-    DEPLOYMENT_ENV=$(jq -r '.context.deploymentEnv // "dev"' "${CDK_DIR}/cdk.json" 2>/dev/null || echo "dev")
+    DEPLOYMENT_ENV="dev"
     log_warning "DEPLOYMENT_ENV not set. Using default: ${DEPLOYMENT_ENV}"
 fi
 DEPLOYMENT_ENV=$(echo "${DEPLOYMENT_ENV}" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
@@ -55,16 +71,17 @@ esac
 
 # Stack names
 ENV_SUFFIX=$([[ "${DEPLOYMENT_ENV}" == "prod" ]] && echo "Prod" || echo "Dev")
-EXEC_STACK="${EXECUTION_STACK_NAME:-SlackAI-Execution}-${ENV_SUFFIX}"
+EXEC_STACK="${FILE_CREATOR_STACK_NAME:-SlackAI-FileCreator}-${ENV_SUFFIX}"
 DOCS_STACK="${DOCS_EXECUTION_STACK_NAME:-SlackAI-DocsExecution}-${ENV_SUFFIX}"
 TIME_STACK="${TIME_EXECUTION_STACK_NAME:-SlackAI-TimeExecution}-${ENV_SUFFIX}"
 WEB_FETCH_STACK="${WEB_FETCH_EXECUTION_STACK_NAME:-SlackAI-WebFetch}-${ENV_SUFFIX}"
+SLACK_SEARCH_STACK="${SLACK_SEARCH_STACK_NAME:-SlackAI-SlackSearch}-${ENV_SUFFIX}"
 VERIFY_STACK="${VERIFICATION_STACK_NAME:-SlackAI-Verification}-${ENV_SUFFIX}"
 
 # ── Shared helpers ───────────────────────────────────────────
 
 get_config_value() {
-    local config_file="${CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
+    local config_file="${EXEC_CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
     [[ -f "${config_file}" ]] && jq -r ".\"$1\" // empty" "${config_file}" 2>/dev/null || echo ""
 }
 
@@ -75,7 +92,7 @@ get_verify_config_value() {
 
 save_execution_agent_arns_to_config() {
     local execution_arn="$1" docs_arn="$2" time_arn="$3" fetch_arn="$4"
-    local config_file="${CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
+    local config_file="${VERIFY_CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
     local tmp_file
     local arns_json
     tmp_file="$(mktemp)"
@@ -124,6 +141,23 @@ save_execution_agent_arns_to_config() {
         else
             rm -f "${vtmp}"
             log_warning "Could not update ${verify_config}"
+        fi
+    fi
+}
+
+save_slack_search_arn_to_config() {
+    local arn="$1"
+    [[ -z "${arn}" ]] && return
+    local verify_config="${VERIFY_CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json"
+    if [[ -f "${verify_config}" ]]; then
+        local vtmp
+        vtmp="$(mktemp)"
+        if jq --arg arn "${arn}" '.slackSearchAgentArn = $arn' "${verify_config}" > "${vtmp}"; then
+            mv "${vtmp}" "${verify_config}"
+            log_success "Saved slackSearchAgentArn to ${verify_config}"
+        else
+            rm -f "${vtmp}"
+            log_warning "Could not save slackSearchAgentArn to ${verify_config}"
         fi
     fi
 }
@@ -222,10 +256,11 @@ _fetch_logs() {
 # ── Subcommand: deploy ───────────────────────────────────────
 
 cmd_deploy() {
-    local exec_outputs docs_outputs time_outputs verify_outputs force_rebuild="false"
+    local exec_outputs docs_outputs time_outputs slack_search_outputs verify_outputs force_rebuild="false"
     local pre_exec_arn pre_docs_arn pre_time_arn pre_fetch_arn preflight_execution_agent_arns_json=""
-    exec_outputs="$(mktemp)"; docs_outputs="$(mktemp)"; time_outputs="$(mktemp)"; verify_outputs="$(mktemp)"
-    trap "rm -f '${exec_outputs}' '${docs_outputs}' '${time_outputs}' '${verify_outputs}'" EXIT
+    exec_outputs="$(mktemp)"; docs_outputs="$(mktemp)"; time_outputs="$(mktemp)"
+    slack_search_outputs="$(mktemp)"; verify_outputs="$(mktemp)"
+    trap "rm -f '${exec_outputs}' '${docs_outputs}' '${time_outputs}' '${slack_search_outputs}' '${verify_outputs}'" EXIT
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -249,12 +284,12 @@ cmd_deploy() {
     [[ -z "${SLACK_BOT_TOKEN:-}" ]]     && { log_error "SLACK_BOT_TOKEN is required (set env var or add to ${VERIFY_CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json)"; exit 1; }
     [[ -z "${SLACK_SIGNING_SECRET:-}" ]] && { log_error "SLACK_SIGNING_SECRET is required (set env var or add to ${VERIFY_CDK_DIR}/cdk.config.${DEPLOYMENT_ENV}.json)"; exit 1; }
     require_commands aws node jq
-    [[ -x "${CDK_CLI}" ]] || { log_error "CDK CLI not found at ${CDK_CLI}. Run: cd ${CDK_DIR} && npm install"; exit 1; }
+    [[ -x "${CDK_CLI}" ]] || { log_error "CDK CLI not found at ${CDK_CLI}. Run: npm install (from project root)"; exit 1; }
     [[ -x "${VERIFY_CDK_CLI}" ]] || { log_error "Verification CDK CLI not found. Run: cd ${VERIFY_CDK_DIR} && npm install"; exit 1; }
     log_success "Prerequisites OK (Execution: ${EXEC_STACK}, Docs: ${DOCS_STACK}, Time: ${TIME_STACK}, Verification: ${VERIFY_STACK})"
 
     # Preflight: deploy Verification first with current runtime ARNs to remove any legacy cross-stack import refs.
-    pre_exec_arn=$(get_stack_output "${EXEC_STACK}" "ExecutionAgentRuntimeArn")
+    pre_exec_arn=$(get_stack_output "${EXEC_STACK}" "FileCreatorAgentRuntimeArn")
     pre_docs_arn=$(get_stack_output "${DOCS_STACK}" "DocsAgentRuntimeArn")
     pre_time_arn=$(get_stack_output "${TIME_STACK}" "TimeAgentRuntimeArn")
     pre_fetch_arn=$(get_stack_output "${WEB_FETCH_STACK}" "WebFetchAgentRuntimeArn")
@@ -282,43 +317,49 @@ cmd_deploy() {
         log_info "Preflight skipped: ${EXEC_STACK} runtime ARN not found (first deploy path)"
     fi
 
-    # Phase 1: Execution Stack
+    # Phase 1: Execution Stack (file-creator-agent)
     log_info "========== Phase 1: Deploying Execution Stack =========="
+    local exec_context="--context deploymentEnv=${DEPLOYMENT_ENV}"
+    if [[ "${force_rebuild}" == "true" || -n "${FORCE_EXECUTION_IMAGE_REBUILD:-}" ]]; then
+        local hash="${FORCE_EXECUTION_IMAGE_REBUILD:-$(date +%s)}"
+        exec_context+=" --context forceExecutionImageRebuild=${hash}"
+        log_info "Forcing Execution image rebuild (hash=${hash})"
+        [[ -d "${EXEC_CDK_DIR}/cdk.out" ]] && rm -rf "${EXEC_CDK_DIR}/cdk.out"
+    fi
+    local slack_search_context_args="--context deploymentEnv=${DEPLOYMENT_ENV}"
+    if [[ "${force_rebuild}" == "true" || -n "${FORCE_SLACK_SEARCH_IMAGE_REBUILD:-}" ]]; then
+        local ss_hash="${FORCE_SLACK_SEARCH_IMAGE_REBUILD:-$(date +%s)}"
+        slack_search_context_args+=" --context forceSlackSearchImageRebuild=${ss_hash}"
+        [[ -d "${SLACK_SEARCH_CDK_DIR}/cdk.out" ]] && rm -rf "${SLACK_SEARCH_CDK_DIR}/cdk.out"
+    fi
+
+    ( cd "${EXEC_CDK_DIR}" && "${CDK_CLI}" deploy "${EXEC_STACK}" \
+        ${PROFILE_ARGS} --require-approval never \
+        --outputs-file "${exec_outputs}" ${exec_context} ) \
+        || { log_error "Failed to deploy ${EXEC_STACK}"; exit 1; }
+
+    exec_arn=$(get_output_from_file_or_stack "${exec_outputs}" "${EXEC_STACK}" "FileCreatorAgentRuntimeArn")
+    [[ -z "${exec_arn}" ]] && { log_error "FileCreatorAgentRuntimeArn not found in outputs"; exit 1; }
+    log_success "File Creator Stack deployed (ARN: ${exec_arn})"
+
+    # Phase 1.5: Docs Execution Stack
+    log_info "========== Phase 1.5: Deploying Docs Execution Stack =========="
     local docs_src="${PROJECT_ROOT}/docs"
-    local docs_agent_docs="${PROJECT_ROOT}/cdk/lib/docs-execution/agent/docs-agent/docs"
-    if [[ -d "${docs_src}" ]]; then
+    local docs_agent_docs="${DOCS_CDK_DIR}/lib/docs-agent/docs"
+    if [[ -d "${docs_src}" && -d "$(dirname "${docs_agent_docs}")" ]]; then
         rm -rf "${docs_agent_docs}"
         cp -r "${docs_src}" "${docs_agent_docs}"
         log_info "Copied docs/ into Docs Agent build context"
     fi
-
-    local context_args="--context deploymentEnv=${DEPLOYMENT_ENV}"
-    if [[ -n "${preflight_execution_agent_arns_json}" ]]; then
-        context_args+=" --context executionAgentArns=${preflight_execution_agent_arns_json}"
+    local docs_context="--context deploymentEnv=${DEPLOYMENT_ENV}"
+    if [[ "${force_rebuild}" == "true" || -n "${FORCE_DOCS_IMAGE_REBUILD:-}" ]]; then
+        local docs_hash="${FORCE_DOCS_IMAGE_REBUILD:-$(date +%s)}"
+        docs_context+=" --context forceDocsImageRebuild=${docs_hash}"
+        [[ -d "${DOCS_CDK_DIR}/cdk.out" ]] && rm -rf "${DOCS_CDK_DIR}/cdk.out"
     fi
-    if [[ "${force_rebuild}" == "true" || -n "${FORCE_EXECUTION_IMAGE_REBUILD:-}" || -n "${FORCE_DOCS_IMAGE_REBUILD:-}" || -n "${FORCE_TIME_IMAGE_REBUILD:-}" ]]; then
-        local hash="${FORCE_EXECUTION_IMAGE_REBUILD:-${FORCE_DOCS_IMAGE_REBUILD:-${FORCE_TIME_IMAGE_REBUILD:-$(date +%s)}}}"
-        context_args+=" --context forceExecutionImageRebuild=${hash}"
-        context_args+=" --context forceDocsImageRebuild=${hash}"
-        context_args+=" --context forceTimeImageRebuild=${hash}"
-        log_info "Forcing image rebuild (extraHash=${hash})"
-        [[ -d "${CDK_DIR}/cdk.out" ]] && rm -rf "${CDK_DIR}/cdk.out"
-    fi
-
-    ( cd "${CDK_DIR}" && "${CDK_CLI}" deploy "${EXEC_STACK}" \
+    ( cd "${DOCS_CDK_DIR}" && "${CDK_CLI}" deploy "${DOCS_STACK}" \
         ${PROFILE_ARGS} --require-approval never \
-        --outputs-file "${exec_outputs}" ${context_args} ) \
-        || { log_error "Failed to deploy ${EXEC_STACK}"; exit 1; }
-
-    exec_arn=$(get_output_from_file_or_stack "${exec_outputs}" "${EXEC_STACK}" "ExecutionAgentRuntimeArn")
-    [[ -z "${exec_arn}" ]] && { log_error "ExecutionAgentRuntimeArn not found in outputs"; exit 1; }
-    log_success "Execution Stack deployed (ARN: ${exec_arn})"
-
-    # Phase 1.5: Docs Execution Stack
-    log_info "========== Phase 1.5: Deploying Docs Execution Stack =========="
-    ( cd "${CDK_DIR}" && "${CDK_CLI}" deploy "${DOCS_STACK}" \
-        ${PROFILE_ARGS} --require-approval never \
-        --outputs-file "${docs_outputs}" ${context_args} ) \
+        --outputs-file "${docs_outputs}" ${docs_context} ) \
         || { log_error "Failed to deploy ${DOCS_STACK}"; exit 1; }
 
     docs_arn=$(get_output_from_file_or_stack "${docs_outputs}" "${DOCS_STACK}" "DocsAgentRuntimeArn")
@@ -327,14 +368,36 @@ cmd_deploy() {
 
     # Phase 1.75: Time Execution Stack
     log_info "========== Phase 1.75: Deploying Time Execution Stack =========="
-    ( cd "${CDK_DIR}" && "${CDK_CLI}" deploy "${TIME_STACK}" \
+    local time_context="--context deploymentEnv=${DEPLOYMENT_ENV}"
+    if [[ "${force_rebuild}" == "true" || -n "${FORCE_TIME_IMAGE_REBUILD:-}" ]]; then
+        local time_hash="${FORCE_TIME_IMAGE_REBUILD:-$(date +%s)}"
+        time_context+=" --context forceTimeImageRebuild=${time_hash}"
+        [[ -d "${TIME_CDK_DIR}/cdk.out" ]] && rm -rf "${TIME_CDK_DIR}/cdk.out"
+    fi
+    ( cd "${TIME_CDK_DIR}" && "${CDK_CLI}" deploy "${TIME_STACK}" \
         ${PROFILE_ARGS} --require-approval never \
-        --outputs-file "${time_outputs}" ${context_args} ) \
+        --outputs-file "${time_outputs}" ${time_context} ) \
         || { log_error "Failed to deploy ${TIME_STACK}"; exit 1; }
 
     time_arn=$(get_output_from_file_or_stack "${time_outputs}" "${TIME_STACK}" "TimeAgentRuntimeArn")
     [[ -z "${time_arn}" ]] && { log_error "TimeAgentRuntimeArn not found in outputs"; exit 1; }
     log_success "Time Execution Stack deployed (ARN: ${time_arn})"
+
+    # Phase 1.8: Slack Search Agent Stack
+    log_info "========== Phase 1.8: Deploying Slack Search Agent Stack =========="
+    ( cd "${SLACK_SEARCH_CDK_DIR}" && "${SLACK_SEARCH_CDK_CLI}" deploy "${SLACK_SEARCH_STACK}" \
+        ${PROFILE_ARGS} --require-approval never \
+        --outputs-file "${slack_search_outputs}" ${slack_search_context_args} ) \
+        || { log_error "Failed to deploy ${SLACK_SEARCH_STACK}"; exit 1; }
+    slack_search_arn=$(get_output_from_file_or_stack "${slack_search_outputs}" "${SLACK_SEARCH_STACK}" "SlackSearchAgentRuntimeArn")
+    if [[ -n "${slack_search_arn}" && "${slack_search_arn}" != "None" ]]; then
+        log_success "Slack Search Agent Stack deployed (ARN: ${slack_search_arn})"
+        save_slack_search_arn_to_config "${slack_search_arn}"
+    else
+        slack_search_arn=""
+        log_warning "SlackSearchAgentRuntimeArn not found; Slack search will be disabled"
+    fi
+
     fetch_arn=$(get_stack_output "${WEB_FETCH_STACK}" "WebFetchAgentRuntimeArn")
     if [[ -n "${fetch_arn}" && "${fetch_arn}" != "None" ]]; then
         log_success "Web Fetch Stack runtime detected (ARN: ${fetch_arn})"
@@ -363,7 +426,9 @@ cmd_deploy() {
     )
     verify_ctx+=" --context executionAgentArns=${execution_agent_arns_json}"
 
-    ( cd "${VERIFY_CDK_DIR}" && "${VERIFY_CDK_CLI}" deploy "${VERIFY_STACK}" \
+    ( cd "${VERIFY_CDK_DIR}" && \
+        SLACK_SEARCH_AGENT_ARN="${slack_search_arn:-}" \
+        "${VERIFY_CDK_CLI}" deploy "${VERIFY_STACK}" \
         ${PROFILE_ARGS} --require-approval never \
         --outputs-file "${verify_outputs}" ${verify_ctx} ) \
         || { log_error "Failed to deploy ${VERIFY_STACK}"; exit 1; }
@@ -413,6 +478,15 @@ cmd_deploy() {
                 && log_success "Fetch URL resource policy applied" \
                 || log_warning "Could not apply Fetch URL resource policy"
         fi
+        if [[ -n "${slack_search_arn:-}" ]]; then
+            python3 "${SCRIPT_DIR}/apply-resource-policy.py" \
+                --execution-agent-arn "${slack_search_arn}" \
+                --verification-role-arn "${role_arn}" \
+                --account-id "${verify_account}" \
+                --region "${AWS_REGION}" \
+                && log_success "Slack Search resource policy applied" \
+                || log_warning "Could not apply Slack Search resource policy"
+        fi
     fi
 
     # Phase 3: Validate AgentCore runtimes
@@ -420,24 +494,27 @@ cmd_deploy() {
     local handler_url verify_arn
     handler_url=$(get_output_from_file_or_stack "${verify_outputs}" "${VERIFY_STACK}" "SlackEventHandlerUrl")
     verify_arn=$(get_output_from_file_or_stack "${verify_outputs}" "${VERIFY_STACK}" "VerificationAgentRuntimeArn")
-    local eid did tid fid vid
-    eid=$(get_runtime_id "${exec_arn}"); did=$(get_runtime_id "${docs_arn}"); tid=$(get_runtime_id "${time_arn}"); fid=$(get_runtime_id "${fetch_arn}"); vid=$(get_runtime_id "${verify_arn}")
+    local eid did tid fid ssid vid
+    eid=$(get_runtime_id "${exec_arn}"); did=$(get_runtime_id "${docs_arn}"); tid=$(get_runtime_id "${time_arn}")
+    fid=$(get_runtime_id "${fetch_arn}"); ssid=$(get_runtime_id "${slack_search_arn:-}"); vid=$(get_runtime_id "${verify_arn}")
     [[ -n "${eid}" ]] && wait_for_agent_ready "Execution Agent" "${eid}" 120
     [[ -n "${did}" ]] && wait_for_agent_ready "Docs Agent" "${did}" 120
     [[ -n "${tid}" ]] && wait_for_agent_ready "Time Agent" "${tid}" 120
     [[ -n "${fid}" ]] && wait_for_agent_ready "Web Fetch Agent" "${fid}" 120
+    [[ -n "${ssid}" ]] && wait_for_agent_ready "Slack Search Agent" "${ssid}" 120
     [[ -n "${vid}" ]] && wait_for_agent_ready "Verification Agent" "${vid}" 120
 
     # Summary
     echo ""
     log_success "========== Deployment Complete! =========="
     echo ""
-    echo "Slack Event Handler URL: ${handler_url:-N/A}"
-    echo "Execution Agent ARN:     ${exec_arn:-N/A}"
-    echo "Docs Agent ARN:          ${docs_arn:-N/A}"
-    echo "Time Agent ARN:          ${time_arn:-N/A}"
-    echo "Fetch URL Agent ARN:     ${fetch_arn:-N/A}"
-    echo "Verification Agent ARN:  ${verify_arn:-N/A}"
+    echo "Slack Event Handler URL:   ${handler_url:-N/A}"
+    echo "Execution Agent ARN:       ${exec_arn:-N/A}"
+    echo "Docs Agent ARN:            ${docs_arn:-N/A}"
+    echo "Time Agent ARN:            ${time_arn:-N/A}"
+    echo "Fetch URL Agent ARN:       ${fetch_arn:-N/A}"
+    echo "Slack Search Agent ARN:    ${slack_search_arn:-N/A (disabled)}"
+    echo "Verification Agent ARN:    ${verify_arn:-N/A}"
     echo ""
     echo "Next steps:"
     echo "  1. Configure Slack Event Subscriptions with the URL above"
@@ -467,6 +544,12 @@ cmd_status() {
         --query 'Stacks[0].{LastUpdated:LastUpdatedTime,Status:StackStatus}' \
         --output table 2>/dev/null || echo "Stack not found or no access."
     echo ""
+    echo "=== Slack Search Agent Stack status (${SLACK_SEARCH_STACK}) ==="
+    aws cloudformation describe-stacks --stack-name "${SLACK_SEARCH_STACK}" \
+        --region "${AWS_REGION}" ${PROFILE_ARGS} \
+        --query 'Stacks[0].{LastUpdated:LastUpdatedTime,Status:StackStatus}' \
+        --output table 2>/dev/null || echo "Stack not found or no access."
+    echo ""
     echo "Container image tag:"
     aws cloudformation get-template --stack-name "${EXEC_STACK}" \
         --region "${AWS_REGION}" ${PROFILE_ARGS} \
@@ -486,9 +569,9 @@ cmd_check_access() {
     echo ""
     echo "--- [1] Execution Agent リソースポリシー ---"
     local exec_arn
-    exec_arn=$(get_stack_output "${EXEC_STACK}" "ExecutionAgentRuntimeArn")
+    exec_arn=$(get_stack_output "${EXEC_STACK}" "FileCreatorAgentRuntimeArn")
     if [[ -z "${exec_arn}" || "${exec_arn}" == "None" ]]; then
-        echo "  (スキップ) ExecutionAgentRuntimeArn を取得できませんでした。"
+        echo "  (スキップ) FileCreatorAgentRuntimeArn を取得できませんでした。"
     else
         echo "  Runtime ARN: ${exec_arn}"
         local policy_json
@@ -587,14 +670,15 @@ cmd_logs() {
     [[ "$mode" == "correlation-id" && -z "$correlation_id" ]] && { log_error "--correlation-id requires a value"; exit 1; }
 
     # Discover log groups (Lambda + AgentCore in parallel)
-    local seh_lg="" ai_lg="" sp_lg="" va_lg="" ea_lg="" da_lg="" ta_lg=""
+    local seh_lg="" ai_lg="" sp_lg="" va_lg="" ea_lg="" da_lg="" ta_lg="" ssa_lg=""
     log_info "Discovering log groups..."
-    local lambda_groups agentcore_groups exec_rt_id docs_rt_id time_rt_id verify_rt_id
+    local lambda_groups agentcore_groups exec_rt_id docs_rt_id time_rt_id slack_search_rt_id verify_rt_id
     lambda_groups=$(mktemp)
     agentcore_groups=$(mktemp)
-    exec_rt_id=$(get_runtime_id "$(get_stack_output "${EXEC_STACK}" "ExecutionAgentRuntimeArn")")
+    exec_rt_id=$(get_runtime_id "$(get_stack_output "${EXEC_STACK}" "FileCreatorAgentRuntimeArn")")
     docs_rt_id=$(get_runtime_id "$(get_stack_output "${DOCS_STACK}" "DocsAgentRuntimeArn")")
     time_rt_id=$(get_runtime_id "$(get_stack_output "${TIME_STACK}" "TimeAgentRuntimeArn")")
+    slack_search_rt_id=$(get_runtime_id "$(get_stack_output "${SLACK_SEARCH_STACK}" "SlackSearchAgentRuntimeArn")")
     verify_rt_id=$(get_runtime_id "$(get_stack_output "${VERIFY_STACK}" "VerificationAgentRuntimeArn")")
     aws logs describe-log-groups \
         --log-group-name-prefix "/aws/lambda/${VERIFY_STACK}" \
@@ -617,18 +701,20 @@ cmd_logs() {
         [[ -n "${exec_rt_id}" && "$lg" == *"/${exec_rt_id}-DEFAULT" ]] && ea_lg="$lg"
         [[ -n "${docs_rt_id}" && "$lg" == *"/${docs_rt_id}-DEFAULT" ]] && da_lg="$lg"
         [[ -n "${time_rt_id}" && "$lg" == *"/${time_rt_id}-DEFAULT" ]] && ta_lg="$lg"
+        [[ -n "${slack_search_rt_id}" && "$lg" == *"/${slack_search_rt_id}-DEFAULT" ]] && ssa_lg="$lg"
     done
     rm -f "${lambda_groups}" "${agentcore_groups}"
 
     if [[ "$mode" == "list" ]]; then
         echo -e "${CYAN}Discovered log groups:${NC}"
-        printf "  %-24s %s\n" "Slack Event Handler:" "${seh_lg:-<not found>}"
-        printf "  %-24s %s\n" "Agent Invoker:" "${ai_lg:-<not found>}"
-        printf "  %-24s %s\n" "Slack Poster:" "${sp_lg:-<not found>}"
-        printf "  %-24s %s\n" "Verification Agent:" "${va_lg:-<not found>}"
-        printf "  %-24s %s\n" "Execution Agent:" "${ea_lg:-<not found>}"
-        printf "  %-24s %s\n" "Docs Agent:" "${da_lg:-<not found>}"
-        printf "  %-24s %s\n" "Time Agent:" "${ta_lg:-<not found>}"
+        printf "  %-28s %s\n" "Slack Event Handler:" "${seh_lg:-<not found>}"
+        printf "  %-28s %s\n" "Agent Invoker:" "${ai_lg:-<not found>}"
+        printf "  %-28s %s\n" "Slack Poster:" "${sp_lg:-<not found>}"
+        printf "  %-28s %s\n" "Verification Agent:" "${va_lg:-<not found>}"
+        printf "  %-28s %s\n" "Execution Agent:" "${ea_lg:-<not found>}"
+        printf "  %-28s %s\n" "Docs Agent:" "${da_lg:-<not found>}"
+        printf "  %-28s %s\n" "Time Agent:" "${ta_lg:-<not found>}"
+        printf "  %-28s %s\n" "Slack Search Agent:" "${ssa_lg:-<not found>}"
         return
     fi
 
@@ -669,7 +755,8 @@ cmd_logs() {
     _fetch_logs "$ea_lg"  "4. Execution Agent (AgentCore)" "agentcore"
     _fetch_logs "$da_lg"  "5. Docs Agent (AgentCore)" "agentcore"
     _fetch_logs "$ta_lg"  "6. Time Agent (AgentCore)" "agentcore"
-    _fetch_logs "$sp_lg"  "7. Slack Poster"
+    _fetch_logs "$ssa_lg" "7. Slack Search Agent (AgentCore)" "agentcore"
+    _fetch_logs "$sp_lg"  "8. Slack Poster"
 }
 
 # ── Subcommand: policy ───────────────────────────────────────
@@ -684,8 +771,8 @@ cmd_policy() {
     done
 
     local exec_arn docs_arn time_arn fetch_arn account_id verify_account
-    exec_arn=$(get_stack_output "${EXEC_STACK}" "ExecutionAgentRuntimeArn")
-    [[ -z "${exec_arn}" ]] && { log_error "ExecutionAgentRuntimeArn not found. Is ${EXEC_STACK} deployed?"; exit 1; }
+    exec_arn=$(get_stack_output "${EXEC_STACK}" "FileCreatorAgentRuntimeArn")
+    [[ -z "${exec_arn}" ]] && { log_error "FileCreatorAgentRuntimeArn not found. Is ${EXEC_STACK} deployed?"; exit 1; }
     docs_arn=$(get_stack_output "${DOCS_STACK}" "DocsAgentRuntimeArn")
     time_arn=$(get_stack_output "${TIME_STACK}" "TimeAgentRuntimeArn")
     fetch_arn=$(get_stack_output "${WEB_FETCH_STACK}" "WebFetchAgentRuntimeArn")
@@ -756,11 +843,12 @@ Logs options:
   --limit N             Max events per group. Default: 50
 
 Environment variables:
-  DEPLOYMENT_ENV        dev or prod (required for deploy)
-  AWS_REGION            Default: ap-northeast-1
-  AWS_PROFILE           AWS CLI profile (optional)
-  SLACK_BOT_TOKEN       Required for deploy
-  SLACK_SIGNING_SECRET  Required for deploy
+  DEPLOYMENT_ENV                 dev or prod (required for deploy)
+  AWS_REGION                     Default: ap-northeast-1
+  AWS_PROFILE                    AWS CLI profile (optional)
+  SLACK_BOT_TOKEN                Required for deploy
+  SLACK_SIGNING_SECRET           Required for deploy
+  FORCE_SLACK_SEARCH_IMAGE_REBUILD  Force Slack Search Agent image rebuild
 
 Examples:
   DEPLOYMENT_ENV=dev ./scripts/deploy.sh

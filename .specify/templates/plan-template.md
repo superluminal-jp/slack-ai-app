@@ -33,6 +33,13 @@
 
 [Gates determined based on constitution file]
 
+**Required checks for every PR (constitution v1.1.0)**:
+- [ ] **SDD (I)**: spec in `specs/` exists; acceptance criteria are Given/When/Then verifiable
+- [ ] **TDD (II)**: test tasks precede implementation tasks; Red→Green→Refactor planned
+- [ ] **Security-First (III)**: security pipeline layers unaffected or explicitly justified
+- [ ] **Zone Isolation (V)**: no cross-zone direct imports; new capabilities are new agents
+- [ ] **Doc & Deploy Parity (VI)**: README/CHANGELOG/CLAUDE.md update tasks included; deploy script output keys verified against CDK `CfnOutput` names
+
 ## Project Structure
 
 ### Documentation (this feature)

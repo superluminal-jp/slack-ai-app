@@ -208,6 +208,7 @@ This separation enables:
 - **Thread context**: Maintains conversation history within Slack threads
 - **Attachment processing** (024): Images (PNG, JPEG, GIF, WebP) and documents (PDF, DOCX, XLSX, CSV, TXT, PPTX). Files flow via S3 pre-signed URLs; max 5 files per message, 10 MB for images, 5 MB for documents. Native Bedrock document blocks for high-quality Q&A.
 - **Iterative multi-agent reasoning** (036): The verification agent runs a Strands agentic loop that can dispatch a single request to multiple specialist agents in parallel, synthesize all results, and iterate across up to 5 reasoning turns until the task is complete. Partial results are returned with an explanatory note when the turn limit fires.
+- **Slack channel search** (038): The verification agent can search Slack channel history, retrieve thread content by URL, and fetch the latest messages from a channel via a dedicated Slack Search Agent (A2A). Access is restricted to the calling channel and public channels — private channels are never accessible.
 
 ### Infrastructure
 
@@ -220,9 +221,10 @@ This separation enables:
 
 ## Architecture
 
-The application uses **five independent CDK apps** (one per agent zone), each deployable separately:
+The application uses **six independent CDK apps** (one per agent zone), each deployable separately:
 
 - **Verification Zone** (`verification-zones/verification-agent/cdk`): SlackEventHandler Lambda + Verification Agent (AgentCore) + DynamoDB + Secrets Manager
+- **Slack Search Agent Zone** (`verification-zones/slack-search-agent/cdk`): Slack channel search agent (AgentCore Runtime + ECR) — deployed within verification zone, called via A2A
 - **File-Creator Agent Zone** (`execution-zones/file-creator-agent/cdk`): File-creator agent (AgentCore Runtime + ECR)
 - **Time Agent Zone** (`execution-zones/time-agent/cdk`): Current-time agent (AgentCore Runtime + ECR)
 - **Docs Agent Zone** (`execution-zones/docs-agent/cdk`): Document-search agent (AgentCore Runtime + ECR)
@@ -265,16 +267,22 @@ slack-ai-app/
 │   ├── time-agent/               # Same structure — current-time agent
 │   ├── docs-agent/               # Same structure — docs-search agent
 │   └── fetch-url-agent/          # Same structure — URL-fetch agent
-├── verification-zones/           # Verification agent CDK app
-│   └── verification-agent/
+├── verification-zones/           # Verification agent CDK apps
+│   ├── verification-agent/
+│   │   ├── cdk/                  # Standalone CDK app (TypeScript)
+│   │   │   ├── bin/cdk.ts
+│   │   │   ├── lib/
+│   │   │   │   ├── verification-stack.ts
+│   │   │   │   ├── constructs/   # AgentCore Runtime, ECR, Lambda, …
+│   │   │   │   └── lambda/       # SlackEventHandler Lambda
+│   │   │   └── test/
+│   │   ├── src/                  # Python agent source
+│   │   ├── tests/                # Python unit tests
+│   │   └── scripts/deploy.sh
+│   └── slack-search-agent/       # Slack channel search agent (A2A)
 │       ├── cdk/                  # Standalone CDK app (TypeScript)
-│       │   ├── bin/cdk.ts
-│       │   ├── lib/
-│       │   │   ├── verification-stack.ts
-│       │   │   ├── constructs/   # AgentCore Runtime, ECR, Lambda, …
-│       │   │   └── lambda/       # SlackEventHandler Lambda
-│       │   └── test/
-│       ├── src/                  # Python agent source
+│       ├── src/                  # Python agent source (FastAPI + Strands)
+│       │   └── tools/            # search_messages, get_thread, get_channel_history
 │       ├── tests/                # Python unit tests
 │       └── scripts/deploy.sh
 ├── platform/
@@ -301,11 +309,12 @@ slack-ai-app/
 
 ```bash
 # CDK synthesis tests (Jest) — per zone
-cd execution-zones/execution-agent/cdk && npm test
+cd execution-zones/file-creator-agent/cdk && npm test
 cd execution-zones/time-agent/cdk && npm test
 cd execution-zones/docs-agent/cdk && npm test
 cd execution-zones/fetch-url-agent/cdk && npm test
 cd verification-zones/verification-agent/cdk && npm test
+cd verification-zones/slack-search-agent/cdk && npm test
 
 # Python agent tests (pytest) — per zone
 cd execution-zones/file-creator-agent && python -m pytest tests/ -v
@@ -313,6 +322,7 @@ cd execution-zones/time-agent && python -m pytest tests/ -v
 cd execution-zones/docs-agent && python -m pytest tests/ -v
 cd execution-zones/fetch-url-agent && python -m pytest tests/ -v
 cd verification-zones/verification-agent && python -m pytest tests/ -v
+cd verification-zones/slack-search-agent && python -m pytest tests/ -v
 ```
 
 ### View Logs
@@ -549,9 +559,18 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 
-**Last Updated**: 2026-02-22
+**Last Updated**: 2026-03-15
 
 ## Recent Updates
+
+- **2026-03-15**: Slack Search Agent (038)
+  - New `verification-zones/slack-search-agent/` zone: Bedrock AgentCore Runtime for searching Slack channel history, retrieving threads by URL, and fetching channel history
+  - Three Strands tools: `search_messages` (keyword filter, up to 100 messages), `get_thread` (Slack URL parsing), `get_channel_history` (latest N messages, max 20)
+  - Channel access control: calling channel and public channels allowed; private channels (other than calling channel) denied
+  - `SlackSearchClient` and `make_slack_search_tool` factory added to verification-agent; `SLACK_SEARCH_AGENT_ARN` env var activates the `slack_search` tool in the orchestrator
+  - `slackSearchAgentArn` optional prop added to verification-agent CDK config
+  - Fixed 5 pre-existing CDK test failures (stale compiled JS, `tsconfig.json` typeRoots, WAF `WebACLAssociation` intrinsic assertion)
+  - Test counts: slack-search-agent 46, verification-agent 219, verification-agent CDK 35
 
 - **2026-02-22**: Iterative multi-agent reasoning (036)
   - Replaced single-pass routing with a Strands agentic loop in the verification agent (`orchestrator.py`, `hooks.py`, `agent_tools.py`)

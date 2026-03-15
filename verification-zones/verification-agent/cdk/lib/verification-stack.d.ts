@@ -9,10 +9,10 @@ import { VerificationStackProps } from "./types/stack-config";
  * Verification Stack (Account A / Verification Zone)
  *
  * Purpose: Handles Slack events, validates and authorizes requests, and invokes the Verification Agent
- * (AgentCore A2A). Communicates with Execution Stack only via AgentCore A2A (SigV4); no API Gateway or SQS.
+ * (AgentCore A2A). Communicates with Execution Stack only via AgentCore A2A (SigV4); ingress is exposed via Function URL and API Gateway (Regional + WAF).
  *
  * Responsibilities:
- * - Slack event ingestion (SlackEventHandler Lambda with Function URL)
+ * - Slack event ingestion (SlackEventHandler Lambda with Function URL and API Gateway)
  * - DynamoDB (token storage, event dedupe, existence check cache, whitelist, rate limit)
  * - Secrets Manager (Slack credentials)
  * - Verification Agent AgentCore Runtime (A2A) and ECR image
@@ -30,6 +30,8 @@ export declare class VerificationStack extends cdk.Stack {
     readonly lambdaRoleArn: string;
     /** The Function URL (for Slack Event Subscriptions) */
     readonly functionUrl: string;
+    /** API Gateway URL (recommended ingress for high-security environments) */
+    readonly apiGatewayUrl: string;
     /** AgentCore Runtime for Verification Agent (A2A) */
     readonly verificationAgentRuntime: VerificationAgentRuntime;
     /** AgentCore ECR image for Verification Agent */

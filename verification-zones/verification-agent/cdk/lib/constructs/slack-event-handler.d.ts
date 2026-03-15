@@ -34,6 +34,11 @@ export interface SlackEventHandlerProps {
      * Ensures warm instances are retired and new ones fetch updated secrets from Secrets Manager.
      */
     configRevision?: string;
+    /**
+     * Channel IDs where the bot auto-replies to all messages without requiring a mention.
+     * Comma-separated string is set as AUTO_REPLY_CHANNEL_IDS env var.
+     */
+    autoReplyChannelIds?: string[];
 }
 export declare class SlackEventHandler extends Construct {
     readonly function: lambda.Function;
