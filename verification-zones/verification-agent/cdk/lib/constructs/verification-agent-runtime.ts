@@ -57,6 +57,8 @@ export interface VerificationAgentRuntimeProps {
   readonly errorDebugLogGroup?: logs.ILogGroup;
   /** S3 bucket for temporary file exchange between zones (024) */
   readonly fileExchangeBucket?: s3.IBucket;
+  /** ARN of the Slack Search Agent AgentCore Runtime (optional; 038) */
+  readonly slackSearchAgentArn?: string;
 }
 
 export class VerificationAgentRuntime extends Construct {
@@ -200,9 +202,10 @@ export class VerificationAgentRuntime extends Construct {
     // the agent endpoint (see resource-based-policies.html "Hierarchical authorization").
     // Include both endpoint ARN forms: ...:runtime-endpoint/Name/DEFAULT and
     // ...:runtime/Name/runtime-endpoint/DEFAULT (latter is used at evaluation per AccessDenied message).
-    const targetAgentArns = Object.values(props.executionAgentArns || {}).filter(
-      (arn): arn is string => Boolean(arn)
-    );
+    const targetAgentArns = [
+      ...Object.values(props.executionAgentArns || {}),
+      ...(props.slackSearchAgentArn ? [props.slackSearchAgentArn] : []),
+    ].filter((arn): arn is string => Boolean(arn));
     const invokeResources = targetAgentArns.length
       ? targetAgentArns.flatMap((runtimeArn) => {
           const endpointArnDoc =
@@ -270,6 +273,9 @@ export class VerificationAgentRuntime extends Construct {
       props.fileExchangeBucket.grantReadWrite(this.executionRole, "attachments/*");
       props.fileExchangeBucket.grantDelete(this.executionRole, "attachments/*");
       props.fileExchangeBucket.grantReadWrite(this.executionRole, "generated_files/*");
+    }
+    if (props.slackSearchAgentArn) {
+      environmentVariables.SLACK_SEARCH_AGENT_ARN = props.slackSearchAgentArn;
     }
 
     // Create AgentCore Runtime using L1 CfnResource

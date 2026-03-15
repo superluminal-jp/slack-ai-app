@@ -287,6 +287,15 @@ const bedrockModelId = getConfigString(
   "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
 );
 
+// Slack Search Agent ARN (optional; set after deploying slack-search-agent stack)
+const slackSearchAgentArn =
+  process.env.SLACK_SEARCH_AGENT_ARN?.trim() ||
+  getConfigString("slackSearchAgentArn") ||
+  undefined;
+if (slackSearchAgentArn) {
+  app.node.setContext("slackSearchAgentArn", slackSearchAgentArn);
+}
+
 // Create Verification Stack
 new VerificationStack(app, verificationStackName, {
   env: verificationEnv,
@@ -296,6 +305,7 @@ new VerificationStack(app, verificationStackName, {
     Object.keys(executionAgentArns).length > 0 ? executionAgentArns : undefined,
   bedrockModelId: bedrockModelId || undefined,
   autoReplyChannelIds: autoReplyChannelIds.length > 0 ? autoReplyChannelIds : undefined,
+  slackSearchAgentArn: slackSearchAgentArn || undefined,
 });
 logInfo("Verification stack created.", {
   phase: "stack",

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Slack Search Agent** (`038-slack-search-agent`): New standalone `verification-zones/slack-search-agent/` zone deploying a Bedrock AgentCore Runtime. Exposes three tools — `search_messages`, `get_thread`, `get_channel_history` — over A2A. Channel access is restricted to the calling channel and public channels; private channels other than the calling channel are denied. CDK stack: `SlackSearchAgentStack`.
+- **`SlackSearchClient` and `slack_search` Strands tool** (`verification-agent`, `038-slack-search-agent`): `src/slack_search_client.py` calls the Slack Search Agent via A2A; `src/slack_search_tool.py` wraps it as a Strands `@tool` registered with the orchestrator. `OrchestrationRequest` gains `channel` and `bot_token` fields. The `slack_search` tool is conditionally added when `SLACK_SEARCH_AGENT_ARN` is set.
+- **`slackSearchAgentArn` CDK configuration option** (`verification-agent`, `038-slack-search-agent`): Optional prop wired through `cdk.config.{env}.json` → `CdkConfig` → `VerificationStackProps` → runtime construct → `SLACK_SEARCH_AGENT_ARN` env var.
+
+### Fixed
+
+- **5 pre-existing CDK test failures in verification-agent** (`038-slack-search-agent`): Recompiled stale `verification-stack.js` (was missing API Gateway/WAF code); fixed `tsconfig.json` `typeRoots` to include workspace root `node_modules/@types`; replaced `Match.stringLikeRegexp` (fails on `Fn::Join` intrinsic) with `findResources()` existence check for the WAF WebACLAssociation assertion. Result: 35/35 CDK tests pass.
+
 ### Changed
 
 - **Renamed `execution-zones/execution-agent/` → `execution-zones/file-creator-agent/`**: Directory name now matches the agent's actual identity (CDK constructs and agent card already used `file-creator-agent`). Updated path references in `CLAUDE.md`, `package.json`, `scripts/deploy/deploy-execution-all.sh`, and `scripts/validate/preflight.sh`.

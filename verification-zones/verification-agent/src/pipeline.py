@@ -586,6 +586,8 @@ def run(payload: dict) -> str:
             available_agents=get_all_cards(),
             correlation_id=correlation_id,
             max_turns=max_turns,
+            channel=channel,
+            bot_token=bot_token,
         )
 
         try:

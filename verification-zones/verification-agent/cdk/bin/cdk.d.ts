@@ -10,7 +10,8 @@
  * (4) Defaults in code. See getConfigValue / getConfigString and loadConfiguration.
  *
  * Execution agent ARNs are supplied via config file (executionAgentArns) or individual env vars:
- * FILE_CREATOR_AGENT_ARN, DOCS_AGENT_ARN, TIME_AGENT_ARN (or combined EXECUTION_AGENT_ARNS JSON).
+ * FILE_CREATOR_AGENT_ARN, DOCS_AGENT_ARN, TIME_AGENT_ARN, WEB_FETCH_AGENT_ARN
+ * (or combined EXECUTION_AGENT_ARNS JSON).
  *
  * Deploy order: 1) Deploy execution CDK app (execution-zones/) to get runtime ARNs,
  *               2) Set executionAgentArns in cdk.config.{env}.json (or env vars),

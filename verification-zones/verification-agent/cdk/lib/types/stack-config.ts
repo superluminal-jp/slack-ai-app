@@ -49,6 +49,12 @@ export interface VerificationStackProps extends cdk.StackProps {
    * e.g. ["C0AFSG79T8D"]
    */
   readonly autoReplyChannelIds?: string[];
+
+  /**
+   * ARN of the Slack Search Agent AgentCore Runtime (optional).
+   * Set after deploying the slack-search-agent stack.
+   */
+  readonly slackSearchAgentArn?: string;
 }
 
 /**
