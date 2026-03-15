@@ -24,7 +24,7 @@ def _ts_to_jst(ts: str) -> str:
     try:
         dt = datetime.fromtimestamp(float(ts), tz=_JST)
         return dt.strftime("%Y年%m月%d日 %H:%M:%S JST")
-    except (ValueError, OSError):
+    except (ValueError, OSError, OverflowError, TypeError):
         return ts
 
 # Slack message URL pattern:
