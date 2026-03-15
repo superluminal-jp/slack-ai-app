@@ -68,6 +68,14 @@ def test_timestamps_formatted_as_jst():
     assert "JST" in result
 
 
+def test_invalid_ts_falls_back_without_raising():
+    """OverflowError, TypeError, and invalid values fall back to raw ts, never raise."""
+    from tools.get_channel_history import _ts_to_jst
+    assert _ts_to_jst("9" * 40) == "9" * 40   # OverflowError
+    assert _ts_to_jst(None) is None             # TypeError
+    assert _ts_to_jst("not-a-number") == "not-a-number"  # ValueError
+
+
 def test_calling_channel_allowed():
     """The calling channel is always accessible."""
     messages = [_make_message("calling channel message")]
