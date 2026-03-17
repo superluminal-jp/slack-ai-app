@@ -16,6 +16,12 @@ Auto-generated from all feature plans. Last updated: 2026-03-15
 - No new storage — DynamoDB and S3 schemas unchanged (036-iterative-reasoning)
 - Python 3.11 (`python:3.11-slim`, ARM64 container) + `strands-agents[a2a,otel]~=1.25.0`, `fastapi~=0.115.0`, `uvicorn~=0.34.0`, `boto3~=1.42.0`, `slack-sdk~=3.27.0` (038-slack-search-agent)
 - N/A（新規ストレージなし。bot_token は A2A params 経由で受け取る） (038-slack-search-agent)
+- Python 3.11 (`python:3.11-slim`, ARM64) + TypeScript 5.x (CDK) + boto3 ~=1.42.0, aws-cdk-lib (existing), strands-agents[a2a,otel] ~=1.25.0 (039-usage-history)
+- DynamoDB (new `usage-history` table) + S3 (new `usage-history` bucket) (039-usage-history)
+- TypeScript 5.x (CDK), Python 3.11 (Lambda trigger handler) + `aws-cdk-lib` 2.215.0 (aws-events, aws-events-targets, aws-lambda, aws-iam, aws-dynamodb, aws-s3), `boto3` (Lambda runtime) (040-dynamodb-pitr-export)
+- DynamoDB (existing `usage-history` table, add PITR), S3 (existing `usage-history` bucket, add `dynamodb-exports/` lifecycle + bucket policy) (040-dynamodb-pitr-export)
+- TypeScript 5.x (CDK) + `aws-cdk-lib` 2.215.0 (stable) — `aws-s3`, `aws-iam` (041-s3-replication-archive)
+- S3 (two buckets: existing source, new archive destination) (041-s3-replication-archive)
 
 - Python 3.11 (コンテナ: `python:3.11-slim`, ARM64) + `bedrock-agentcore` v1.2.0 (Starlette ベース), `starlette`, `uvicorn` (020-fix-a2a-routing)
 
@@ -98,9 +104,10 @@ DEPLOYMENT_ENV=dev ./scripts/deploy.sh
 Python 3.11 (コンテナ: `python:3.11-slim`, ARM64): Follow standard conventions
 
 ## Recent Changes
-- 038-slack-search-agent: New `verification-zones/slack-search-agent/` zone with Bedrock AgentCore Runtime. Tools: `search_messages`, `get_thread`, `get_channel_history`. Channel access control: calling channel + public channels allowed; private channels denied. CDK stack: `SlackSearchAgentStack`. New `SlackSearchClient` and `make_slack_search_tool` in verification-agent for A2A integration; `OrchestrationRequest` gains `channel` + `bot_token` fields; `SLACK_SEARCH_AGENT_ARN` env var activates the tool. Also fixed 5 pre-existing CDK test failures (stale JS, tsconfig typeRoots, WAF WebACLAssociation assertion).
-- 036-iterative-reasoning: Strands agentic loop orchestrator for iterative multi-agent reasoning; no new dependencies (A2A execution agents only)
-- 035-fetch-url-agent: New standalone `fetch-url-agent` zone with `fetch_url` tool (SSRF-safe URL fetch). `fetch_url` removed from `execution-agent`. `requests`/`beautifulsoup4` remain in `fetch-url-agent` only. WEB_FETCH_AGENT_ARN env var added to verification-agent CDK.
+- 042-code-cleanup: Removed spec-number annotations from all verification-zones comments/docstrings; migrated Lambda handler raw print() to structured logger calls; removed unused imports (ruff F401 clean); deleted orphan bedrock_client.py; fixed missing log_warn import in slack-response-handler; updated stale test patches (invoke_execution_agent → run_orchestration_loop).
+- 041-s3-replication-archive: S3 SRR from usage-history → usage-history-archive; all prefixes (content/, attachments/, dynamodb-exports/); deleteMarkerReplication disabled; cross-account ready via archiveAccountId config / ARCHIVE_ACCOUNT_ID env; new constructs UsageHistoryArchiveBucket + UsageHistoryReplication; versioning enabled on source bucket.
+- 040-dynamodb-pitr-export: Added TypeScript 5.x (CDK), Python 3.11 (Lambda trigger handler) + `aws-cdk-lib` 2.215.0 (aws-events, aws-events-targets, aws-lambda, aws-iam, aws-dynamodb, aws-s3), `boto3` (Lambda runtime)
+- 040-dynamodb-pitr-export: PITR enabled on usage-history DynamoDB table; daily export to S3 dynamodb-exports/ prefix at JST 00:00 (EventBridge Scheduler + Lambda); 90-day lifecycle; CloudWatch alarm.
 
 
 <!-- MANUAL ADDITIONS START -->

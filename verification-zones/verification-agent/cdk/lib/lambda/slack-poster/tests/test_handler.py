@@ -1,11 +1,8 @@
-"""Tests for Slack Poster Lambda (019, 028)."""
+"""Tests for Slack Poster Lambda."""
 
 import base64
 import json
-from io import BytesIO
 from unittest.mock import patch, MagicMock
-
-import pytest
 
 
 @patch("handler.WebClient")
@@ -90,7 +87,7 @@ def test_lambda_handler_missing_channel_returns_failure(mock_webclient):
 @patch("handler.urllib.request.urlopen")
 @patch("handler.WebClient")
 def test_lambda_handler_post_file_via_s3_presigned_url(mock_webclient, mock_urlopen):
-    """Post request with s3PresignedUrl fetches file from URL and uploads to Slack (028)."""
+    """Post request with s3PresignedUrl fetches file from URL and uploads to Slack."""
     from handler import lambda_handler
 
     file_content = b"large file content from s3"
@@ -133,7 +130,7 @@ def test_lambda_handler_post_file_via_s3_presigned_url(mock_webclient, mock_urlo
 
 @patch("handler.WebClient")
 def test_lambda_handler_post_file_via_content_base64(mock_webclient):
-    """Post request with contentBase64 decodes and uploads to Slack (028)."""
+    """Post request with contentBase64 decodes and uploads to Slack."""
     from handler import lambda_handler
 
     file_content = b"small inline file content"

@@ -112,6 +112,7 @@ def verify_signature(
     except Exception as e:
         # Log error in production (but don't expose details to caller)
         # For MVP, we silently return False
-        print(f"Signature verification error: {str(e)}")
+        from logger import log_error
+        log_error("slack_signature_verification_error", {"error": str(e)}, error=e)
         return False
 

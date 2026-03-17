@@ -19,6 +19,11 @@ import { VerificationAgentEcr } from "./constructs/verification-agent-ecr";
 import { AgentInvoker } from "./constructs/agent-invoker";
 import { SlackPoster } from "./constructs/slack-poster";
 import { FileExchangeBucket } from "./constructs/file-exchange-bucket";
+import { UsageHistoryTable } from "./constructs/usage-history-table";
+import { UsageHistoryBucket } from "./constructs/usage-history-bucket";
+import { DynamoDbExportJob } from "./constructs/dynamodb-export-job";
+import { UsageHistoryArchiveBucket } from "./constructs/usage-history-archive-bucket";
+import { UsageHistoryReplication } from "./constructs/usage-history-replication";
 import { VerificationStackProps } from "./types/stack-config";
 
 /**
@@ -58,7 +63,7 @@ export class VerificationStack extends cdk.Stack {
   /** AgentCore Runtime ARN for cross-stack reference */
   public readonly verificationAgentRuntimeArn: string;
 
-  /** SQS queue for async agent invocation requests (016) */
+  /** SQS queue for async agent invocation requests */
   public readonly agentInvocationQueue: sqs.IQueue;
 
   constructor(scope: Construct, id: string, props: VerificationStackProps) {
@@ -133,6 +138,21 @@ export class VerificationStack extends cdk.Stack {
       this,
       "FileExchangeBucket",
     );
+    const usageHistoryTable = new UsageHistoryTable(this, "UsageHistoryTable");
+    const usageHistoryBucket = new UsageHistoryBucket(this, "UsageHistoryBucket");
+    const dynamoDbExportJob = new DynamoDbExportJob(this, "DynamoDbExportJob", {
+      table: usageHistoryTable.table,
+      bucket: usageHistoryBucket.bucket,
+    });
+    const usageHistoryArchiveBucket = new UsageHistoryArchiveBucket(
+      this,
+      "UsageHistoryArchiveBucket"
+    );
+    new UsageHistoryReplication(this, "UsageHistoryReplication", {
+      sourceBucket: usageHistoryBucket.bucket,
+      archiveBucket: usageHistoryArchiveBucket.bucket,
+      archiveAccountId: props.archiveAccountId,
+    });
 
     const agentInvocationDlq = new sqs.Queue(
       this,
@@ -217,6 +237,8 @@ export class VerificationStack extends cdk.Stack {
           props.slackSearchAgentArn ||
           (this.node.tryGetContext("slackSearchAgentArn") as string | undefined) ||
           undefined,
+        usageHistoryTable: usageHistoryTable.table,
+        usageHistoryBucket: usageHistoryBucket.bucket,
       },
     );
     this.verificationAgentRuntimeArn = this.verificationAgentRuntime.runtimeArn;
@@ -432,6 +454,21 @@ export class VerificationStack extends cdk.Stack {
         period: cdk.Duration.minutes(5),
       }),
       threshold: 10,
+      evaluationPeriods: 1,
+      comparisonOperator:
+        cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    new cloudwatch.Alarm(this, "DynamoDbExportJobFailureAlarm", {
+      alarmName: `${this.stackName}-dynamodb-export-job-failure`,
+      alarmDescription:
+        "Alert when DynamoDB daily export job Lambda fails (potential data backup gap)",
+      metric: dynamoDbExportJob.function.metricErrors({
+        period: cdk.Duration.minutes(5),
+        statistic: "Sum",
+      }),
+      threshold: 1,
       evaluationPeriods: 1,
       comparisonOperator:
         cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,

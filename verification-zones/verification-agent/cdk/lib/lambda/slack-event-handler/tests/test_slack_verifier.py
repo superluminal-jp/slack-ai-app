@@ -9,11 +9,8 @@ import hashlib
 import hmac
 import json
 import time
-from unittest import mock
 
-import pytest
-
-# Import the function we'll be testing (it doesn't exist yet, but that's expected)
+# Import the function we'll be testing
 from slack_verifier import verify_signature
 
 

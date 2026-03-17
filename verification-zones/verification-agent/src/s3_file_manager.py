@@ -2,10 +2,10 @@
 S3 file manager for temporary file exchange between verification and execution zones.
 
 Two prefixes:
-  - attachments/{correlation_id}/{file_id}/{file_name} — Slack → Execution Agent (024)
-  - generated_files/{correlation_id}/{file_name} — Execution Agent → Slack (028)
+  - attachments/{correlation_id}/{file_id}/{file_name} — Slack → Execution Agent
+  - generated_files/{correlation_id}/{file_name} — Execution Agent → Slack
 
-028: Large file artifacts (> 200 KB) are uploaded under generated_files/ and delivered
+Large file artifacts (> 200 KB) are uploaded under generated_files/ and delivered
 to Slack Poster via pre-signed URL in the SQS message (bypasses SQS 256 KB limit).
 
 Pre-signed URL expiry: 15 min (default). Lifecycle: 1-day safety net on both prefixes.
@@ -79,7 +79,7 @@ def upload_generated_file_to_s3(
     """
     Upload generated file bytes to S3 under generated_files/{correlation_id}/{sanitized_file_name}.
 
-    Used for large file artifacts (> 200 KB) to bypass SQS 256 KB limit (028).
+    Used for large file artifacts (> 200 KB) to bypass SQS 256 KB limit.
 
     Args:
         file_bytes: Raw file content.
@@ -135,7 +135,7 @@ def generate_presigned_url_for_generated_file(
     expiry: int = PRESIGNED_URL_EXPIRY_DEFAULT,
 ) -> str:
     """
-    Generate a pre-signed GET URL for a generated file in S3 (028).
+    Generate a pre-signed GET URL for a generated file in S3.
 
     Reuses generate_presigned_url logic; same expiry (15 min default).
 

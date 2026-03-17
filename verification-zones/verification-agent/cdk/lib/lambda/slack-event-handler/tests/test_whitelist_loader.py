@@ -6,7 +6,7 @@ and environment variables, including cache TTL and fail-closed error handling.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch, MagicMock
 import os
 import json
 import time
@@ -20,9 +20,6 @@ from whitelist_loader import (
     get_whitelist_from_dynamodb,
     get_whitelist_from_secrets_manager,
     get_whitelist_from_env,
-    _is_cache_valid,
-    _whitelist_cache,
-    _cache_ttl,
 )
 
 
@@ -198,8 +195,6 @@ class TestSecretsManagerLoading:
     @patch.dict(os.environ, {'WHITELIST_SECRET_NAME': 'test-whitelist-secret'})
     def test_get_whitelist_from_secrets_manager_invalid_json(self, mock_get_client):
         """Test Secrets Manager loading with invalid JSON."""
-        from botocore.exceptions import ClientError
-        
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
         

@@ -85,13 +85,12 @@ class TestHandleMessageParsing:
 class TestSecurityPipeline:
     """Test the security verification pipeline."""
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_existence_check_failure_blocks_request(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
         """Failed existence check should return error, not delegate."""
         from existence_check import ExistenceCheckError
@@ -115,15 +114,14 @@ class TestSecurityPipeline:
 
         assert result_data["status"] == "error"
         assert result_data["error_code"] == "existence_check_failed"
-        mock_invoke.assert_not_called()
+        mock_routing_defaults.assert_not_called()
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_authorization_failure_blocks_request(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
         """Unauthorized request should return error, not delegate."""
         mock_auth.return_value = Mock(authorized=False, unauthorized_entities=["T_BAD"])
@@ -145,15 +143,14 @@ class TestSecurityPipeline:
 
         assert result_data["status"] == "error"
         assert result_data["error_code"] == "authorization_failed"
-        mock_invoke.assert_not_called()
+        mock_routing_defaults.assert_not_called()
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_rate_limit_exceeded_blocks_request(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
         """Exceeding rate limit should return error, not delegate."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
@@ -176,7 +173,7 @@ class TestSecurityPipeline:
 
         assert result_data["status"] == "error"
         assert result_data["error_code"] == "rate_limit_exceeded"
-        mock_invoke.assert_not_called()
+        mock_routing_defaults.assert_not_called()
 
 
 class TestExecutionDelegation:
@@ -189,7 +186,7 @@ class TestExecutionDelegation:
     def test_success_response_posted_to_slack(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
-        """Successful execution response should be enqueued to Slack Poster (019)."""
+        """Successful execution response should be enqueued to Slack Poster."""
         from src.orchestrator import OrchestrationResult
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
@@ -228,7 +225,7 @@ class TestExecutionDelegation:
     def test_success_with_file_artifact_posts_text_then_file(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
-        """When result has response_text and file_artifact, send one request with both (019)."""
+        """When result has response_text and file_artifact, send one request with both."""
         import base64
         from src.orchestrator import OrchestrationResult
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
@@ -278,7 +275,7 @@ class TestExecutionDelegation:
     def test_success_text_only_does_not_call_post_file_to_slack(
         self, mock_existence, mock_auth, mock_rate, mock_send
     ):
-        """When result has no generated_file, only send_slack_post_request with text (019)."""
+        """When result has no generated_file, only send_slack_post_request with text."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
         from main import handle_message
@@ -303,7 +300,7 @@ class TestExecutionDelegation:
     def test_success_file_only_calls_post_file_to_slack_not_post_to_slack_for_content(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
-        """When only file (no/empty response_text), send one request with file_artifact only (019)."""
+        """When only file (no/empty response_text), send one request with file_artifact only."""
         import base64
         from src.orchestrator import OrchestrationResult
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
@@ -387,7 +384,7 @@ class TestExecutionDelegation:
     def test_error_response_posts_friendly_message(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
-        """Orchestration loop exception should post a user-friendly error message (036)."""
+        """Orchestration loop exception should post a user-friendly error message."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
         mock_routing_defaults.side_effect = Exception("timeout")
@@ -417,7 +414,7 @@ class TestExecutionDelegation:
     def test_execution_agent_exception_posts_generic_error(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
-        """Exception from orchestration loop should enqueue generic error (036)."""
+        """Exception from orchestration loop should enqueue generic error."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
         mock_routing_defaults.side_effect = Exception("Connection refused")
@@ -777,13 +774,12 @@ class Test022SecurityCheckPipeline:
             })
         }
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_existence_check_runs_before_authorization(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
         """T008: When existence check fails, authorization is NOT called."""
         from existence_check import ExistenceCheckError
@@ -797,15 +793,14 @@ class Test022SecurityCheckPipeline:
         assert result_data["error_code"] == "existence_check_failed"
         mock_auth.assert_not_called()
         mock_rate.assert_not_called()
-        mock_invoke.assert_not_called()
+        mock_routing_defaults.assert_not_called()
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_authorization_runs_before_rate_limit(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
         """T009: When authorization fails, rate_limit is NOT called."""
         mock_auth.return_value = Mock(authorized=False, unauthorized_entities=["T_BAD"])
@@ -818,15 +813,14 @@ class Test022SecurityCheckPipeline:
         assert result_data["error_code"] == "authorization_failed"
         mock_existence.assert_called_once()
         mock_rate.assert_not_called()
-        mock_invoke.assert_not_called()
+        mock_routing_defaults.assert_not_called()
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_rate_limit_exception_class_returns_error(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
         """T010: RateLimitExceededError exception returns rate_limit_exceeded error."""
         from rate_limiter import RateLimitExceededError
@@ -839,15 +833,14 @@ class Test022SecurityCheckPipeline:
 
         result_data = json.loads(result)
         assert result_data["error_code"] == "rate_limit_exceeded"
-        mock_invoke.assert_not_called()
+        mock_routing_defaults.assert_not_called()
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_authorization_exception_returns_error(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
         """T011: Unexpected exception from authorize_request returns authorization_error."""
         mock_auth.side_effect = Exception("DynamoDB connection failed")
@@ -858,7 +851,7 @@ class Test022SecurityCheckPipeline:
 
         result_data = json.loads(result)
         assert result_data["error_code"] == "authorization_error"
-        mock_invoke.assert_not_called()
+        mock_routing_defaults.assert_not_called()
 
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
@@ -926,18 +919,17 @@ class Test022ExecutionErrorPaths:
     def test_empty_response_from_execution_handles_gracefully(self):
         """T020: Empty string response from execution agent does not crash, posts error to Slack."""
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_exception_does_not_leak_internal_details(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
         """T021: Exception from execution agent — Slack message does NOT contain stack trace, ARN, or token."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
-        mock_invoke.side_effect = Exception(
+        mock_routing_defaults.side_effect = Exception(
             "arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/exec-agent failed"
         )
 
@@ -951,20 +943,19 @@ class Test022ExecutionErrorPaths:
         assert "Traceback" not in posted_text, f"Stack trace leaked in Slack message: {posted_text}"
         assert "xoxb-" not in posted_text, f"Bot token leaked in Slack message: {posted_text}"
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_is_processing_reset_on_execution_exception(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults
     ):
         """T022: pipeline.is_processing is False after execution agent raises exception."""
         import pipeline
 
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
-        mock_invoke.side_effect = RuntimeError("Connection timeout")
+        mock_routing_defaults.side_effect = RuntimeError("Connection timeout")
 
         from main import handle_message
 
@@ -992,18 +983,16 @@ class Test022StructuredLogging:
             })
         }
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_all_logs_are_valid_json(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke, capsys
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults, capsys
     ):
         """T025: Every log line is parseable JSON with level, event_type, service keys."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
-        mock_invoke.return_value = json.dumps({"status": "success", "response_text": "ok"})
 
         from main import handle_message
 
@@ -1020,18 +1009,16 @@ class Test022StructuredLogging:
             assert "service" in log, f"Log line {i} missing 'service': {line}"
             assert log["service"] == "verification-agent", f"Log line {i} wrong service: {log['service']}"
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_correlation_id_present_in_all_log_entries(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke, capsys
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults, capsys
     ):
         """T026: Every JSON log line contains correlation_id matching the request."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
-        mock_invoke.return_value = json.dumps({"status": "success", "response_text": "ok"})
 
         from main import handle_message
 
@@ -1049,18 +1036,16 @@ class Test022StructuredLogging:
                 f"Log line {i} correlation_id mismatch: expected {test_corr_id}, got {log.get('correlation_id')}"
             )
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_security_check_logs_include_result(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke, capsys
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults, capsys
     ):
         """T027: Existence check, authorization, and rate limit steps emit log entries."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
-        mock_invoke.return_value = json.dumps({"status": "success", "response_text": "ok"})
 
         from main import handle_message
 
@@ -1083,18 +1068,17 @@ class Test022StructuredLogging:
             f"No delegation log found. Event types: {event_types}"
         )
 
-    @patch("pipeline.invoke_execution_agent")
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.check_rate_limit")
     @patch("pipeline.authorize_request")
     @patch("pipeline.check_entity_existence")
     def test_error_log_does_not_contain_bot_token(
-        self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke, capsys
+        self, mock_existence, mock_auth, mock_rate, mock_send, mock_routing_defaults, capsys
     ):
         """T028: No log entry contains the bot_token value (no credential leakage)."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
-        mock_invoke.side_effect = RuntimeError("Execution failed")
+        mock_routing_defaults.side_effect = RuntimeError("Execution failed")
 
         from main import handle_message
 
