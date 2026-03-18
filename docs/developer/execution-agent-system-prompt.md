@@ -1,21 +1,45 @@
-# Execution Agent システムプロンプト（単一ソース）
+# エージェントシステムプロンプト管理方針
 
-## 結論
+**目的**: 各 Execution Agent のシステムプロンプトがどこで定義・管理されるかを説明する。
+**対象読者**: 開発者
+**最終更新日**: 2026-03-18
 
-**システムプロンプトは一箇所で定義し、Execution Agent（コンテナ）のみが参照します。**
+---
 
-- **Canonical**: `execution-zones/execution-agent/src/system_prompt.py`
-- **参照**: `execution-zones/execution-agent/src/agent_factory.py` → `FULL_SYSTEM_PROMPT`
+## 方針
 
-## Lambda は不要か
+各エージェントは **独自の `system_prompt.py`** を持ち、プロンプトはそのエージェント内でのみ定義・参照する。
+複数エージェントで共有するシステムプロンプトは存在しない。
 
-**不要です。** 現在の Execution Stack は **コンテナ（AgentCore Runtime）のみ** をデプロイしています（spec 015 で旧 Lambda 実行パスは削除済み）。本番の AI 処理はすべて Execution Agent コンテナ経由です。
+| エージェント | Canonical ファイル | 役割 |
+|---|---|---|
+| docs-agent | `execution-zones/docs-agent/src/system_prompt.py` | プロジェクトドキュメントの検索・回答 |
+| file-creator-agent | `execution-zones/file-creator-agent/src/system_prompt.py` | ファイル生成 |
+| time-agent | `execution-zones/time-agent/src/system_prompt.py` | 現在時刻の取得・回答 |
+| fetch-url-agent | `execution-zones/fetch-url-agent/src/system_prompt.py` | URL コンテンツの取得・要約 |
 
-## 運用
+---
 
-- **編集するのは一箇所**: `execution-zones/execution-agent/src/system_prompt.py`
-- **agent_factory ではプロンプトを書かない**: `execution-agent/agent_factory.py` は `from system_prompt import FULL_SYSTEM_PROMPT` して `system_prompt=FULL_SYSTEM_PROMPT` を渡すだけ。
+## 運用ルール
 
-## ツール
+- **編集するのはエージェントごとの `system_prompt.py` のみ**。`agent_factory.py` にプロンプト文字列を直接書かない。
+- 各 `agent_factory.py` は `from system_prompt import FULL_SYSTEM_PROMPT` でインポートし、`system_prompt=FULL_SYSTEM_PROMPT` として渡す。
+- プロンプト変更後は対象エージェントの pytest を実行して動作を確認する。
 
-コンテナの `agent_factory.get_tools()` で、ファイル生成・search_docs・get_current_time・文書/スライドガイドラインを登録。system_prompt の `FULL_SYSTEM_PROMPT` がそれらに対応している。
+```bash
+# docs-agent の例
+cd execution-zones/docs-agent/src && python -m pytest ../tests/ -v
+
+# file-creator-agent の例
+cd execution-zones/file-creator-agent && python -m pytest tests/ -v
+```
+
+---
+
+## Verification Zone エージェント
+
+Verification Zone の slack-search-agent も同様の構造を持つ。
+
+| エージェント | Canonical ファイル |
+|---|---|
+| slack-search-agent | `verification-zones/slack-search-agent/src/system_prompt.py` |

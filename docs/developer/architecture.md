@@ -44,25 +44,35 @@
 │ │ - 添付ファイルメタデータ抽出                          │ │
 │ │ - 構造化JSONログ（相関ID）                            │ │
 │ │ [2] → Slackにリアクション（👀）で応答                 │ │
-│ │ [3] → Execution Agent (A2A) を呼び出し               │ │
+│ │ [3] → Verification Agent (A2A) を呼び出し            │ │
 │ └──────────────────────┬──────────────────────────────────┘ │
+│                        │                                     │
+│ ┌─────────────────────▼──────────────────────────────────┐ │
+│ │ Verification Agent (AgentCore Runtime)                  │ │
+│ │ セキュリティパイプライン・Strands オーケストレーション   │ │
+│ └──────────────────────┬──────────────────────────────────┘ │
+│                        │                                     │
+│ ┌─────────────────────▼──────────────────────────────────┐ │
+│ │ Slack Search Agent (AgentCore Runtime)                  │ │
+│ │ Slack メッセージ検索（A2A 経由でディスパッチ）           │ │
+│ └─────────────────────────────────────────────────────────┘ │
 └────────────────────────┼────────────────────────────────────┘
                          │ [3] A2A呼び出し (SigV4)
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ Execution Zone (実行層)                                      │
 │ ┌─────────────────────────────────────────────────────────┐ │
-│ │ Execution Agent (AgentCore Runtime)                     │ │
-│ │ タイムアウト: 30秒                                      │ │
-│ │ 責任範囲:                                              │ │
-│ │ - AWS Bedrock Converse API呼び出し                     │ │
-│ │   * 統一インターフェース、マルチモーダル対応            │ │
-│ │   * バイナリ画像データ（Base64不要）                   │ │
-│ │ - 添付ファイル処理: 画像とドキュメントのダウンロード    │ │
-│ │ - 画像分析: Bedrock Converse API視覚機能               │ │
-│ │ - ドキュメント抽出: PDF, DOCX, CSV, XLSX, PPTX, TXT   │ │
-│ │ - PPTX変換: LibreOfficeを使用したスライド画像変換     │ │
-│ │ - 複数添付ファイル: 複数ファイルの順次処理             │ │
+│ │ Execution Agents (AgentCore Runtime × 4)                │ │
+│ │ タイムアウト: 各 30秒                                   │ │
+│ │                                                         │ │
+│ │ file-creator-agent  ファイル生成・書き出し              │ │
+│ │ time-agent          現在時刻の取得・回答                │ │
+│ │ docs-agent          プロジェクトドキュメント検索・回答  │ │
+│ │ fetch-url-agent     URL コンテンツ取得・要約            │ │
+│ │                                                         │ │
+│ │ 共通責任範囲:                                           │ │
+│ │ - AWS Bedrock Converse API 呼び出し                    │ │
+│ │ - A2A エンドポイント提供（POST /）                      │ │
 │ └────────────────────┬───────────────────────────────────┘ │
 │                      │                                       │
 │ ┌─────────────────────────────────────────────────────────┐ │
@@ -103,8 +113,8 @@
 フロー:
 - [1] ユーザーが @AIアプリ名 リクエスト を実行（添付ファイル可）
 - [2] SlackEventHandler がリアクション（👀）で応答（タイムアウト: 10秒）
-- [3] SlackEventHandler が Execution Agent を A2A (SigV4) で呼び出し
-- [4] Execution Agent が Bedrock API を呼び出し、結果を A2A レスポンスとして返す
+- [3] SlackEventHandler が Verification Agent を A2A (SigV4) で呼び出し
+- [4] Verification Agent の Strands ループが必要な Execution Agent（file-creator/time/docs/fetch-url）または Slack Search Agent に並列ディスパッチし、Bedrock API 呼び出し結果を集約
 - [5] SlackResponseHandler が Slack API に投稿、リアクションを ✅ に更新
 
 
@@ -116,9 +126,11 @@
 | SlackEventHandler         | 検証層処理               | Python 3.11 (Lambda)       | 署名検証（鍵 1）、Existence Check（鍵 2）、ホワイトリスト認可（3c）、Verification Agent 呼び出し、即座応答、添付ファイルメタデータ抽出      |
 | Function URL              | パブリックエンドポイント | Lambda Function URL        | リクエスト受付、SlackEventHandler へのルーティング                                                                                           |
 | Verification Agent        | 検証・オーケストレーション | AgentCore Runtime (ARM64) | セキュリティパイプライン（存在確認・認可・レート制限）、Strands エージェントループ（反復推論・マルチエージェントディスパッチ）、Slack 返信  |
-| Execution Agents          | 実行層エージェント群     | AgentCore Runtime (ARM64)  | A2A エンドポイント提供（port 9000）、専門タスク実行（ファイル生成・時刻取得・ドキュメント検索・URL 取得）                                    |
+| Slack Search Agent        | Slack 検索（検証ゾーン） | AgentCore Runtime (ARM64)  | Slack メッセージ・チャンネル検索（A2A 経由）。`verification-zones/slack-search-agent/` に配置                                               |
+| Execution Agents          | 実行層エージェント群（4 種） | AgentCore Runtime (ARM64) | file-creator-agent（ファイル生成）、time-agent（時刻取得）、docs-agent（ドキュメント検索）、fetch-url-agent（URL 取得）。A2A エンドポイント提供 |
 | Bedrock Converse          | AI モデル                | Foundation Model           | 統一インターフェース、マルチモーダル入力（テキスト+画像）、多様な AI 機能（会話、コード生成、データ分析など、モデル選択可能）              |
-| DynamoDB                  | データストア             | DynamoDB                   | トークンストレージ (slack-workspace-tokens)、イベント重複排除 (slack-event-dedupe)、Existence Check キャッシュ (slack-existence-check-cache) |
+| DynamoDB                  | データストア             | DynamoDB                   | slack-workspace-tokens、slack-event-dedupe、slack-existence-check-cache、whitelist-config、slack-rate-limit、usage-history（計 6 テーブル） |
+| S3                        | オブジェクトストレージ   | Amazon S3                  | 添付ファイル一時交換（Verification → Execution）、usage-history バケット（S3 SRR でアーカイブバケットにレプリケーション）                   |
 | LibreOffice Layer         | PPTX 変換                | Lambda Layer               | PowerPoint スライドを画像に変換（オプション）                                                                                                |
 
 ### 1.3 主要データフロー
@@ -211,16 +223,18 @@ SlackBedrockStack
 Verification Zone と複数 Execution Zone を独立スタックに分離。クロスアカウントデプロイに対応。
 
 ```
-┌─────────────────────────────┐    ┌───────────────────────────────────────────┐
-│ VerificationStack           │    │ Execution Stacks                          │
-│ (Account A)                 │    │ (Account B)                               │
-│                             │    │                                           │
-│ - SlackEventHandler Lambda  │───▶│ - FileCreator (AgentCore Runtime)        │
-│ - Function URL              │    │ - Time (AgentCore Runtime)               │
-│ - DynamoDB tables (5)       │    │ - Docs (AgentCore Runtime)               │
-│ - Secrets Manager           │    │ - WebFetch (AgentCore Runtime)           │
-│ - CloudWatch Alarms         │    │ - CloudWatch Logs/Metrics                │
-└─────────────────────────────┘    └───────────────────────────────────────────┘
+┌─────────────────────────────────┐    ┌───────────────────────────────────────────┐
+│ VerificationStack               │    │ Execution Stacks                          │
+│ (Account A)                     │    │ (Account B)                               │
+│                                 │    │                                           │
+│ - SlackEventHandler Lambda      │───▶│ - FileCreator (AgentCore Runtime)        │
+│ - Function URL                  │    │ - Time (AgentCore Runtime)               │
+│ - DynamoDB tables (6)           │    │ - Docs (AgentCore Runtime)               │
+│ - S3 buckets (usage-history)    │    │ - WebFetch (AgentCore Runtime)           │
+│ - Secrets Manager               │    │ - CloudWatch Logs/Metrics                │
+│ - Slack Search Agent (Runtime)  │    └───────────────────────────────────────────┘
+│ - CloudWatch Alarms             │
+└─────────────────────────────────┘
 ```
 
 **利点**:
@@ -442,59 +456,24 @@ def authorize_request(team_id, user_id, channel_id):
 | NFR-09 | ユーザー単位 Bedrock コスト    | ≤$10/月              | Cost Explorer         |
 | NFR-10 | コンテキスト履歴暗号化         | すべての DynamoDB データ | KMS 暗号化確認    |
 
-### 4.3 Execution Agent（実行層）
+### 4.3 Execution Agents（実行層エージェント群）
 
-**ファイル**: `execution-zones/execution-agent/src/main.py`
+Execution Zone は独立した 4 つのエージェントで構成される。各エージェントは AgentCore Runtime（ARM64 コンテナ）として動作し、`POST /`・`GET /ping`・`GET /.well-known/agent-card.json` を提供する。
 
-**目的**: Bedrock API を呼び出して AI 機能を提供（会話、画像生成、コード生成、データ分析など）
+| エージェント | エントリポイント | 主な責任 |
+|---|---|---|
+| file-creator-agent | `execution-zones/file-creator-agent/src/main.py` | ファイル生成・書き出し |
+| time-agent | `execution-zones/time-agent/src/main.py` | 現在時刻の取得・回答 |
+| docs-agent | `execution-zones/docs-agent/src/main.py` | `search_docs` ツールでプロジェクトドキュメントを検索して回答 |
+| fetch-url-agent | `execution-zones/fetch-url-agent/src/main.py` | URL コンテンツ取得・要約 |
 
-**セキュリティ管理**:
+**共通セキュリティ管理**:
 - 最小権限 IAM ロール（Bedrock 呼び出しのみ）
-- Bedrock Guardrails 適用（60 言語対応、Automated Reasoning 99%精度）
-- トークン数制限（モデル最大値: Claude 4.5/Nova Pro は 8192 トークン）
-- コンテキスト履歴の暗号化（DynamoDB + KMS）
+- Bedrock Guardrails 適用
 - CloudTrail ログ（すべての Bedrock API 呼び出し）
+- cdk-nag AwsSolutions スキャンによる CDK スタック検証（詳細は §4.6）
 
-**主な処理フロー**:
-1. ペイロード検証（channel, text, bot_token）
-2. 添付ファイル処理（process_attachments）
-3. スレッド履歴取得（get_thread_history if thread_ts）
-4. Bedrock Converse API 呼び出し（invoke_bedrock）
-5. A2A レスポンスとして返却（SlackResponseHandler が Slack API に投稿）
-
-**Bedrock Converse API 呼び出しの核心部分**:
-
-```python
-def invoke_bedrock(prompt, conversation_history=None, images=None, image_formats=None, document_texts=None):
-    content_parts = []
-    if prompt and prompt.strip():
-        content_parts.append({"text": prompt.strip()})
-    if document_texts:
-        for doc_text in document_texts:
-            content_parts.append({"text": f"\n\n[Document content]\n{doc_text}"})
-    if images:
-        formats = image_formats if image_formats else ["png"] * len(images)
-        for image_bytes, image_format in zip(images, formats):
-            content_parts.append({
-                "image": {"format": image_format, "source": {"bytes": image_bytes}}
-            })
-
-    messages = list(conversation_history) if conversation_history else []
-    messages.append({"role": "user", "content": content_parts})
-
-    response = bedrock_runtime.converse(
-        modelId=model_id,
-        messages=messages,
-        inferenceConfig={"maxTokens": max_tokens, "temperature": TEMPERATURE}
-    )
-    return response["output"]["message"]["content"][0]["text"].strip()
-```
-
-**トークン数制限**（モデルごとの自動決定）:
-- Claude 4.5 系（Sonnet/Haiku/Opus）: 8192 tokens
-- Amazon Nova Pro: 8192 tokens
-- Amazon Nova Lite: 4096 tokens
-- 環境変数 `BEDROCK_MAX_TOKENS` で上書き可能
+**システムプロンプト管理**: 各エージェントは `src/system_prompt.py` に `FULL_SYSTEM_PROMPT` を定義し、`agent_factory.py` がインポートして使用する。詳細は [エージェントシステムプロンプト管理方針](./execution-agent-system-prompt.md) を参照。
 
 ### 4.4 添付ファイル処理パイプライン
 
@@ -561,6 +540,28 @@ def extract_attachment_metadata(event):
 
 **CloudWatch アラーム**:
 - `RateLimitExceededAlarm`: 5分間に10回以上のレート制限超過でトリガー
+
+### 4.6 データ保持・監査・ガバナンス
+
+#### usage-history
+
+利用履歴の長期保持のため、以下のリソースが Verification Zone に配置されています。
+
+| リソース | 説明 |
+|---|---|
+| DynamoDB `usage-history` テーブル | リクエスト・レスポンスのメタデータを記録。PITR（ポイントインタイムリカバリ）有効 |
+| S3 `usage-history` バケット | 利用履歴の長期保存。`content/`・`attachments/`・`dynamodb-exports/` プレフィックスを持つ |
+| S3 Same-Region Replication (SRR) | `usage-history` → `usage-history-archive` バケットへの同一リージョンレプリケーション。削除マーカーレプリケーションは無効 |
+| DynamoDB PITR エクスポート | EventBridge Scheduler が定期的に DynamoDB の PITR エクスポートを S3 `dynamodb-exports/` プレフィックスにトリガー |
+
+#### cdk-nag ガバナンス
+
+すべての CDK スタック（Execution × 4、Verification、Slack Search Agent）に `cdk-nag` AwsSolutions ルールセットが適用されています。
+
+- **synth 時**: `Aspects.of(app).add(new AwsSolutionsChecks())` でルール違反を検出
+- **Jest テスト時**: 各 CDK スタックのテストで cdk-nag を実行し、CI で違反を検出
+- **抑制管理**: 意図的な逸脱は `NagSuppressions.addResourceSuppressions()` に文書化された理由とともに記録
+- **Bedrock IAM**: ワイルドカードリソースポリシーを禁止。モデルスコープ ARN のみ許可
 
 ---
 
@@ -663,11 +664,11 @@ def extract_attachment_metadata(event):
 ## 関連ドキュメント
 
 - [セキュリティ](./security.md) — 認証・認可の詳細、脅威モデル
-- [トラブルシューティング](../how-to/troubleshooting.md) — 一般的なエラーと解決手順
+- [トラブルシューティング](./troubleshooting.md) — 一般的なエラーと解決手順
 - [ランブック](./runbook.md) — デプロイ・運用手順
 - [機能要件](../reference/requirements/functional-requirements.md) — ビジネス要件と機能仕様
 - [Quickstart](./quickstart.md) — 初回デプロイとゾーン設定手順
 
 ---
 
-**最終更新日**: 2026-02-22
+**最終更新日**: 2026-03-18
