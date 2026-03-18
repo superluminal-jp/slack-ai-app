@@ -39,7 +39,7 @@ class TestGenerateTextFile:
         tool_context = MagicMock()
         tool_context.invocation_state = {}
 
-        result = generate_text_file(
+        generate_text_file(
             content="content",
             filename="report:bad/chars.md",
             tool_context=tool_context,

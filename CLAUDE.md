@@ -22,6 +22,7 @@ Auto-generated from all feature plans. Last updated: 2026-03-15
 - DynamoDB (existing `usage-history` table, add PITR), S3 (existing `usage-history` bucket, add `dynamodb-exports/` lifecycle + bucket policy) (040-dynamodb-pitr-export)
 - TypeScript 5.x (CDK) + `aws-cdk-lib` 2.215.0 (stable) — `aws-s3`, `aws-iam` (041-s3-replication-archive)
 - S3 (two buckets: existing source, new archive destination) (041-s3-replication-archive)
+- Python 3.11 + ruff (linting), pytest (test runner) (043-exec-cleanup)
 
 - Python 3.11 (コンテナ: `python:3.11-slim`, ARM64) + `bedrock-agentcore` v1.2.0 (Starlette ベース), `starlette`, `uvicorn` (020-fix-a2a-routing)
 
@@ -104,10 +105,9 @@ DEPLOYMENT_ENV=dev ./scripts/deploy.sh
 Python 3.11 (コンテナ: `python:3.11-slim`, ARM64): Follow standard conventions
 
 ## Recent Changes
+- 043-exec-cleanup: Removed spec-number annotations from all execution-zones comments/docstrings; removed unused imports (ruff F401 clean) and dead assignments (F841); fixed f-string without placeholder (F541); renamed spec-numbered test classes to intent-based names. Zero behavioral changes.
 - 042-code-cleanup: Removed spec-number annotations from all verification-zones comments/docstrings; migrated Lambda handler raw print() to structured logger calls; removed unused imports (ruff F401 clean); deleted orphan bedrock_client.py; fixed missing log_warn import in slack-response-handler; updated stale test patches (invoke_execution_agent → run_orchestration_loop).
 - 041-s3-replication-archive: S3 SRR from usage-history → usage-history-archive; all prefixes (content/, attachments/, dynamodb-exports/); deleteMarkerReplication disabled; cross-account ready via archiveAccountId config / ARCHIVE_ACCOUNT_ID env; new constructs UsageHistoryArchiveBucket + UsageHistoryReplication; versioning enabled on source bucket.
-- 040-dynamodb-pitr-export: Added TypeScript 5.x (CDK), Python 3.11 (Lambda trigger handler) + `aws-cdk-lib` 2.215.0 (aws-events, aws-events-targets, aws-lambda, aws-iam, aws-dynamodb, aws-s3), `boto3` (Lambda runtime)
-- 040-dynamodb-pitr-export: PITR enabled on usage-history DynamoDB table; daily export to S3 dynamodb-exports/ prefix at JST 00:00 (EventBridge Scheduler + Lambda); 90-day lifecycle; CloudWatch alarm.
 
 
 <!-- MANUAL ADDITIONS START -->

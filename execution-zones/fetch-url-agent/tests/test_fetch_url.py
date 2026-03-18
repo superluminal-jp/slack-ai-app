@@ -6,8 +6,6 @@ import os
 import sys
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from tools.fetch_url import _extract_text_from_html, _is_private_ip, fetch_url

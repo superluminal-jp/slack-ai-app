@@ -6,17 +6,13 @@ Tests:
 - Bedrock processing (synchronous via handle_message_tool)
 - Error handling and error code mapping
 - Agent Card and health check endpoints
-- strands-agents migration (021)
+- strands-agents migration
 """
 
 import json
 import os
 import sys
-import time
-import threading
-from unittest.mock import Mock, patch, MagicMock
-
-import pytest
+from unittest.mock import Mock, patch
 
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -73,7 +69,7 @@ class TestHandleMessageValidation:
 
 
 def _make_agent_result(text: str):
-    """Build mock AgentResult for Strands Agent (027)."""
+    """Build mock AgentResult for Strands Agent."""
     return Mock(
         message={"content": [{"text": text}], "role": "assistant"},
         stop_reason="end_turn",
@@ -81,7 +77,7 @@ def _make_agent_result(text: str):
 
 
 class TestHandleMessageProcessing:
-    """Test the synchronous Bedrock/Strands Agent processing flow (027)."""
+    """Test the synchronous Bedrock/Strands Agent processing flow."""
 
     @patch("main.create_agent")
     @patch("main.process_attachments")
@@ -301,15 +297,12 @@ class TestHandleMessageProcessing:
 
         mock_attachments.assert_called_once()
         # Agent should be called with multimodal input (messages with documents)
-        call_args = mock_agent.call_args
-        agent_input = call_args[0][0] if call_args[0] else call_args[1].get("invocation_state")
-        invocation_state = call_args[1].get("invocation_state", {})
         # Agent input can be str or list[Message]; with attachments it's messages
         assert mock_agent.called
 
 
 class TestFileGenerationIntentDetection:
-    """027: Test file generation intent detection for tool use control."""
+    """Test file generation intent detection for tool use control."""
 
     def test_indicates_file_generation_japanese(self):
         """Japanese phrases for file creation should return True."""
@@ -429,8 +422,8 @@ class TestAgentCard:
         assert card["url"] == "https://test.example.com"
 
 
-class Test020A2ARouting:
-    """020→021: A2A routing via FastAPI (invoke_agent_runtime sends raw payload to POST /)."""
+class TestA2ARouting:
+    """A2A routing via FastAPI (invoke_agent_runtime sends raw payload to POST /)."""
 
     def test_ping_route_registered_on_fastapi(self):
         """GET /ping route must be registered on FastAPI app."""
@@ -460,8 +453,8 @@ class Test020A2ARouting:
         )
 
 
-class Test021FastAPIDirectRouting:
-    """021: Verify FastAPI direct routing (invoke_agent_runtime sends raw payload, not JSON-RPC)."""
+class TestFastAPIDirectRouting:
+    """Verify FastAPI direct routing (invoke_agent_runtime sends raw payload, not JSON-RPC)."""
 
     def test_fastapi_ping_endpoint_registered(self):
         """GET /ping route exists on the FastAPI app."""
@@ -503,7 +496,7 @@ class Test021FastAPIDirectRouting:
         )
 
     def test_uses_agent_factory_for_inference(self):
-        """main.py uses create_agent from agent_factory (027 Strands Agent)."""
+        """main.py uses create_agent from agent_factory."""
         main_path = os.path.join(os.path.dirname(__file__), "..", "src", "main.py")
         with open(main_path) as f:
             source = f.read()
@@ -543,8 +536,8 @@ class TestUS3VersionConstraints:
         )
 
 
-class Test032JsonRpcZoneConnection:
-    """032: JSON-RPC 2.0 zone connection (CSP-independent A2A)."""
+class TestJsonRpcZoneConnection:
+    """JSON-RPC 2.0 zone connection (CSP-independent A2A)."""
 
     def test_jsonrpc_invalid_json_returns_parse_error(self):
         """POST body that is not valid JSON returns JSON-RPC 2.0 error -32700, id null."""
