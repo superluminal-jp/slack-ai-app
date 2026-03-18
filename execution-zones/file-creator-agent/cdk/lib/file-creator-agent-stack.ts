@@ -60,6 +60,10 @@ export class FileCreatorAgentStack extends cdk.Stack {
         bedrockModelId: bedrockModelId || undefined,
         awsRegion: awsRegion,
         verificationAccountId: verificationAccountId || undefined,
+        lifecycleConfiguration: {
+          idleRuntimeSessionTimeoutSeconds: 300,
+          maxLifetimeSeconds: 3600,
+        },
       }
     );
 

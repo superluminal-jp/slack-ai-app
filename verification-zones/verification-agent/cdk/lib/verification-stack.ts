@@ -217,6 +217,10 @@ export class VerificationStack extends cdk.Stack {
           props.slackSearchAgentArn ||
           (this.node.tryGetContext("slackSearchAgentArn") as string | undefined) ||
           undefined,
+        lifecycleConfiguration: {
+          idleRuntimeSessionTimeoutSeconds: 300,
+          maxLifetimeSeconds: 3600,
+        },
       },
     );
     this.verificationAgentRuntimeArn = this.verificationAgentRuntime.runtimeArn;

@@ -9,9 +9,15 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
 import { getCostAllocationTagValues } from "@slack-ai-app/cdk-tooling";
 
+export interface AgentCoreLifecycleConfig {
+  readonly idleRuntimeSessionTimeoutSeconds?: number;
+  readonly maxLifetimeSeconds?: number;
+}
+
 export interface SlackSearchAgentRuntimeProps {
   readonly agentRuntimeName: string;
   readonly containerImageUri: string;
+  readonly lifecycleConfiguration?: AgentCoreLifecycleConfig;
   readonly bedrockModelId?: string;
   readonly awsRegion?: string;
   readonly verificationAccountId?: string;
@@ -118,6 +124,16 @@ export class SlackSearchAgentRuntime extends Construct {
         stackName: stack.stackName,
       })
     );
+
+    if (props.lifecycleConfiguration) {
+      const lc = props.lifecycleConfiguration;
+      const idle = lc.idleRuntimeSessionTimeoutSeconds ?? 900;
+      const maxLt = lc.maxLifetimeSeconds ?? 28800;
+      this.runtime.addPropertyOverride("LifecycleConfiguration", {
+        IdleRuntimeSessionTimeout: Math.max(60, Math.min(28800, idle)),
+        MaxLifetime: Math.max(60, Math.min(28800, maxLt)),
+      });
+    }
 
     const environmentVariables: Record<string, string> = {};
     if (props.awsRegion) environmentVariables.AWS_REGION_NAME = props.awsRegion;

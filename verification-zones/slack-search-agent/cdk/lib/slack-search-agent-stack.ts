@@ -49,6 +49,10 @@ export class SlackSearchAgentStack extends cdk.Stack {
       bedrockModelId: bedrockModelId || undefined,
       awsRegion: awsRegion,
       verificationAccountId: verificationAccountId || undefined,
+      lifecycleConfiguration: {
+        idleRuntimeSessionTimeoutSeconds: 300,
+        maxLifetimeSeconds: 3600,
+      },
     });
 
     this.slackSearchAgentArn = this.slackSearchAgentRuntime.runtimeArn;
