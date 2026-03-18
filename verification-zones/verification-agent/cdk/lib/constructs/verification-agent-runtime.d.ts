@@ -55,6 +55,10 @@ export interface VerificationAgentRuntimeProps {
     readonly fileExchangeBucket?: s3.IBucket;
     /** ARN of the Slack Search Agent AgentCore Runtime (optional; 038) */
     readonly slackSearchAgentArn?: string;
+    /** DynamoDB table for usage history metadata (optional; 039) */
+    readonly usageHistoryTable?: dynamodb.ITable;
+    /** S3 bucket for usage history content and attachments (optional; 039) */
+    readonly usageHistoryBucket?: s3.IBucket;
 }
 export declare class VerificationAgentRuntime extends Construct {
     /** The AgentCore Runtime CFN resource */
