@@ -6,7 +6,7 @@ error handling, and cache operations.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch, MagicMock
 import os
 import time
 

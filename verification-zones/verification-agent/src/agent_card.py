@@ -10,7 +10,6 @@ skills, and contact information for Agent Discovery.
 Reference: https://google.github.io/A2A/#/documentation?id=agent-card
 """
 
-import json
 import os
 import time
 from typing import Any, Dict

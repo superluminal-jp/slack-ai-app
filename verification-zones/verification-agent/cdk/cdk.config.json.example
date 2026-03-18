@@ -15,5 +15,7 @@
     "fetch-url": "arn:aws:bedrock-agentcore:ap-northeast-1:EXECUTION_ACCOUNT_ID:runtime/FETCH_URL_RUNTIME_ID"
   },
   "autoReplyChannelIds": [],
-  "mentionChannelIds": []
+  "mentionChannelIds": [],
+  "_comment_archiveAccountId": "Optional. Set to a 12-digit AWS account ID to enable cross-account S3 replication for the usage-history archive bucket. Omit or leave empty for same-account replication (default). Env var: ARCHIVE_ACCOUNT_ID.",
+  "archiveAccountId": ""
 }

@@ -9,12 +9,10 @@ may be in a different AWS account.
 """
 
 import json
-import os
 from typing import Dict, Any, Optional, Tuple
 import boto3
 from botocore.awsrequest import AWSRequest
 from botocore.auth import SigV4Auth
-from botocore.credentials import Credentials
 import requests
 from requests.exceptions import (
     ConnectionError,

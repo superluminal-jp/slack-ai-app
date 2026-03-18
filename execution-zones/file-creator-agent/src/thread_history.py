@@ -5,7 +5,7 @@ This module provides functionality to retrieve conversation history from Slack t
 for context-aware AI responses.
 """
 
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Any
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 

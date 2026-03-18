@@ -1,5 +1,5 @@
 """
-Unit tests for Execution Agent file_config.py (014 file limits).
+Unit tests for Execution Agent file_config.py.
 
 Tests:
 - Default values for max size and allowed MIME types
@@ -10,8 +10,6 @@ Tests:
 import os
 import sys
 from unittest.mock import patch
-
-import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -125,7 +123,7 @@ class TestIsAllowedMime:
 
 
 class TestSanitizeFilename:
-    """sanitize_filename helper (027)."""
+    """sanitize_filename helper."""
 
     def test_forbidden_chars_replaced(self):
         assert fc.sanitize_filename("report:test.csv") == "report_test.csv"

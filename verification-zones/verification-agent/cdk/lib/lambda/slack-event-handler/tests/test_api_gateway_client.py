@@ -6,7 +6,7 @@ import json
 import sys
 import os
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 import requests
 from botocore.credentials import Credentials
 
@@ -15,7 +15,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from api_gateway_client import (
     invoke_execution_api,
     ExecutionApiAuthError,
-    ExecutionApiUnavailableError,
 )
 
 

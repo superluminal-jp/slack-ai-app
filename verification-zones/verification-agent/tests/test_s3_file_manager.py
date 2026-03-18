@@ -1,12 +1,12 @@
 """
-Unit tests for s3_file_manager (US4 Secure Cross-Zone File Transfer, 028).
+Unit tests for s3_file_manager.
 
 Tests:
 - upload_file_to_s3: correct S3 key structure, content type set, error handling
 - generate_presigned_url: returns HTTPS URL, expiry parameter passed
 - cleanup_request_files: lists and deletes all objects under correlation_id prefix
-- upload_generated_file_to_s3 (028): generated_files/ prefix, sanitized filename
-- generate_presigned_url_for_generated_file (028): delegates to generate_presigned_url
+- upload_generated_file_to_s3: generated_files/ prefix, sanitized filename
+- generate_presigned_url_for_generated_file: delegates to generate_presigned_url
 """
 
 import os
@@ -212,7 +212,7 @@ class TestCleanupRequestFiles:
 
 
 class TestUploadGeneratedFileToS3:
-    """Tests for upload_generated_file_to_s3 (028)."""
+    """Tests for upload_generated_file_to_s3."""
 
     @patch.dict(os.environ, {"FILE_EXCHANGE_BUCKET": "test-bucket"}, clear=False)
     @patch("s3_file_manager.boto3")
@@ -267,7 +267,7 @@ class TestUploadGeneratedFileToS3:
 
 
 class TestGeneratePresignedUrlForGeneratedFile:
-    """Tests for generate_presigned_url_for_generated_file (028)."""
+    """Tests for generate_presigned_url_for_generated_file."""
 
     @patch.dict(os.environ, {"FILE_EXCHANGE_BUCKET": "presign-bucket"}, clear=False)
     @patch("s3_file_manager.boto3")

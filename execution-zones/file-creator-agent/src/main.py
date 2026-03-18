@@ -58,7 +58,7 @@ def _log(level: str, event_type: str, data: dict) -> None:
     log(_logger, level, event_type, data, service="execution-agent")
 
 
-# Prompt augmentation for file generation (027): ensures model invokes tools when user requests file creation
+# Prompt augmentation for file generation: ensures model invokes tools when user requests file creation
 FILE_GENERATION_PROMPT_PREFIX = (
     "[重要: このリクエストはファイル作成を求めるものです。必ず generate_text_file / generate_excel / "
     "generate_word / generate_powerpoint / generate_chart_image のいずれかを呼び出してください。"

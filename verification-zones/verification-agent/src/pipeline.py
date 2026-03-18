@@ -18,20 +18,17 @@ import requests
 from existence_check import check_entity_existence, ExistenceCheckError
 from authorization import authorize_request
 from rate_limiter import check_rate_limit, RateLimitExceededError
-from a2a_client import invoke_execution_agent
 from agent_registry import (
     initialize_registry,
-    get_agent_arn,
     get_all_cards,
 )
-from router import route_request, UNROUTED_AGENT_ID, LIST_AGENTS_AGENT_ID  # kept for backward-compat; not called in main flow
 from orchestrator import OrchestrationRequest, run_orchestration_loop
 from slack_post_request import (
     send_slack_post_request,
     build_file_artifact,
     build_file_artifact_s3,
 )
-from error_debug import log_execution_error, log_execution_agent_error_response
+from error_debug import log_execution_error
 from logger_util import get_logger, log
 from slack_url_resolver import resolve_slack_urls
 from slack_thread_context import build_current_thread_context
@@ -42,6 +39,8 @@ from s3_file_manager import (
     upload_generated_file_to_s3,
     cleanup_request_files,
 )
+import usage_history
+from usage_history import UsageRecord, PipelineResult, OrchestrationResult
 
 try:
     from strands import Agent
@@ -91,6 +90,16 @@ DEFAULT_ERROR_MESSAGE = (
 
 def _log(level: str, event_type: str, data: dict) -> None:
     log(_logger, level, event_type, data, service="verification-agent")
+
+
+def _save_usage_record(record: UsageRecord) -> None:
+    """Fail-open wrapper: save usage record; never raises."""
+    table_name = os.environ.get("USAGE_HISTORY_TABLE_NAME", "")
+    history_bucket = os.environ.get("USAGE_HISTORY_BUCKET_NAME", "")
+    temp_bucket = os.environ.get("FILE_EXCHANGE_BUCKET", "")
+    if not table_name or not history_bucket:
+        return
+    usage_history.save(table_name, history_bucket, temp_bucket, record)
 
 
 # Initialize execution agent registry once at module import (container startup path).
@@ -321,6 +330,10 @@ def run(payload: dict) -> str:
         attachments = task_payload.get("attachments", [])
         current_message_ts = task_payload.get("message_ts")
 
+        # Usage history state — accumulated throughout run()
+        _pipeline_result = PipelineResult()
+        _temp_attachment_keys: list = []
+
         _log(
             "INFO",
             "a2a_task_received",
@@ -370,6 +383,17 @@ def run(payload: dict) -> str:
                         "error": str(e),
                     },
                 )
+                _pipeline_result.existence_check = False
+                _pipeline_result.rejection_stage = "existence_check"
+                _pipeline_result.rejection_reason = str(e)
+                _save_usage_record(UsageRecord(
+                    channel_id=channel,
+                    correlation_id=correlation_id,
+                    team_id=team_id,
+                    user_id=user_id,
+                    pipeline_result=_pipeline_result,
+                    duration_ms=int((time.time() - start_time) * 1000),
+                ))
                 return json.dumps(
                     {
                         "status": "error",
@@ -394,6 +418,17 @@ def run(payload: dict) -> str:
                         "unauthorized_entities": auth_result.unauthorized_entities,
                     },
                 )
+                _pipeline_result.authorization = False
+                _pipeline_result.rejection_stage = "authorization"
+                _pipeline_result.rejection_reason = "authorization_failed"
+                _save_usage_record(UsageRecord(
+                    channel_id=channel,
+                    correlation_id=correlation_id,
+                    team_id=team_id,
+                    user_id=user_id,
+                    pipeline_result=_pipeline_result,
+                    duration_ms=int((time.time() - start_time) * 1000),
+                ))
                 return json.dumps(
                     {
                         "status": "error",
@@ -436,6 +471,17 @@ def run(payload: dict) -> str:
                             "user_id": user_id,
                         },
                     )
+                    _pipeline_result.rate_limited = True
+                    _pipeline_result.rejection_stage = "rate_limit"
+                    _pipeline_result.rejection_reason = "rate_limit_exceeded"
+                    _save_usage_record(UsageRecord(
+                        channel_id=channel,
+                        correlation_id=correlation_id,
+                        team_id=team_id,
+                        user_id=user_id,
+                        pipeline_result=_pipeline_result,
+                        duration_ms=int((time.time() - start_time) * 1000),
+                    ))
                     return json.dumps(
                         {
                             "status": "error",
@@ -556,6 +602,7 @@ def run(payload: dict) -> str:
                             "presigned_url": presigned_url,
                         }
                     )
+                    _temp_attachment_keys.append(s3_key)
                 except Exception as e:
                     _log(
                         "ERROR",
@@ -685,6 +732,33 @@ def run(payload: dict) -> str:
                     "agents_called": orch_result.agents_called,
                 },
             )
+            try:
+                _save_usage_record(UsageRecord(
+                    channel_id=channel,
+                    correlation_id=correlation_id,
+                    team_id=team_id,
+                    user_id=user_id,
+                    input_text=text,
+                    output_text=response_text,
+                    pipeline_result=_pipeline_result,
+                    orchestration=OrchestrationResult(
+                        agents_called=orch_result.agents_called or [],
+                        turns_used=getattr(orch_result, "turns_used", 0),
+                        success=orch_result.completion_status != "error",
+                    ),
+                    duration_ms=int(duration_ms),
+                    attachment_keys=_temp_attachment_keys,
+                ))
+            except Exception as _save_err:
+                _log(
+                    "WARN",
+                    "usage_history_save_failed",
+                    {
+                        "correlation_id": correlation_id,
+                        "error": str(_save_err),
+                        "error_type": type(_save_err).__name__,
+                    },
+                )
             return json.dumps({"status": "completed", "correlation_id": correlation_id})
 
         except Exception as e:

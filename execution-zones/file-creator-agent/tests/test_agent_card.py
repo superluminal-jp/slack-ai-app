@@ -13,8 +13,6 @@ import json
 import os
 import sys
 
-import pytest
-
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -79,7 +77,7 @@ class TestExecutionAgentCardSkills:
         assert "generate_word" in skill_ids
 
     def test_does_not_have_fetch_url_skill(self):
-        """fetch_url moved to fetch-url-agent (035)."""
+        """fetch_url moved to fetch-url-agent."""
         card = get_agent_card()
         skill_ids = [s["id"] for s in card["skills"]]
         assert "fetch_url" not in skill_ids

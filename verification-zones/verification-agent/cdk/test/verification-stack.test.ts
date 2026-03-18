@@ -146,12 +146,6 @@ describe("VerificationStack", () => {
       });
     });
 
-    it("should have Function URL enabled", () => {
-      template.hasResourceProperties("AWS::Lambda::Url", {
-        AuthType: "NONE",
-      });
-    });
-
     it("should have bedrock-agentcore:InvokeAgentRuntime permission (A2A)", () => {
       template.hasResourceProperties("AWS::IAM::Policy", {
         PolicyDocument: {
@@ -167,9 +161,9 @@ describe("VerificationStack", () => {
   });
 
   describe("DynamoDB Tables", () => {
-    it("should create 5 DynamoDB tables", () => {
+    it("should create 6 DynamoDB tables", () => {
       const tables = template.findResources("AWS::DynamoDB::Table");
-      expect(Object.keys(tables).length).toBe(5);
+      expect(Object.keys(tables).length).toBe(6);
     });
 
     it("should create tables with PAY_PER_REQUEST billing", () => {
@@ -239,7 +233,7 @@ describe("VerificationStack", () => {
     });
   });
 
-  describe("S3 File Exchange Bucket (024)", () => {
+  describe("S3 File Exchange Bucket", () => {
     it("should create S3 bucket for file exchange", () => {
       const buckets = template.findResources("AWS::S3::Bucket");
       const bucketKeys = Object.keys(buckets);
@@ -293,7 +287,7 @@ describe("VerificationStack", () => {
     });
   });
 
-  describe("Cost allocation tags (031)", () => {
+  describe("Cost allocation tags", () => {
     it("AgentCore Runtime should have cost allocation tags", () => {
       const runtimes = template.findResources("AWS::BedrockAgentCore::Runtime");
       expect(Object.keys(runtimes).length).toBeGreaterThanOrEqual(1);

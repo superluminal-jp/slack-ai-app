@@ -1,7 +1,6 @@
 import json
 import os
 import re
-import time
 import uuid
 import boto3
 from slack_sdk import WebClient
@@ -11,13 +10,12 @@ from slack_verifier import verify_signature
 from validation import validate_prompt
 from event_dedupe import is_duplicate_event, mark_event_processed
 from existence_check import check_entity_existence, ExistenceCheckError
-from authorization import authorize_request, AuthorizationError
+from authorization import authorize_request
 from rate_limiter import check_rate_limit, RateLimitExceededError
 from botocore.exceptions import ClientError
 from typing import Optional
 from attachment_extractor import extract_attachment_metadata
 from logger import (
-    set_lambda_context,
     log_info,
     log_warn,
     log_error,

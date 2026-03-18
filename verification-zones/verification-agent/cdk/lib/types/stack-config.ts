@@ -63,6 +63,14 @@ export interface VerificationStackProps extends cdk.StackProps {
    * Set after deploying the slack-search-agent stack.
    */
   readonly slackSearchAgentArn?: string;
+
+  /**
+   * AWS Account ID of the archive bucket destination (optional).
+   * When provided, S3 Replication uses cross-account mode (adds Account +
+   * AccessControlTranslation to the replication destination).
+   * When absent, same-account replication is used (current default).
+   */
+  readonly archiveAccountId?: string;
 }
 
 /**

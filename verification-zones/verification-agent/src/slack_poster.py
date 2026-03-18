@@ -5,7 +5,6 @@ This module provides functionality to post messages to Slack channels or threads
 Includes message size splitting for messages exceeding Slack's 4000 character limit.
 """
 
-import json
 import re
 import time
 from typing import Optional, List

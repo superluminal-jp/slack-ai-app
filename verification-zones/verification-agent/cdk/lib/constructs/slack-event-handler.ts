@@ -33,7 +33,7 @@ export interface SlackEventHandlerProps {
   bedrockModelId: string; // Bedrock model ID (e.g., amazon.nova-pro-v1:0)
   /** ARN of Verification Agent Runtime (A2A path). Required. */
   verificationAgentArn: string;
-  /** SQS queue for async agent invocation (016). When set, handler sends requests here instead of invoking AgentCore directly. */
+  /** SQS queue for async agent invocation. When set, handler sends requests here instead of invoking AgentCore directly. */
   agentInvocationQueue?: sqs.IQueue;
   /**
    * Revision token so Lambda config changes when secrets change (e.g. hash of signing secret).

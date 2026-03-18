@@ -16,6 +16,13 @@ Auto-generated from all feature plans. Last updated: 2026-03-15
 - No new storage — DynamoDB and S3 schemas unchanged (036-iterative-reasoning)
 - Python 3.11 (`python:3.11-slim`, ARM64 container) + `strands-agents[a2a,otel]~=1.25.0`, `fastapi~=0.115.0`, `uvicorn~=0.34.0`, `boto3~=1.42.0`, `slack-sdk~=3.27.0` (038-slack-search-agent)
 - N/A（新規ストレージなし。bot_token は A2A params 経由で受け取る） (038-slack-search-agent)
+- Python 3.11 (`python:3.11-slim`, ARM64) + TypeScript 5.x (CDK) + boto3 ~=1.42.0, aws-cdk-lib (existing), strands-agents[a2a,otel] ~=1.25.0 (039-usage-history)
+- DynamoDB (new `usage-history` table) + S3 (new `usage-history` bucket) (039-usage-history)
+- TypeScript 5.x (CDK), Python 3.11 (Lambda trigger handler) + `aws-cdk-lib` 2.215.0 (aws-events, aws-events-targets, aws-lambda, aws-iam, aws-dynamodb, aws-s3), `boto3` (Lambda runtime) (040-dynamodb-pitr-export)
+- DynamoDB (existing `usage-history` table, add PITR), S3 (existing `usage-history` bucket, add `dynamodb-exports/` lifecycle + bucket policy) (040-dynamodb-pitr-export)
+- TypeScript 5.x (CDK) + `aws-cdk-lib` 2.215.0 (stable) — `aws-s3`, `aws-iam` (041-s3-replication-archive)
+- S3 (two buckets: existing source, new archive destination) (041-s3-replication-archive)
+- Python 3.11 + ruff (linting), pytest (test runner) (043-exec-cleanup)
 
 - Python 3.11 (コンテナ: `python:3.11-slim`, ARM64) + `bedrock-agentcore` v1.2.0 (Starlette ベース), `starlette`, `uvicorn` (020-fix-a2a-routing)
 
@@ -24,6 +31,59 @@ Auto-generated from all feature plans. Last updated: 2026-03-15
 ```text
 src/
 tests/
+```
+
+## Constitution (Non-Negotiable Rules)
+
+Full text: `.specify/memory/constitution.md` (v1.1.0). These rules apply regardless of whether speckit is used.
+
+### I. Spec-Driven Development
+Every code change starts with a spec. No PR without a corresponding spec in `specs/`.
+Workflow: **Specify → Clarify → Plan → Tasks → Implement → Validate → Sync**
+
+**Spec numbering**: Before `/speckit.specify`, find the next number:
+```bash
+ls specs/ | grep -E '^[0-9]+' | sed 's/-.*//' | sort -n | tail -1
+```
+Use N+1. Pass `--number` explicitly — do not rely on auto-detection.
+
+**PR requirement**: Every PR description MUST include a "Constitution Check" section confirming:
+- SDD traceability: spec → plan → tasks → code
+- TDD cycle completed: tests written first, all green
+- Docs/deploy scripts updated: README, CHANGELOG, CLAUDE.md, deploy.sh
+
+### II. Test-Driven Development
+Red → Green → Refactor cycle is mandatory. Tests MUST fail before implementation starts.
+Every production-code task MUST have a corresponding test task.
+
+### III. Security-First
+Security pipeline order is **non-bypassable**: existence check → whitelist → rate limit → AI invocation.
+- IAM: least-privilege only; no wildcard resource policies
+- Secrets MUST NOT be committed to source control
+- All Slack payloads MUST be validated before processing
+
+### IV. Fail-Open for Infrastructure, Fail-Closed for Security
+- Security pipeline `except` blocks → return error response (fail closed)
+- Infrastructure `except` blocks → log WARNING + safe fallback (fail open)
+- All exceptions MUST log `correlation_id`, `error`, `error_type`
+
+### V. Zone-Isolated Architecture
+- Verification-zone code MUST NOT import execution-zone code directly
+- Inter-zone communication: A2A via Bedrock AgentCore `invoke_agent_runtime` + JSON-RPC 2.0
+- New capabilities → new execution agents, not logic inside verification agent
+- Each agent MUST expose `POST /`, `GET /ping`, `GET /.well-known/agent-card.json`
+
+### VI. Documentation & Deploy-Script Parity
+Same commit as the code change MUST include:
+- `CHANGELOG.md` `[Unreleased]` entry
+- `README.md` / `README.ja.md` / zone READMEs (if architecture/behavior changed)
+- `CLAUDE.md` "Active Technologies" and "Recent Changes" (after feature merge)
+- `scripts/deploy.sh` updated to cover all deployed zones (adding a zone → same PR)
+- Deploy script output-key references validated against actual CDK `CfnOutput` names
+
+**Deploy order**: execution zones → verification zone
+```bash
+DEPLOYMENT_ENV=dev ./scripts/deploy.sh
 ```
 
 ## Commands
@@ -45,9 +105,9 @@ tests/
 Python 3.11 (コンテナ: `python:3.11-slim`, ARM64): Follow standard conventions
 
 ## Recent Changes
-- 038-slack-search-agent: New `verification-zones/slack-search-agent/` zone with Bedrock AgentCore Runtime. Tools: `search_messages`, `get_thread`, `get_channel_history`. Channel access control: calling channel + public channels allowed; private channels denied. CDK stack: `SlackSearchAgentStack`. New `SlackSearchClient` and `make_slack_search_tool` in verification-agent for A2A integration; `OrchestrationRequest` gains `channel` + `bot_token` fields; `SLACK_SEARCH_AGENT_ARN` env var activates the tool. Also fixed 5 pre-existing CDK test failures (stale JS, tsconfig typeRoots, WAF WebACLAssociation assertion).
-- 036-iterative-reasoning: Strands agentic loop orchestrator for iterative multi-agent reasoning; no new dependencies (A2A execution agents only)
-- 035-fetch-url-agent: New standalone `fetch-url-agent` zone with `fetch_url` tool (SSRF-safe URL fetch). `fetch_url` removed from `execution-agent`. `requests`/`beautifulsoup4` remain in `fetch-url-agent` only. WEB_FETCH_AGENT_ARN env var added to verification-agent CDK.
+- 043-exec-cleanup: Removed spec-number annotations from all execution-zones comments/docstrings; removed unused imports (ruff F401 clean) and dead assignments (F841); fixed f-string without placeholder (F541); renamed spec-numbered test classes to intent-based names. Zero behavioral changes.
+- 042-code-cleanup: Removed spec-number annotations from all verification-zones comments/docstrings; migrated Lambda handler raw print() to structured logger calls; removed unused imports (ruff F401 clean); deleted orphan bedrock_client.py; fixed missing log_warn import in slack-response-handler; updated stale test patches (invoke_execution_agent → run_orchestration_loop).
+- 041-s3-replication-archive: S3 SRR from usage-history → usage-history-archive; all prefixes (content/, attachments/, dynamodb-exports/); deleteMarkerReplication disabled; cross-account ready via archiveAccountId config / ARCHIVE_ACCOUNT_ID env; new constructs UsageHistoryArchiveBucket + UsageHistoryReplication; versioning enabled on source bucket.
 
 
 <!-- MANUAL ADDITIONS START -->

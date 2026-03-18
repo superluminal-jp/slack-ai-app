@@ -3,14 +3,12 @@ Unit tests for Execution Agent response_formatter.py.
 
 Tests:
 - validate_file_for_artifact: within limit + allowed MIME, over size, disallowed MIME
-- Constants for A2A file artifact (014)
+- Constants for A2A file artifact
 """
 
 import os
 import sys
 from unittest.mock import patch
-
-import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 

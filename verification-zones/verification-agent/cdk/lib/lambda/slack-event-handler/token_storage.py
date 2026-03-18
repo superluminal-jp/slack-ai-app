@@ -82,6 +82,7 @@ def get_token(team_id: str) -> Optional[str]:
         return None
     except ClientError as e:
         # Log error but return None to allow fallback
-        print(f"Error retrieving token from DynamoDB: {str(e)}")
+        from logger import log_error
+        log_error("token_retrieval_error", {"team_id": team_id}, error=e)
         return None
 

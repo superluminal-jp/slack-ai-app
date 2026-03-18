@@ -51,14 +51,18 @@ export interface VerificationAgentRuntimeProps {
   readonly slackBotTokenSecret: secretsmanager.ISecret;
   /** Map of execution agent IDs to runtime ARNs (for A2A invocation) */
   readonly executionAgentArns?: Record<string, string>;
-  /** 019: SQS queue for Slack post requests; Agent sends here instead of calling Slack API */
+  /** SQS queue for Slack post requests; Agent sends here instead of calling Slack API */
   readonly slackPostRequestQueue?: sqs.IQueue;
   /** CloudWatch Log group for execution error debug (troubleshooting) */
   readonly errorDebugLogGroup?: logs.ILogGroup;
-  /** S3 bucket for temporary file exchange between zones (024) */
+  /** S3 bucket for temporary file exchange between zones */
   readonly fileExchangeBucket?: s3.IBucket;
-  /** ARN of the Slack Search Agent AgentCore Runtime (optional; 038) */
+  /** ARN of the Slack Search Agent AgentCore Runtime (optional) */
   readonly slackSearchAgentArn?: string;
+  /** DynamoDB table for usage history metadata (optional) */
+  readonly usageHistoryTable?: dynamodb.ITable;
+  /** S3 bucket for usage history content and attachments (optional) */
+  readonly usageHistoryBucket?: s3.IBucket;
 }
 
 export class VerificationAgentRuntime extends Construct {
@@ -276,6 +280,17 @@ export class VerificationAgentRuntime extends Construct {
     }
     if (props.slackSearchAgentArn) {
       environmentVariables.SLACK_SEARCH_AGENT_ARN = props.slackSearchAgentArn;
+    }
+    if (props.usageHistoryTable) {
+      environmentVariables.USAGE_HISTORY_TABLE_NAME =
+        props.usageHistoryTable.tableName;
+      props.usageHistoryTable.grantWriteData(this.executionRole);
+    }
+    if (props.usageHistoryBucket) {
+      environmentVariables.USAGE_HISTORY_BUCKET_NAME =
+        props.usageHistoryBucket.bucketName;
+      props.usageHistoryBucket.grantPut(this.executionRole, "content/*");
+      props.usageHistoryBucket.grantPut(this.executionRole, "attachments/*");
     }
 
     // Create AgentCore Runtime using L1 CfnResource

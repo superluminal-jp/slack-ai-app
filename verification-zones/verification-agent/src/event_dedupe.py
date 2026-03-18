@@ -10,7 +10,6 @@ multiple Lambda instances process the same event simultaneously.
 
 import os
 import time
-from typing import Optional
 
 import boto3
 from botocore.exceptions import ClientError

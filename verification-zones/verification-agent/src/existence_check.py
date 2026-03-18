@@ -16,7 +16,6 @@ performance impact. The system fails securely (rejects requests) when
 Slack API is unavailable, prioritizing security over availability.
 """
 
-import json
 import os
 import socket
 import time
