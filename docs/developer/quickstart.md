@@ -2,7 +2,7 @@
 
 **目的**: Slack AI App の環境構築からデプロイ、動作確認までの手順を提供する。
 **対象読者**: 開発者、DevOps エンジニア
-**最終更新日**: 2026-02-14
+**最終更新日**: 2026-03-18
 
 ### このガイドでできること
 
@@ -111,7 +111,7 @@ npm install
 個別ゾーンのみインストールする場合：
 
 ```bash
-cd execution-zones/execution-agent/cdk && npm install
+cd execution-zones/file-creator-agent/cdk && npm install
 ```
 
 #### Python 依存関係のインストール（開発用）
@@ -269,7 +269,7 @@ DEPLOYMENT_ENV=dev ./scripts/deploy.sh status
 DEPLOYMENT_ENV=dev ./scripts/deploy.sh logs --latest
 
 # 特定ゾーンのみ（Docker イメージ強制再ビルド付き）
-./execution-zones/execution-agent/scripts/deploy.sh --force-rebuild
+./execution-zones/file-creator-agent/scripts/deploy.sh --force-rebuild
 ./execution-zones/fetch-url-agent/scripts/deploy.sh --force-rebuild
 ```
 
@@ -277,9 +277,10 @@ DEPLOYMENT_ENV=dev ./scripts/deploy.sh logs --latest
 
 **デプロイ順序**:
 
-1. 実行ゾーン（execution-agent → time-agent → docs-agent → fetch-url-agent）をデプロイし、出力された AgentCore Runtime ARN をメモ
-2. 検証ゾーンの `cdk.config.dev.json` の `executionAgentArns` に実行ゾーンの ARN を設定
-3. 検証ゾーンをデプロイ
+1. 実行ゾーン（file-creator-agent → time-agent → docs-agent → fetch-url-agent）をデプロイし、出力された AgentCore Runtime ARN をメモ
+2. Slack Search Agent ゾーン（verification-zones/slack-search-agent）をデプロイし、Runtime ARN をメモ
+3. 検証ゾーンの `cdk.config.dev.json` の `executionAgentArns` に実行ゾーンと Slack Search Agent の ARN を設定
+4. 検証ゾーンをデプロイ
 
 #### 方法 2: 手動デプロイ
 
@@ -287,7 +288,7 @@ DEPLOYMENT_ENV=dev ./scripts/deploy.sh logs --latest
 # 1. 実行ゾーンを順番にデプロイ
 export DEPLOYMENT_ENV=dev
 
-cd execution-zones/execution-agent/cdk
+cd execution-zones/file-creator-agent/cdk
 npx cdk deploy SlackAI-FileCreator-Dev --require-approval never
 
 cd ../../time-agent/cdk
@@ -324,10 +325,16 @@ npx cdk deploy SlackAI-Verification-Dev --require-approval never
 - Web Fetch Agent（`SlackAI-WebFetch-{Env}`）
 - CloudWatch ログ・メトリクス
 
+**Slack Search Agent Stack**（Verification Zone に配置）:
+
+- Slack Search Agent（`SlackAI-SlackSearch-{Env}`）
+- AgentCore Runtime + ECR
+
 **VerificationStack**:
 
 - Lambda 関数（SlackEventHandler）
-- DynamoDB テーブル（Token Storage, Event Dedupe, Existence Check Cache, Whitelist Config, Rate Limit）
+- DynamoDB テーブル（Token Storage, Event Dedupe, Existence Check Cache, Whitelist Config, Rate Limit, Usage History — 計 6 テーブル）
+- S3 バケット（usage-history、usage-history-archive）
 - Verification Agent（AgentCore Runtime + ECR）
 - Secrets Manager シークレット（Slack Signing Secret, Bot Token）
 - CloudWatch アラームとメトリクス
@@ -352,6 +359,7 @@ SlackAI-FileCreator-Dev.FileCreatorAgentRuntimeArn = arn:aws:bedrock-agentcore:.
 SlackAI-TimeExecution-Dev.TimeAgentRuntimeArn = arn:aws:bedrock-agentcore:...
 SlackAI-DocsExecution-Dev.DocsAgentRuntimeArn = arn:aws:bedrock-agentcore:...
 SlackAI-WebFetch-Dev.WebFetchAgentRuntimeArn = arn:aws:bedrock-agentcore:...
+SlackAI-SlackSearch-Dev.SlackSearchAgentRuntimeArn = arn:aws:bedrock-agentcore:...
 ```
 
 （クロスアカウント時は各実行ゾーンで Runtime/Endpoint の追加出力が作成されます。詳細は [VALIDATION.md §5.1](../specs/015-agentcore-a2a-migration/VALIDATION.md#51-agentcore-とアカウント間通信のベストプラクティスaws-mcp-準拠) を参照。）

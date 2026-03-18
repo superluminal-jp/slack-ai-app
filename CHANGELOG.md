@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Developer docs updated to match current codebase** (`045-update-docs-and-prompts`): Updated `docs/developer/architecture.md` to reflect the 4-agent execution zone split (file-creator-agent, time-agent, docs-agent, fetch-url-agent), slack-search-agent in verification zone, 6 DynamoDB tables, usage-history S3 + SRR, PITR export, and cdk-nag governance. Updated `docs/developer/quickstart.md` with correct agent names, Slack Search Agent stack output, and current resource list. Rewrote `docs/developer/execution-agent-system-prompt.md` with accurate canonical-file table for all 5 agents.
+- **docs-agent system prompt improved** (`045-update-docs-and-prompts`): Added source citation instruction, storage-related search categories (DynamoDB, S3, PITR, replication), and expanded recommended keywords (slack-search-agent, cdk-nag, usage-history, Existence Check).
+
 ### Added
 
 - **CDK security scanning (cdk-nag)**: AWS Solutions `cdk-nag` checks are applied across all 6 CDK apps (execution zones + verification zones) during both synthesis (`bin/cdk.ts`) and Jest tests (nag assertion test). Violations fail `cdk synth` / `npm test` unless explicitly suppressed with justification.
