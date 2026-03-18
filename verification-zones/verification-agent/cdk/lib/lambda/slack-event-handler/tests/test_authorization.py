@@ -4,8 +4,7 @@ Unit tests for authorization module.
 Tests whitelist authorization logic, including authorized and unauthorized scenarios.
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch
 import os
 import time
 
@@ -13,7 +12,6 @@ import time
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from authorization import (
-    AuthorizationError,
     AuthorizationResult,
     authorize_request,
 )

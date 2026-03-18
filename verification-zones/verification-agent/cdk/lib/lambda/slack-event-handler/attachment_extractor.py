@@ -4,7 +4,7 @@ Attachment extractor module for Slack events.
 Extracts and validates attachment metadata from Slack event payloads.
 """
 
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Any
 
 
 def extract_attachment_metadata(event: Dict[str, Any]) -> List[Dict[str, Any]]:

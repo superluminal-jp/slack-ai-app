@@ -15,7 +15,6 @@ Reference:
 - AWS Bedrock Converse: https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference.html
 """
 
-import json
 from typing import Any, Dict, List, Optional
 
 from file_downloader import download_file, get_file_download_url, download_from_presigned_url

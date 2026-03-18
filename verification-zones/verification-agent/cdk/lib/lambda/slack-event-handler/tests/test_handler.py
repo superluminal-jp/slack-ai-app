@@ -4,8 +4,7 @@ Unit tests for slack-event-handler Lambda handler.
 Tests timestamp extraction and validation functionality for thread reply feature.
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 import json
 import os
 

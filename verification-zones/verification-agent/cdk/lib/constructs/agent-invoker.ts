@@ -9,7 +9,7 @@ import { execSync } from "child_process";
 import * as fs from "fs";
 
 /**
- * Agent Invoker Lambda construct (016).
+ * Agent Invoker Lambda construct.
  *
  * Purpose: Consume agent-invocation requests from SQS and invoke the Verification Agent
  * via AgentCore InvokeAgentRuntime. Decouples Slack event handler from agent execution.

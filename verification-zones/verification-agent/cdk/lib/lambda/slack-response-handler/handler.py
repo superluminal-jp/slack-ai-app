@@ -6,17 +6,17 @@ and posts responses to Slack.
 """
 
 import json
-import os
 from typing import Dict, Any, List
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from response_handler import parse_execution_response, validate_execution_response
-from slack_poster import post_to_slack, split_message_if_needed
+from slack_poster import post_to_slack
 from metrics import emit_metric
 from logger import (
     set_correlation_id,
     set_lambda_context,
     log_info,
+    log_warn,
     log_error,
     log_exception,
 )

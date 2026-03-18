@@ -11,7 +11,6 @@ Rate limiting strategy:
 - DynamoDB TTL: Automatic cleanup of expired entries
 """
 
-import json
 import os
 import time
 import boto3

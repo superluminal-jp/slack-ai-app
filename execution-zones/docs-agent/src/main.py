@@ -6,7 +6,6 @@ Receives JSON-RPC 2.0 payloads from Verification Agent and returns docs-focused 
 
 import json
 import threading
-import time
 import traceback
 import uuid
 

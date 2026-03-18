@@ -52,6 +52,12 @@ export interface CdkConfig {
   mentionChannelIds?: string[];
   /** ARN of the Slack Search Agent AgentCore Runtime (optional) */
   slackSearchAgentArn?: string;
+  /**
+   * AWS Account ID for the archive bucket destination (optional).
+   * When provided, UsageHistoryReplication uses cross-account mode.
+   * When absent (default), same-account replication is used.
+   */
+  archiveAccountId?: string;
 }
 
 /**
@@ -104,6 +110,10 @@ const CdkConfigSchema = z.object({
       /^arn:aws:bedrock-agentcore:.+:\d{12}:runtime\/.+/,
       "slackSearchAgentArn must be a valid AgentCore Runtime ARN"
     )
+    .optional(),
+  archiveAccountId: z
+    .string()
+    .regex(/^\d{12}$/, "archiveAccountId must be a 12-digit AWS account ID")
     .optional(),
 });
 
@@ -357,5 +367,7 @@ export function applyEnvOverrides(config: CdkConfig): CdkConfig {
       config.mentionChannelIds,
     slackSearchAgentArn:
       slackSearchAgentArnFromEnv || config.slackSearchAgentArn,
+    archiveAccountId:
+      process.env.ARCHIVE_ACCOUNT_ID?.trim() || config.archiveAccountId,
   };
 }

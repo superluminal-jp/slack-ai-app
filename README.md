@@ -554,9 +554,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 
-**Last Updated**: 2026-03-15
+**Last Updated**: 2026-03-18
 
 ## Recent Updates
+
+- **2026-03-18**: Code cleanup in execution-zones (043)
+  - Removed unused imports (ruff F401), spec-number annotations, dead variable assignments (F841), and f-string without placeholder (F541) across all four execution-zone agents (file-creator-agent, fetch-url-agent, docs-agent, time-agent)
+  - Renamed spec-numbered test classes to intent-based names
+  - Zero behavioral changes; all 209 tests pass
 
 - **2026-03-15**: Slack Search Agent (038)
   - New `verification-zones/slack-search-agent/` zone: Bedrock AgentCore Runtime for searching Slack channel history, retrieving threads by URL, and fetching channel history

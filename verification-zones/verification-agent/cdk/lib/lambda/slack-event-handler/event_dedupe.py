@@ -10,10 +10,11 @@ multiple Lambda instances process the same event simultaneously.
 
 import os
 import time
-from typing import Optional
 
 import boto3
 from botocore.exceptions import ClientError
+
+from logger import log_warn, log_error
 
 # DynamoDB client (initialized on first use)
 _dynamodb_client = None
@@ -83,10 +84,10 @@ def is_duplicate_event(event_id: str) -> bool:
         error_code = e.response["Error"]["Code"]
         if error_code == "ResourceNotFoundException":
             # Table doesn't exist yet (shouldn't happen in production)
-            print(f"Warning: Dedupe table not found: {table_name}")
+            log_warn("dedupe_table_not_found", {"table_name": table_name})
             return False
         # Re-raise other errors
-        print(f"DynamoDB error checking duplicate: {error_code}")
+        log_error("dedupe_dynamodb_error", {"error_code": error_code})
         raise
 
 
@@ -147,12 +148,12 @@ def mark_event_processed(event_id: str) -> bool:
             return False
         elif error_code == "ResourceNotFoundException":
             # Table doesn't exist yet (shouldn't happen in production)
-            print(f"Warning: Dedupe table not found: {table_name}")
+            log_warn("dedupe_table_not_found", {"table_name": table_name})
             # Return True to allow processing (fail open)
             return True
         else:
             # Other DynamoDB errors
-            print(f"DynamoDB error marking event: {error_code}")
+            log_error("dedupe_mark_error", {"error_code": error_code})
             # Return True to allow processing (fail open - better than blocking)
             return True
 

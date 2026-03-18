@@ -4,8 +4,6 @@ Unit tests for attachment extractor module.
 Tests attachment metadata extraction from Slack events.
 """
 
-import pytest
-from unittest.mock import Mock, patch
 
 # Import module to test
 import sys

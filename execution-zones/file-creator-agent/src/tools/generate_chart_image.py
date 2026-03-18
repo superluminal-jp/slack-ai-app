@@ -6,7 +6,7 @@ for the handler to extract and build file_artifact.
 """
 
 from io import BytesIO
-from typing import Any, List
+from typing import Any
 
 from strands import tool
 
@@ -46,7 +46,7 @@ def generate_chart_image(
     if not filename or not isinstance(filename, str) or not filename.strip():
         return "エラー: filename を指定してください。"
     if not chart_type or chart_type not in _VALID_CHART_TYPES:
-        return f"エラー: chart_type は bar, line, pie, scatter のいずれかを指定してください。"
+        return "エラー: chart_type は bar, line, pie, scatter のいずれかを指定してください。"
     if not data or not isinstance(data, dict):
         return "エラー: data は labels と datasets を持つオブジェクトを指定してください。"
 

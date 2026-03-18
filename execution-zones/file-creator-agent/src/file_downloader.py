@@ -13,7 +13,6 @@ Adapted from Lambda version for AgentCore container environment.
 Reference: https://api.slack.com/methods/files.info
 """
 
-import json
 import random
 import time
 from typing import Optional, Tuple

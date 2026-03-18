@@ -1,11 +1,9 @@
 """
-File limit configuration for generated file artifacts (014, 027).
+File limit configuration for generated file artifacts.
 
 Defines maximum file size and allowed MIME types for files returned from
 Execution Zone to Verification Zone via A2A. Values are read from environment
-with fallback to defaults per research R-003 (014) and research.md §2.1 (027).
-
-027 extensions: Per-file-type size limits, sanitize_filename, generated file MIME types.
+with fallback to defaults.
 """
 
 import os

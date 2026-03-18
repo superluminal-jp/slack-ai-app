@@ -16,7 +16,6 @@ PPTX slide-to-image conversion is not supported (LibreOffice removed).
 """
 
 import csv
-import json
 import zipfile
 import xml.etree.ElementTree as ET
 from io import BytesIO, StringIO

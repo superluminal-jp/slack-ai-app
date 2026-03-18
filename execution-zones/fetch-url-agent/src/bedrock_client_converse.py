@@ -14,7 +14,6 @@ Converse API advantages:
 Note: Migrated from InvokeModel API to Converse API for better image handling.
 """
 
-import json
 import os
 from typing import Any, Dict, List, Optional
 

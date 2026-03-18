@@ -8,7 +8,7 @@ import { execSync } from "child_process";
 import * as fs from "fs";
 
 /**
- * Slack Poster construct (019): SQS queue + Lambda for posting messages to Slack.
+ * Slack Poster construct: SQS queue + Lambda for posting messages to Slack.
  *
  * Purpose: Verification Agent sends post requests to this queue; Lambda consumes and calls Slack API.
  * Decouples agent from Slack API and allows retries.

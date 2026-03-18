@@ -11,8 +11,6 @@ import os
 import sys
 from unittest.mock import Mock, patch
 
-import pytest
-
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -79,11 +77,7 @@ class TestEmitMetric:
         """Metric name constants should be defined."""
         from cloudwatch_metrics import (
             METRIC_BEDROCK_API_ERROR,
-            METRIC_BEDROCK_TIMEOUT,
-            METRIC_BEDROCK_THROTTLING,
             METRIC_ASYNC_TASK_CREATED,
-            METRIC_ASYNC_TASK_COMPLETED,
-            METRIC_ASYNC_TASK_FAILED,
         )
 
         assert METRIC_BEDROCK_API_ERROR == "BedrockApiError"

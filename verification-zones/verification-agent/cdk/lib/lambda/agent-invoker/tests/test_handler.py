@@ -1,11 +1,10 @@
 """
-Unit tests for Agent Invoker Lambda (016): SQS event → InvokeAgentRuntime(Verification Agent).
+Unit tests for Agent Invoker Lambda: SQS event → InvokeAgentRuntime(Verification Agent).
 """
 
 import json
 import os
-import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))

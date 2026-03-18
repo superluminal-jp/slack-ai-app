@@ -1,5 +1,5 @@
 """
-Agent Invoker Lambda (016): consumes SQS messages and invokes Verification Agent via InvokeAgentRuntime.
+Agent Invoker Lambda: consumes SQS messages and invokes Verification Agent via InvokeAgentRuntime.
 
 Follows AWS documentation:
 - Invoke an AgentCore Runtime agent: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-invoke-agent.html

@@ -5,7 +5,6 @@ Provides a singleton CloudWatch client and helper functions to emit
 custom metrics from inside the AgentCore container.
 """
 
-import json
 import os
 from typing import Any, Dict, List, Optional
 

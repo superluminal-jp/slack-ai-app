@@ -7,7 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **verification-agent CDK artifacts committed** (`041-s3-replication-archive` / `040-dynamodb-pitr-export` / `039-usage-history`): Committed remaining CDK compiled output (`.js`, `.d.ts`) and TypeScript source for constructs added across features 039–041 (`UsageHistoryTable`, `UsageHistoryBucket`, `DynamodbExportJob`, `UsageHistoryArchiveBucket`, `UsageHistoryReplication`) along with corresponding spec artifacts. No behavioral changes beyond what was already documented per feature.
+
+- **Code cleanup in execution-zones** (`043-exec-cleanup`): Removed spec-number annotations (e.g. `(027)`, `(035)`, `(014)`, `(021)`) from all comments and docstrings across `execution-zones/` (file-creator-agent, fetch-url-agent, docs-agent, time-agent); removed unused imports identified by ruff F401; removed dead variable assignments (F841); fixed f-string without placeholder (F541 in `generate_chart_image.py`); renamed spec-numbered test classes (`Test020A2ARouting` → `TestA2ARouting`, `Test021FastAPIDirectRouting` → `TestFastAPIDirectRouting`, `Test032JsonRpcZoneConnection` → `TestJsonRpcZoneConnection`) to intent-based names. Zero behavioral changes.
+
+- **Code cleanup in verification-zones** (`042-code-cleanup`): Removed spec-number annotations (e.g. `(016)`, `(039)`) from all comments and docstrings across `verification-zones/`; migrated raw `print()` calls in Lambda handler files (`event_dedupe.py`, `slack_verifier.py`, `token_storage.py`) to structured `logger.py` calls; removed unused imports identified by ruff F401 across `src/` and `cdk/lib/lambda/`; deleted orphan `bedrock_client.py` (zero callers); updated stale test patches from removed `invoke_execution_agent` to current `run_orchestration_loop`.
+
+### Fixed
+
+- **Missing `log_warn` import in `slack-response-handler/handler.py`**: `log_warn` was called in four reaction-update code paths but never imported from `logger`, causing a `NameError` at runtime. Added `log_warn` to the `from logger import (...)` block.
+
 ### Added
+
+- **S3 Same-Region Replication for usage-history archive** (`041-s3-replication-archive`): All objects written to `{stack}-usage-history` (`content/`, `attachments/`, `dynamodb-exports/` prefixes) are automatically replicated to a new independent `{stack}-usage-history-archive` bucket. Delete markers are not replicated — the archive is deletion-independent. Objects expire after 90 days (same as primary); noncurrent versions after 7 days. Cross-account replication is enabled by setting `archiveAccountId` in config or `ARCHIVE_ACCOUNT_ID` env var (zero code changes). New CDK constructs: `UsageHistoryArchiveBucket`, `UsageHistoryReplication`. Versioning enabled on primary bucket as replication prerequisite.
+
+- **DynamoDB usage-history PITR and daily S3 export** (`040-dynamodb-pitr-export`): PITR enabled on the `{stack}-usage-history` DynamoDB table. An EventBridge Scheduler triggers a Lambda daily at JST 00:00 (UTC 15:00) to export the full table to `dynamodb-exports/{YYYY/MM/DD}/` in the usage-history S3 bucket using the native `ExportTableToPointInTime` API. Exports are retained for 90 days via an S3 lifecycle rule. A CloudWatch Alarm (`{stack}-dynamodb-export-job-failure`) fires on Lambda errors. The Lambda is fail-open and never affects user responses.
+
+- **Verification Agent usage history** (`039-usage-history`): Every request processed by the verification agent is now automatically recorded. Request metadata (channel, user, pipeline results, duration) is stored in a new DynamoDB table `{stack}-usage-history`; input/output text and Slack file attachments are stored in a dedicated S3 bucket `{stack}-usage-history` under `content/` and `attachments/` prefixes with 90-day retention for confidentiality. Write failure is fail-open — storage errors are logged as WARNING and never block the user response. Records are queryable by `correlation_id` via a DynamoDB GSI (`correlation_id-index`). Env vars `USAGE_HISTORY_TABLE_NAME` and `USAGE_HISTORY_BUCKET_NAME` are injected at deploy time.
 
 - **Slack Search Agent** (`038-slack-search-agent`): New standalone `verification-zones/slack-search-agent/` zone deploying a Bedrock AgentCore Runtime. Exposes three tools — `search_messages`, `get_thread`, `get_channel_history` — over A2A. Channel access is restricted to the calling channel and public channels; private channels other than the calling channel are denied. CDK stack: `SlackSearchAgentStack`.
 - **`SlackSearchClient` and `slack_search` Strands tool** (`verification-agent`, `038-slack-search-agent`): `src/slack_search_client.py` calls the Slack Search Agent via A2A; `src/slack_search_tool.py` wraps it as a Strands `@tool` registered with the orchestrator. `OrchestrationRequest` gains `channel` and `bot_token` fields. The `slack_search` tool is conditionally added when `SLACK_SEARCH_AGENT_ARN` is set.

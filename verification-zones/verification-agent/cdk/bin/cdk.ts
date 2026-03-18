@@ -307,6 +307,12 @@ if (slackSearchAgentArn) {
   app.node.setContext("slackSearchAgentArn", slackSearchAgentArn);
 }
 
+// Archive account ID for cross-account S3 replication (optional; same-account if absent)
+const archiveAccountId =
+  process.env.ARCHIVE_ACCOUNT_ID?.trim() ||
+  getConfigString("archiveAccountId") ||
+  undefined;
+
 // Create Verification Stack
 new VerificationStack(app, verificationStackName, {
   env: verificationEnv,
@@ -318,6 +324,7 @@ new VerificationStack(app, verificationStackName, {
   autoReplyChannelIds: autoReplyChannelIds.length > 0 ? autoReplyChannelIds : undefined,
   mentionChannelIds: mentionChannelIds.length > 0 ? mentionChannelIds : undefined,
   slackSearchAgentArn: slackSearchAgentArn || undefined,
+  archiveAccountId: archiveAccountId || undefined,
 });
 logInfo("Verification stack created.", {
   phase: "stack",

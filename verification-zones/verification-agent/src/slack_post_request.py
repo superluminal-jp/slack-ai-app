@@ -1,10 +1,10 @@
 """
-Send Slack post requests to SQS for Slack Poster Lambda (019, 028).
+Send Slack post requests to SQS for Slack Poster Lambda.
 
 Verification Agent does not call Slack API directly. It enqueues a structured
 message to SLACK_POST_REQUEST_QUEUE_URL. Slack Poster Lambda consumes and posts.
 
-file_artifact supports two delivery modes (028):
+file_artifact supports two delivery modes:
   - inline: contentBase64 + fileName + mimeType (files <= 200 KB)
   - s3: s3PresignedUrl + fileName + mimeType (files > 200 KB)
 """
@@ -105,7 +105,7 @@ def build_file_artifact(file_bytes: bytes, file_name: str, mime_type: str) -> di
 def build_file_artifact_s3(
     s3_presigned_url: str, file_name: str, mime_type: str
 ) -> dict:
-    """Build S3-backed file_artifact dict for SQS message (028).
+    """Build S3-backed file_artifact dict for SQS message.
 
     Used for large files (> 200 KB) to bypass SQS 256 KB limit.
     Contains s3PresignedUrl instead of contentBase64.

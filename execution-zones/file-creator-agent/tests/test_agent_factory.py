@@ -3,7 +3,7 @@ Unit tests for Execution Agent agent_factory.py.
 
 Focus:
 - Tool wiring excludes search_docs after docs-agent split.
-- fetch_url excluded after web-fetch-agent split (035).
+- fetch_url excluded after web-fetch-agent split.
 """
 
 import ast
@@ -37,7 +37,7 @@ def test_get_tools_does_not_include_search_docs() -> None:
 
     assert "search_docs" not in returned_names
     assert "get_current_time" not in returned_names
-    # fetch_url moved to fetch-url-agent (035)
+    # fetch_url moved to fetch-url-agent
     assert "fetch_url" not in returned_names
     assert "generate_text_file" in returned_names
     assert len(returned_names) == 7, f"Expected 7 tools, got {len(returned_names)}: {returned_names}"

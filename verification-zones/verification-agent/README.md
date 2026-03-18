@@ -269,6 +269,73 @@ Access is restricted to the calling channel and public channels. Private channel
 
 If `slackSearchAgentArn` is omitted, the `slack_search` tool is not added to the orchestrator and the feature is silently disabled.
 
+## Usage History (039)
+
+Every request processed by the verification agent is automatically recorded for audit and debugging purposes.
+
+### What is recorded
+
+| Data | Storage | Retention |
+|------|---------|-----------|
+| Request metadata (channel, user, timestamps, pipeline results, duration) | DynamoDB `{stack}-usage-history` | 90 days (TTL) |
+| Input text (user message) | S3 `{stack}-usage-history` `content/` prefix | 90 days (lifecycle rule) |
+| Output text (agent response) | S3 `{stack}-usage-history` `content/` prefix | 90 days (lifecycle rule) |
+| Slack file attachments | S3 `{stack}-usage-history` `attachments/` prefix | 90 days (lifecycle rule) |
+| Full DynamoDB table snapshots | S3 `{stack}-usage-history` `dynamodb-exports/` prefix | 90 days (lifecycle rule) |
+
+Input/output text is stored in S3 only (not in DynamoDB) for confidentiality — the DynamoDB record holds a pointer (`s3_content_prefix`) and metadata only.
+
+### Storage names
+
+| Resource | Name pattern |
+|----------|-------------|
+| DynamoDB table | `{stackName}-usage-history` |
+| S3 bucket | `{stackName.toLowerCase()}-usage-history` |
+| S3 archive bucket | `{stackName.toLowerCase()}-usage-history-archive` |
+
+### Archive Replication (041)
+
+All objects written to the usage-history S3 bucket (`content/`, `attachments/`, `dynamodb-exports/` prefixes) are automatically replicated to an independent archive bucket (`{stack}-usage-history-archive`) via S3 Same-Region Replication.
+
+- **Scope**: All prefixes — conversations, attachments, and DynamoDB exports.
+- **Delete isolation**: Deletes in the primary bucket do NOT propagate to the archive (`deleteMarkerReplication: Disabled`).
+- **Retention**: Archive objects expire after 90 days per prefix (same as primary); noncurrent versions expire after 7 days.
+- **Cross-account ready**: Set `archiveAccountId` in `cdk.config.{env}.json` (or `ARCHIVE_ACCOUNT_ID` env var) to switch to cross-account replication with zero code changes. Omit for same-account (default).
+
+### S3 key structure
+
+```
+content/{channel_id}/{YYYY/MM/DD}/{correlation_id}/input.json
+content/{channel_id}/{YYYY/MM/DD}/{correlation_id}/output.json
+attachments/{channel_id}/{YYYY/MM/DD}/{correlation_id}/{filename}
+```
+
+### Environment variables
+
+| Variable | Description |
+|----------|-------------|
+| `USAGE_HISTORY_TABLE_NAME` | DynamoDB table for metadata (injected by CDK) |
+| `USAGE_HISTORY_BUCKET_NAME` | S3 bucket for content and attachments (injected by CDK) |
+
+### Fail-open behavior
+
+Write failures (DynamoDB or S3) are logged as `WARNING` and silently swallowed. Users always receive their response regardless of storage availability.
+
+### Querying history
+
+- **By channel**: DynamoDB `Query` on PK=`channel_id`, SK prefix `{timestamp}` for date range
+- **By correlation_id**: DynamoDB `Query` on GSI `correlation_id-index`
+
+### DynamoDB PITR and Daily Export (040)
+
+Point-in-Time Recovery (PITR) is enabled on the `{stack}-usage-history` DynamoDB table. A daily full export runs at **JST 00:00 (UTC 15:00)** via EventBridge Scheduler, writing a native DynamoDB JSON export to the usage-history S3 bucket under the `dynamodb-exports/{YYYY/MM/DD}/` prefix.
+
+Export objects are automatically deleted after **90 days** via an S3 lifecycle rule on the `dynamodb-exports/` prefix.
+
+A CloudWatch Alarm (`{stack}-dynamodb-export-job-failure`) fires if the export Lambda logs any errors, enabling early detection of failed exports.
+
+The export Lambda is fail-open: any exception is logged as `WARNING` and the Lambda returns `{"status": "error"}` — it never affects user Slack responses.
+
 ## Testing
 
 ```bash
