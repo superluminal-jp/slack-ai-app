@@ -4,6 +4,7 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as sqs from "aws-cdk-lib/aws-sqs";
 import { Construct } from "constructs";
+import { NagSuppressions } from "cdk-nag";
 import * as path from "path";
 import { execSync } from "child_process";
 import * as fs from "fs";
@@ -106,7 +107,7 @@ export class SlackEventHandler extends Construct {
           },
         },
       }),
-      // A2A / Execution 応答待ち（Bedrock 推論含む）。60s でタイムアウトするため 120s に延長
+      // Wait for A2A / execution responses (including Bedrock inference). Extend beyond the default 60s.
       timeout: cdk.Duration.seconds(120),
       environment: {
         TOKEN_TABLE_NAME: props.tokenTableName,
@@ -125,7 +126,7 @@ export class SlackEventHandler extends Construct {
         WHITELIST_SECRET_NAME: `${cdk.Stack.of(this).stackName}/slack/whitelist-config`,
         // A2A: Verification Agent Runtime ARN (required)
         VERIFICATION_AGENT_ARN: props.verificationAgentArn,
-        // 016: when set, handler sends to SQS instead of invoking AgentCore directly
+        // When set, handler sends to SQS instead of invoking AgentCore directly.
         ...(props.agentInvocationQueue && {
           AGENT_INVOCATION_QUEUE_URL: props.agentInvocationQueue.queueUrl,
         }),
@@ -142,7 +143,7 @@ export class SlackEventHandler extends Construct {
       },
     });
 
-    // 016: Grant SQS SendMessage when async invocation queue is provided
+    // Grant SQS SendMessage when async invocation queue is provided.
     if (props.agentInvocationQueue) {
       props.agentInvocationQueue.grantSendMessages(this.function);
     }
@@ -165,8 +166,8 @@ export class SlackEventHandler extends Construct {
     );
 
     // Grant AgentCore Runtime invocation permission (A2A path).
-    // 026 US1 (T007): Least privilege — scoped to specific ARNs per audit-iam-bedrock.md.
-    // Per AWS: both runtime and endpoint may be evaluated for InvokeAgentRuntime.
+    // Least privilege — scoped to specific ARNs; both runtime and endpoint may be
+    // evaluated by AWS for InvokeAgentRuntime authorization.
     // https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/resource-based-policies.html
     const runtimeEndpointArn = `${props.verificationAgentArn}/runtime-endpoint/DEFAULT`;
     this.function.addToRolePolicy(
@@ -177,7 +178,7 @@ export class SlackEventHandler extends Construct {
       })
     );
 
-    // Grant CloudWatch permissions for Existence Check metrics (Phase 6 - Polish)
+    // Grant CloudWatch permissions for Existence Check metrics
     this.function.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
@@ -191,5 +192,50 @@ export class SlackEventHandler extends Construct {
       })
     );
 
+    // CloudWatch PutMetricData requires resource:* (AWS service constraint);
+    // namespace is restricted via condition key "cloudwatch:namespace".
+    NagSuppressions.addResourceSuppressions(
+      this.function,
+      [
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "CloudWatch PutMetricData requires resource:* (AWS service constraint). " +
+            "The namespace is restricted to 'SlackEventHandler' via the cloudwatch:namespace condition key.",
+        },
+      ],
+      true,
+    );
+
+    if (this.function.role) {
+      NagSuppressions.addResourceSuppressions(
+        this.function.role.node.defaultChild ?? this.function.role,
+        [
+          {
+            id: "AwsSolutions-IAM4",
+            reason:
+              "Lambda uses AWS-managed policy for basic logging permissions (AWSLambdaBasicExecutionRole).",
+          },
+          {
+            id: "AwsSolutions-IAM5",
+            reason:
+              "Lambda permissions include AWS service constraints (CloudWatch PutMetricData, ECR auth, X-Ray) and " +
+              "Secrets Manager ARN patterns with wildcard suffix required by Secrets Manager secret version ARNs.",
+          },
+        ],
+        true,
+      );
+    }
+
+    NagSuppressions.addResourceSuppressions(
+      this.function.node.defaultChild ?? this.function,
+      [
+        {
+          id: "AwsSolutions-L1",
+          reason:
+            "Lambda runtime is pinned to Python 3.11 to match the project baseline. Runtime upgrades are handled separately.",
+        },
+      ],
+    );
   }
 }

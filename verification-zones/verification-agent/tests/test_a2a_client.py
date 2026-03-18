@@ -334,11 +334,11 @@ class TestPollAsyncTaskResult:
         assert result_data["status"] == "error"
 
 
-class Test032JsonRpcZoneConnection:
-    """Phase 3 [US1]: JSON-RPC 2.0 Request build and Response parse (032-jsonrpc-zone-connection)."""
+class TestJsonRpcZoneConnection:
+    """JSON-RPC 2.0 Request build and Response parse."""
 
     def test_build_jsonrpc_request_from_task_payload(self):
-        """T015: build_jsonrpc_request yields jsonrpc 2.0, method execute_task, params, string id."""
+        """build_jsonrpc_request yields jsonrpc 2.0, method execute_task, params, string id."""
         from a2a_client import build_jsonrpc_request
 
         task_payload = {
@@ -357,7 +357,7 @@ class Test032JsonRpcZoneConnection:
         assert len(req["id"]) > 0
 
     def test_parse_jsonrpc_response_result_extracts_success_payload(self):
-        """T016: parse_jsonrpc_response with 'result' returns success payload (status, response_text)."""
+        """parse_jsonrpc_response with 'result' returns success payload (status, response_text)."""
         from a2a_client import parse_jsonrpc_response
 
         body = json.dumps({
@@ -371,7 +371,7 @@ class Test032JsonRpcZoneConnection:
         assert data.get("response_text") == "AI reply here"
 
     def test_parse_jsonrpc_response_error_extracts_error_info(self):
-        """T017: parse_jsonrpc_response with 'error' returns error payload (code, message)."""
+        """parse_jsonrpc_response with 'error' returns error payload (code, message)."""
         from a2a_client import parse_jsonrpc_response
 
         body = json.dumps({
@@ -388,7 +388,7 @@ class Test032JsonRpcZoneConnection:
 
     @patch("a2a_client._get_agentcore_client")
     def test_invoke_execution_agent_jsonrpc_error_returns_user_facing_error_json(self, mock_get_client):
-        """T025 [US2]: When response contains JSON-RPC error, return user-facing JSON (status, error_code, error_message, correlation_id)."""
+        """When response contains JSON-RPC error, return user-facing JSON (status, error_code, error_message, correlation_id)."""
         mock_client = Mock()
         mock_get_client.return_value = mock_client
         error_body = json.dumps({

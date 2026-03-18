@@ -54,7 +54,7 @@ class TestEmitMetric:
 
         from cloudwatch_metrics import emit_metric
 
-        dims = [{"Name": "TeamId", "Value": "T123"}]
+        dims = [{"Name": "TeamId", "Value": "TEAM123"}]
         emit_metric("SlackAI/ExecutionAgent", "AsyncTaskCreated", 1.0, dimensions=dims)
 
         call_kwargs = mock_cw.put_metric_data.call_args[1]

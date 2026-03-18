@@ -36,7 +36,7 @@ export declare class VerificationStack extends cdk.Stack {
     readonly verificationAgentEcr: VerificationAgentEcr;
     /** AgentCore Runtime ARN for cross-stack reference */
     readonly verificationAgentRuntimeArn: string;
-    /** SQS queue for async agent invocation requests (016) */
+    /** SQS queue for async agent invocation requests */
     readonly agentInvocationQueue: sqs.IQueue;
     constructor(scope: Construct, id: string, props: VerificationStackProps);
 }

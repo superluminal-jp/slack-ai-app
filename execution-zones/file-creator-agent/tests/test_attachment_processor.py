@@ -1,5 +1,5 @@
 """
-Unit tests for attachment_processor (US4 presigned_url path).
+Unit tests for attachment_processor (presigned_url path).
 
 Tests:
 - presigned_url field detection in attachment metadata
@@ -143,8 +143,8 @@ class TestAttachmentProcessorPresignedUrl:
         assert len(success) == 1
 
 
-class TestDocumentQaFlowUs1:
-    """Integration tests for document Q&A (US1): native blocks, PPTX fallback, errors."""
+class TestDocumentQaFlow:
+    """Integration tests for document Q&A: native blocks, PPTX fallback, errors."""
 
     @patch("attachment_processor.download_from_presigned_url")
     @patch("attachment_processor.extract_text_from_pdf")
@@ -247,8 +247,8 @@ class TestDocumentQaFlowUs1:
         assert failed[0].get("error_message")
 
 
-class TestImageProcessingViaS3Us2:
-    """Integration tests for image processing via S3 (US2): presigned_url, magic bytes, limits."""
+class TestImageProcessingViaS3:
+    """Integration tests for image processing via S3: presigned_url, magic bytes, limits."""
 
     @patch("attachment_processor.download_from_presigned_url")
     def test_image_with_presigned_url_downloads_correctly(self, mock_download):

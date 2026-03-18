@@ -1,5 +1,5 @@
 """
-generate_excel tool for Execution Agent (027-slack-file-generation-best-practices).
+generate_excel tool for Execution Agent.
 
 Produces Excel (.xlsx) files and stores them in tool_context.invocation_state
 for the handler to extract and build file_artifact.

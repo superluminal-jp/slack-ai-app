@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CDK security scanning (cdk-nag)**: AWS Solutions `cdk-nag` checks are applied across all 6 CDK apps (execution zones + verification zones) during both synthesis (`bin/cdk.ts`) and Jest tests (nag assertion test). Violations fail `cdk synth` / `npm test` unless explicitly suppressed with justification.
+
 ### Changed
+
+- **Bedrock IAM least privilege**: Narrowed `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` from `Resource: "*"` to the Bedrock model namespace (`foundation-model/*` and `inference-profile/*`) across all runtimes.
+- **cdk-nag suppressions with justifications**: Added targeted `NagSuppressions` for AWS service constraints (ECR auth token, X-Ray sampling APIs, CloudWatch PutMetricData, Secrets Manager rotation for Slack tokens, S3 access logging trade-offs, etc.).
+- **Governance docs**: Codified Python logging/error-handling/comment standards in `CLAUDE.md` and added a constitution principle prohibiting process-tracking identifiers (spec numbers/branch names/task IDs) in code and tests.
 
 - **verification-agent CDK artifacts committed** (`041-s3-replication-archive` / `040-dynamodb-pitr-export` / `039-usage-history`): Committed remaining CDK compiled output (`.js`, `.d.ts`) and TypeScript source for constructs added across features 039–041 (`UsageHistoryTable`, `UsageHistoryBucket`, `DynamodbExportJob`, `UsageHistoryArchiveBucket`, `UsageHistoryReplication`) along with corresponding spec artifacts. No behavioral changes beyond what was already documented per feature.
 

@@ -468,8 +468,8 @@ def run(payload: dict) -> str:
                 )
                 # Fail-open: continue with original text
 
-        # Enrich attachments with S3 pre-signed URLs (US4): download from Slack, upload to S3
-        # US3 (FR-012): max 5 files per request; excess are skipped with warning
+        # Enrich attachments with S3 pre-signed URLs: download from Slack, upload to S3
+        # Max 5 files per request; excess are skipped with warning
         MAX_FILES_PER_REQUEST = 5
         execution_attachments = attachments
         did_s3_upload = False
@@ -601,7 +601,7 @@ def run(payload: dict) -> str:
                     {"status": "completed", "correlation_id": correlation_id}
                 )
 
-            # 032 US3: invoke_execution_agent returns unwrapped payload only (result or error body).
+            # invoke_execution_agent returns unwrapped payload only (result or error body).
             # No JSON-RPC envelope (jsonrpc/id) is exposed; Slack sees only status, response_text, or user-facing error.
             execution_result = invoke_execution_agent(
                 execution_payload,

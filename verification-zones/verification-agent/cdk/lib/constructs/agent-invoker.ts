@@ -7,6 +7,7 @@ import { Construct } from "constructs";
 import * as path from "path";
 import { execSync } from "child_process";
 import * as fs from "fs";
+import { NagSuppressions } from "cdk-nag";
 
 /**
  * Agent Invoker Lambda construct.
@@ -82,7 +83,7 @@ export class AgentInvoker extends Construct {
     });
 
     // Grant InvokeAgentRuntime on Verification Agent runtime and its DEFAULT endpoint.
-    // 026 US1 (T007): Least privilege — scoped to specific ARNs per audit-iam-bedrock.md.
+    // Least privilege — scoped to specific ARNs for InvokeAgentRuntime authorization.
     const runtimeEndpointArn = `${props.verificationAgentArn}/runtime-endpoint/DEFAULT`;
     this.function.addToRolePolicy(
       new iam.PolicyStatement({
@@ -100,6 +101,31 @@ export class AgentInvoker extends Construct {
       new lambdaEventSources.SqsEventSource(props.agentInvocationQueue, {
         batchSize: 1,
       })
+    );
+
+    if (this.function.role) {
+      NagSuppressions.addResourceSuppressions(
+        this.function.role,
+        [
+          {
+            id: "AwsSolutions-IAM4",
+            reason:
+              "Lambda uses AWS-managed policy for basic logging permissions (AWSLambdaBasicExecutionRole).",
+          },
+        ],
+        true,
+      );
+    }
+
+    NagSuppressions.addResourceSuppressions(
+      this.function.node.defaultChild ?? this.function,
+      [
+        {
+          id: "AwsSolutions-L1",
+          reason:
+            "Lambda runtime is pinned to Python 3.11 to match the project baseline. Runtime upgrades are handled separately.",
+        },
+      ],
     );
   }
 }

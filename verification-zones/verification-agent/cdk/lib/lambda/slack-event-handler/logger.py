@@ -74,7 +74,7 @@ def _mask_pii(value: Optional[str], log_level: str = "INFO") -> Optional[str]:
     
     Masking strategy:
     - DEBUG: Full value (for debugging only)
-    - INFO: Partial mask (e.g., "T123***" -> "T123***")
+    - INFO: Partial mask (e.g., "TEAM123***" -> "TEAM123***")
     - WARN/ERROR/CRITICAL: SHA-256 hash (first 8 characters)
     
     Args:

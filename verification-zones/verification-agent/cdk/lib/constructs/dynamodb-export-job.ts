@@ -9,6 +9,7 @@ import { Construct } from "constructs";
 import * as path from "path";
 import { execSync } from "child_process";
 import * as fs from "fs";
+import { NagSuppressions } from "cdk-nag";
 
 /**
  * DynamoDB Export Job construct.
@@ -105,10 +106,69 @@ export class DynamoDbExportJob extends Construct {
     );
 
     // EventBridge Scheduler: daily at JST 00:00 = UTC 15:00
+    const schedulerInvokeRole = new iam.Role(this, "SchedulerInvokeRole", {
+      assumedBy: new iam.ServicePrincipal("scheduler.amazonaws.com"),
+      description: "Invoke role for DynamoDB export Lambda (EventBridge Scheduler target)",
+    });
+    this.function.grantInvoke(schedulerInvokeRole);
+
+    NagSuppressions.addResourceSuppressions(
+      schedulerInvokeRole,
+      [
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "EventBridge Scheduler needs permission to invoke the Lambda across versions/aliases. " +
+            "The Lambda invoke permission model uses function ARN patterns that may include `:*$` suffixes.",
+        },
+      ],
+      true,
+    );
+
     new Schedule(this, "DailySchedule", {
       schedule: ScheduleExpression.cron({ hour: "15", minute: "0" }),
-      target: new LambdaInvoke(this.function),
+      target: new LambdaInvoke(this.function, { role: schedulerInvokeRole }),
       description: "Daily DynamoDB usage-history export to S3 (JST 00:00)",
     });
+
+    // cdk-nag suppressions:
+    // - IAM4: Lambda uses AWS-managed basic execution policy for CloudWatch logs
+    // - L1: runtime pinned to Python 3.11 (project baseline)
+    // - IAM5: S3 multipart upload requires wildcard actions scoped to the export prefix
+    if (this.function.role) {
+      NagSuppressions.addResourceSuppressions(
+        this.function.role,
+        [
+          {
+            id: "AwsSolutions-IAM4",
+            reason:
+              "Lambda uses AWS-managed policy for basic logging permissions (AWSLambdaBasicExecutionRole).",
+          },
+          {
+            id: "AwsSolutions-L1",
+            reason:
+              "Lambda runtime is pinned to Python 3.11 to match the project baseline. Runtime upgrades are handled separately.",
+          },
+          {
+            id: "AwsSolutions-IAM5",
+            reason:
+              "S3 multipart upload operations use wildcard actions (Abort*, List*) as part of the AWS S3 API. " +
+              "Permissions are scoped to the dynamodb-exports/ prefix in the usage-history bucket.",
+          },
+        ],
+        true,
+      );
+    }
+
+    NagSuppressions.addResourceSuppressions(
+      this.function.node.defaultChild ?? this.function,
+      [
+        {
+          id: "AwsSolutions-L1",
+          reason:
+            "Lambda runtime is pinned to Python 3.11 to match the project baseline. Runtime upgrades are handled separately.",
+        },
+      ],
+    );
   }
 }

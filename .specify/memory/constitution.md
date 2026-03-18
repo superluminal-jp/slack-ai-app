@@ -1,6 +1,19 @@
 <!--
 Sync Impact Report
 ==================
+Version change: 1.1.0 → 1.2.0
+Modified principles: N/A
+Added sections:
+  - Principle VII: Clean Code Identifiers (new non-negotiable)
+Templates requiring updates:
+  ✅ plan.md — Constitution Check section must reference Principle VII
+  ✅ CLAUDE.md — Python Coding Standards section added with comment/docstring rule
+Follow-up TODOs: none
+-->
+
+<!--
+Sync Impact Report (previous)
+==================
 Version change: 1.0.1 → 1.1.0
 Modified principles:
   - Principle I: renamed to "Spec-Driven Development (SDD)" for explicit labelling; content unchanged
@@ -108,6 +121,24 @@ MUST respect zone boundaries. Inter-zone communication MUST use the A2A protocol
 **Rationale**: Zone isolation enables independent scaling, deployment, and failure
 containment. The A2A protocol provides a stable inter-zone contract.
 
+### VII. Clean Code Identifiers
+
+Source code, docstrings, inline comments, and test names MUST NOT contain
+process-tracking identifiers that are specific to the spec-kit workflow.
+
+**Non-negotiable rules**:
+- Spec numbers (e.g. `(027)`, `026 US1`) MUST NOT appear in code, docstrings, or comments.
+- Branch names (e.g. `041-s3-replication-archive`) MUST NOT appear in code or docstrings.
+- Task IDs (e.g. `T014`) and user story labels (e.g. `US1`) in isolation MUST NOT appear in code.
+- Test class and function names MUST describe the behavior under test, not reference spec numbers.
+
+**Permitted**: HTTP status codes, numeric literals, and business-domain numbers
+(e.g., rate limit counts) are not spec numbers and are permitted.
+
+**Rationale**: Spec numbers and branch names become meaningless after the feature
+lifecycle ends. Embedding them creates cleanup debt requiring periodic removal
+sprints. Code must be readable without external process context.
+
 ### VI. Documentation & Deploy-Script Parity
 
 Every merged change MUST leave all documentation and deployment scripts in a state that
@@ -198,4 +229,4 @@ If a violation is necessary, it MUST be justified in the Complexity Tracking tab
 
 For runtime development guidance, see `CLAUDE.md` and `.claude/rules/`.
 
-**Version**: 1.1.0 | **Ratified**: 2026-02-20 | **Last Amended**: 2026-03-15
+**Version**: 1.2.0 | **Ratified**: 2026-02-20 | **Last Amended**: 2026-03-18

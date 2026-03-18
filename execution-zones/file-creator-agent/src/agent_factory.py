@@ -5,7 +5,7 @@ Creates a Strands Agent configured with Bedrock and tools:
 generate_text_file, generate_excel, generate_word, generate_powerpoint,
 generate_chart_image, get_business_document_guidelines, get_presentation_slide_guidelines.
 
-Note: fetch_url was moved to the dedicated fetch-url-agent (035-fetch-url-agent).
+Note: fetch_url was moved to the dedicated fetch-url-agent.
 """
 
 import os

@@ -11,16 +11,16 @@ import re
 import time
 from typing import List
 
-# Defaults: 014 used 5 MB; 027 uses 10 MB for generated files (research.md §2.1)
+# Defaults: 5 MB legacy; 10 MB for generated files (research.md §2.1)
 _DEFAULT_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB — Slack workspace limit
 
-# 027: Per-file-type size limits (research.md §2.1)
+# Per-file-type size limits (research.md §2.1)
 MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB — Slack workspace limit
 MAX_TEXT_FILE_BYTES = 1 * 1024 * 1024   # 1 MB — text-based (.md, .csv, .txt)
 MAX_OFFICE_FILE_BYTES = 10 * 1024 * 1024  # 10 MB — Office (.docx, .xlsx, .pptx)
 MAX_IMAGE_FILE_BYTES = 5 * 1024 * 1024   # 5 MB — image (.png)
 
-# 027: Extended defaults for generated files (contracts/execution-response.yaml)
+# Extended defaults for generated files (contracts/execution-response.yaml)
 _DEFAULT_ALLOWED_MIME_TYPES = [
     "text/csv",
     "application/json",

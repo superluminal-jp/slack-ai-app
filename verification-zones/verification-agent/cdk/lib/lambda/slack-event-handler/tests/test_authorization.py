@@ -299,21 +299,21 @@ class TestEdgeCases:
         
         # Test multiple different requests
         result1 = authorize_request(
-            team_id="T123ABC",
+            team_id="TEAM123ABC",
             user_id="U111",
             channel_id="C001",
         )
         assert result1.authorized is True
         
         result2 = authorize_request(
-            team_id="T999XXX",
+            team_id="TEAM999XXX",
             user_id="U888",
             channel_id="C999",
         )
         assert result2.authorized is True
         
         result3 = authorize_request(
-            team_id="T000",
+            team_id="TEAM000",
             user_id="U000",
             channel_id="C000",
         )
@@ -342,13 +342,13 @@ class TestEdgeCases:
         """Test partial authorization (some entities authorized, some not) results in rejection."""
         # Mock whitelist with partial authorization
         mock_load.return_value = {
-            "team_ids": set(["T123ABC"]),  # Authorized
+            "team_ids": set(["TEAM123ABC"]),  # Authorized
             "user_ids": set(["U111"]),  # Authorized
             "channel_ids": set(["C999XXX"]),  # NOT authorized (C001 not in whitelist)
         }
         
         result = authorize_request(
-            team_id="T123ABC",
+            team_id="TEAM123ABC",
             user_id="U111",
             channel_id="C001",  # Not in whitelist
         )
@@ -398,14 +398,14 @@ class TestFlexibleWhitelist:
         
         # Test with different team_id and user_id - should all be allowed
         result1 = authorize_request(
-            team_id="T123",
+            team_id="TEAM123",
             user_id="U456",
             channel_id="C001",
         )
         assert result1.authorized is True
         
         result2 = authorize_request(
-            team_id="T999",
+            team_id="TEAM999",
             user_id="U888",
             channel_id="C001",
         )
@@ -422,7 +422,7 @@ class TestFlexibleWhitelist:
         }
         
         result = authorize_request(
-            team_id="T123",
+            team_id="TEAM123",
             user_id="U456",
             channel_id="C002",  # Not in whitelist
         )
@@ -435,21 +435,21 @@ class TestFlexibleWhitelist:
         """Test team_id-only whitelist allows any user_id and channel_id."""
         # Mock whitelist with only team_id configured
         mock_load.return_value = {
-            "team_ids": set(["T123"]),  # Configured
+            "team_ids": set(["TEAM123"]),  # Configured
             "user_ids": set([]),  # Not configured
             "channel_ids": set([]),  # Not configured
         }
         
         # Test with different user_id and channel_id - should all be allowed
         result1 = authorize_request(
-            team_id="T123",
+            team_id="TEAM123",
             user_id="U456",
             channel_id="C001",
         )
         assert result1.authorized is True
         
         result2 = authorize_request(
-            team_id="T123",
+            team_id="TEAM123",
             user_id="U999",
             channel_id="C999",
         )
@@ -457,7 +457,7 @@ class TestFlexibleWhitelist:
         
         # Test with unauthorized team_id - should be rejected
         result3 = authorize_request(
-            team_id="T999",  # Not in whitelist
+            team_id="TEAM999",  # Not in whitelist
             user_id="U456",
             channel_id="C001",
         )
@@ -476,14 +476,14 @@ class TestFlexibleWhitelist:
         
         # Test with different team_id and channel_id - should all be allowed
         result1 = authorize_request(
-            team_id="T123",
+            team_id="TEAM123",
             user_id="U456",
             channel_id="C001",
         )
         assert result1.authorized is True
         
         result2 = authorize_request(
-            team_id="T999",
+            team_id="TEAM999",
             user_id="U456",
             channel_id="C999",
         )
@@ -491,7 +491,7 @@ class TestFlexibleWhitelist:
         
         # Test with unauthorized user_id - should be rejected
         result3 = authorize_request(
-            team_id="T123",
+            team_id="TEAM123",
             user_id="U999",  # Not in whitelist
             channel_id="C001",
         )
@@ -503,21 +503,21 @@ class TestFlexibleWhitelist:
         """Test team_id and channel_id combination allows any user_id."""
         # Mock whitelist with team_id and channel_id configured
         mock_load.return_value = {
-            "team_ids": set(["T123"]),  # Configured
+            "team_ids": set(["TEAM123"]),  # Configured
             "user_ids": set([]),  # Not configured
             "channel_ids": set(["C001"]),  # Configured
         }
         
         # Test with different user_id - should all be allowed
         result1 = authorize_request(
-            team_id="T123",
+            team_id="TEAM123",
             user_id="U456",
             channel_id="C001",
         )
         assert result1.authorized is True
         
         result2 = authorize_request(
-            team_id="T123",
+            team_id="TEAM123",
             user_id="U999",  # Not in whitelist, but user_id is not checked
             channel_id="C001",
         )
@@ -525,7 +525,7 @@ class TestFlexibleWhitelist:
         
         # Test with unauthorized team_id - should be rejected
         result3 = authorize_request(
-            team_id="T999",  # Not in whitelist
+            team_id="TEAM999",  # Not in whitelist
             user_id="U456",
             channel_id="C001",
         )
@@ -537,21 +537,21 @@ class TestFlexibleWhitelist:
         """Test team_id and user_id combination allows any channel_id."""
         # Mock whitelist with team_id and user_id configured
         mock_load.return_value = {
-            "team_ids": set(["T123"]),  # Configured
+            "team_ids": set(["TEAM123"]),  # Configured
             "user_ids": set(["U456"]),  # Configured
             "channel_ids": set([]),  # Not configured
         }
         
         # Test with different channel_id - should all be allowed
         result1 = authorize_request(
-            team_id="T123",
+            team_id="TEAM123",
             user_id="U456",
             channel_id="C001",
         )
         assert result1.authorized is True
         
         result2 = authorize_request(
-            team_id="T123",
+            team_id="TEAM123",
             user_id="U456",
             channel_id="C999",  # Not in whitelist, but channel_id is not checked
         )
@@ -569,14 +569,14 @@ class TestFlexibleWhitelist:
         
         # Test with different team_id - should all be allowed
         result1 = authorize_request(
-            team_id="T123",
+            team_id="TEAM123",
             user_id="U456",
             channel_id="C001",
         )
         assert result1.authorized is True
         
         result2 = authorize_request(
-            team_id="T999",  # Not in whitelist, but team_id is not checked
+            team_id="TEAM999",  # Not in whitelist, but team_id is not checked
             user_id="U456",
             channel_id="C001",
         )
@@ -587,14 +587,14 @@ class TestFlexibleWhitelist:
         """Test rejecting when one configured entity is unauthorized."""
         # Mock whitelist with team_id and channel_id configured
         mock_load.return_value = {
-            "team_ids": set(["T123"]),  # Configured
+            "team_ids": set(["TEAM123"]),  # Configured
             "user_ids": set([]),  # Not configured
             "channel_ids": set(["C001"]),  # Configured
         }
         
         # Test with unauthorized channel_id - should be rejected
         result = authorize_request(
-            team_id="T123",  # Authorized
+            team_id="TEAM123",  # Authorized
             user_id="U456",  # Not checked (not configured)
             channel_id="C999",  # Not authorized
         )
@@ -608,14 +608,14 @@ class TestFlexibleWhitelist:
         """Test all entities configured maintains AND condition (backward compatibility)."""
         # Mock whitelist with all entities configured
         mock_load.return_value = {
-            "team_ids": set(["T123"]),
+            "team_ids": set(["TEAM123"]),
             "user_ids": set(["U456"]),
             "channel_ids": set(["C001"]),
         }
         
         # Test with all entities authorized - should be allowed
         result1 = authorize_request(
-            team_id="T123",
+            team_id="TEAM123",
             user_id="U456",
             channel_id="C001",
         )
@@ -623,7 +623,7 @@ class TestFlexibleWhitelist:
         
         # Test with one entity unauthorized - should be rejected
         result2 = authorize_request(
-            team_id="T123",
+            team_id="TEAM123",
             user_id="U456",
             channel_id="C999",  # Not authorized
         )
@@ -644,7 +644,7 @@ class TestIntegrationScenarios:
             "channel_ids": set([]),
         }
         
-        result1 = authorize_request("T123", "U456", "C001")
+        result1 = authorize_request("TEAM123", "U456", "C001")
         assert result1.authorized is True  # Empty whitelist allows all
         
         # Transition to partial whitelist (channel_id only)
@@ -654,10 +654,10 @@ class TestIntegrationScenarios:
             "channel_ids": set(["C001"]),
         }
         
-        result2 = authorize_request("T123", "U456", "C001")
+        result2 = authorize_request("TEAM123", "U456", "C001")
         assert result2.authorized is True  # channel_id matches
         
-        result3 = authorize_request("T123", "U456", "C999")
+        result3 = authorize_request("TEAM123", "U456", "C999")
         assert result3.authorized is False  # channel_id doesn't match
     
     @patch('authorization.load_whitelist_config')
@@ -670,20 +670,20 @@ class TestIntegrationScenarios:
             "channel_ids": set(["C001"]),
         }
         
-        result1 = authorize_request("T123", "U456", "C001")
+        result1 = authorize_request("TEAM123", "U456", "C001")
         assert result1.authorized is True  # channel_id matches, others not checked
         
         # Transition to full whitelist
         mock_load.return_value = {
-            "team_ids": set(["T123"]),
+            "team_ids": set(["TEAM123"]),
             "user_ids": set(["U456"]),
             "channel_ids": set(["C001"]),
         }
         
-        result2 = authorize_request("T123", "U456", "C001")
+        result2 = authorize_request("TEAM123", "U456", "C001")
         assert result2.authorized is True  # All match
         
-        result3 = authorize_request("T999", "U456", "C001")
+        result3 = authorize_request("TEAM999", "U456", "C001")
         assert result3.authorized is False  # team_id doesn't match
     
     @patch('authorization.load_whitelist_config')
@@ -692,7 +692,7 @@ class TestIntegrationScenarios:
         # Mock configuration load failure
         mock_load.side_effect = LoaderError("Failed to load whitelist configuration")
         
-        result = authorize_request("T123", "U456", "C001")
+        result = authorize_request("TEAM123", "U456", "C001")
         
         # Should fail-closed (reject all requests)
         assert result.authorized is False

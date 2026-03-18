@@ -90,7 +90,7 @@ def _read_invoke_response(response: dict) -> str:
 
 def build_jsonrpc_request(task_payload: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Build a JSON-RPC 2.0 Request for execute_task (032-jsonrpc-zone-connection).
+    Build a JSON-RPC 2.0 Request for execute_task.
 
     Args:
         task_payload: Task payload (channel, text, bot_token, correlation_id, etc.)
@@ -408,7 +408,7 @@ def invoke_execution_agent(
         # Unique session ID per invocation (UUID recommended by AWS for InvokeAgentRuntime)
         session_id = str(uuid.uuid4())
 
-        # JSON-RPC 2.0 Request (032-jsonrpc-zone-connection): execute_task with task_payload as params
+        # JSON-RPC 2.0 Request: execute_task with task_payload as params
         payload_bytes = json.dumps(build_jsonrpc_request(task_payload)).encode("utf-8")
 
         for attempt in range(1, INVOKE_RETRY_MAX_ATTEMPTS + 1):
@@ -454,7 +454,7 @@ def invoke_execution_agent(
                     "correlation_id": correlation_id,
                 })
 
-            # Parse as JSON-RPC 2.0 Response (032-jsonrpc-zone-connection)
+            # Parse as JSON-RPC 2.0 Response
             try:
                 response_data = json.loads(response_body) if response_body else {}
             except (json.JSONDecodeError, ValueError):

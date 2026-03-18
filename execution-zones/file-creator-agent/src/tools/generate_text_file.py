@@ -1,5 +1,5 @@
 """
-generate_text_file tool for Execution Agent (027-slack-file-generation-best-practices).
+generate_text_file tool for Execution Agent.
 
 Produces text-based files (.md, .csv, .txt) and stores them in tool_context.invocation_state
 for the handler to extract and build file_artifact.
@@ -49,7 +49,7 @@ def generate_text_file(content: str, filename: str, tool_context: Any) -> str:
     if not filename or not isinstance(filename, str) or not filename.strip():
         return "エラー: filename は拡張子付きで指定してください（例: report.md, data.csv）。"
 
-    # T014: Apply sanitize_filename before use (per data-model.md)
+    # Apply sanitize_filename before use (per data-model.md)
     ext = filename.rsplit(".", 1)[-1] if "." in filename else "txt"
     safe_filename = sanitize_filename(filename.strip(), ext)
     if not safe_filename:

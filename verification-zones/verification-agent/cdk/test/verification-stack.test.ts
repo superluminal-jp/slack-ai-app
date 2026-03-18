@@ -6,8 +6,9 @@
  * - If using Docker, ensure Colima (or Docker) is running and DOCKER_HOST is set.
  */
 import * as cdk from "aws-cdk-lib";
-import { Template, Match } from "aws-cdk-lib/assertions";
+import { Template, Match, Annotations } from "aws-cdk-lib/assertions";
 import { REQUIRED_COST_ALLOCATION_TAG_KEYS } from "@slack-ai-app/cdk-tooling";
+import { AwsSolutionsChecks } from "cdk-nag";
 import { VerificationStack } from "../lib/verification-stack";
 
 /** Resource with optional Properties.QueueName (SQS, etc.) */
@@ -432,5 +433,28 @@ describe("VerificationStack", () => {
         },
       });
     });
+  });
+});
+
+describe("cdk-nag security scan", () => {
+  it("has no unresolved cdk-nag errors", () => {
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_SIGNING_SECRET = "test-signing-secret";
+    const nagApp = new cdk.App();
+    const nagStack = new VerificationStack(nagApp, "NagTestStack", {
+      env: { account: "123456789012", region: "ap-northeast-1" },
+      executionAgentArns: {
+        "file-creator":
+          "arn:aws:bedrock-agentcore:ap-northeast-1:123456789012:runtime/TestExecutionAgent",
+      },
+    });
+    cdk.Aspects.of(nagApp).add(new AwsSolutionsChecks({ verbose: true }));
+    const errors = Annotations.fromStack(nagStack).findError(
+      "*",
+      Match.stringLikeRegexp(".*")
+    );
+    delete process.env.SLACK_BOT_TOKEN;
+    delete process.env.SLACK_SIGNING_SECRET;
+    expect(errors).toHaveLength(0);
   });
 });

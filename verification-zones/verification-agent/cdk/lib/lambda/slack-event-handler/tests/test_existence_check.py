@@ -278,7 +278,7 @@ class TestErrorHandling:
     @patch('existence_check.WebClient')
     @patch('existence_check.get_from_cache', return_value=None)
     def test_timeout_handling(self, mock_get_cache, mock_webclient):
-        """Test timeout handling (T051)."""
+        """Test timeout handling."""
         import socket
         
         mock_client = MagicMock()
@@ -299,7 +299,7 @@ class TestErrorHandling:
     @patch('existence_check.get_from_cache', return_value=None)
     @patch('time.sleep')  # Mock sleep to speed up test
     def test_rate_limit_retry_logic(self, mock_sleep, mock_get_cache, mock_webclient):
-        """Test rate limit retry logic with exponential backoff (T052)."""
+        """Test rate limit retry logic with exponential backoff."""
         from slack_sdk.errors import SlackApiError
         
         mock_client = MagicMock()
@@ -333,7 +333,7 @@ class TestErrorHandling:
     @patch('existence_check.get_from_cache', return_value=None)
     @patch('time.sleep')  # Mock sleep to speed up test
     def test_rate_limit_exhaustion(self, mock_sleep, mock_get_cache, mock_webclient):
-        """Test rate limit exhaustion after max retries (T053)."""
+        """Test rate limit exhaustion after max retries."""
         from slack_sdk.errors import SlackApiError
         
         mock_client = MagicMock()
@@ -362,7 +362,7 @@ class TestErrorHandling:
     @patch('existence_check.WebClient')
     @patch('existence_check.get_from_cache', return_value=None)
     def test_other_slack_api_errors(self, mock_get_cache, mock_webclient):
-        """Test handling of other Slack API errors (T054)."""
+        """Test handling of other Slack API errors."""
         from slack_sdk.errors import SlackApiError
         
         mock_client = MagicMock()

@@ -1,12 +1,12 @@
 """
-Slack Poster Lambda (019, 028): consumes SQS messages from Verification Agent and posts to Slack.
+Slack Poster Lambda: consumes SQS messages from Verification Agent and posts to Slack.
 
 Verification Agent no longer calls Slack API; it sends a structured "post request" to this
 queue. This Lambda performs the actual chat.postMessage and files.upload.
 
 Message body (JSON): channel, thread_ts?, text?, file_artifact?, bot_token, correlation_id?
-See specs/019-slack-poster-separation/contracts/slack-post-request.md.
-028: file_artifact supports s3PresignedUrl (fetch) or contentBase64 (inline).
+See contracts/slack-post-request.md in repo docs for the post-request schema.
+file_artifact supports s3PresignedUrl (fetch) or contentBase64 (inline).
 """
 
 import base64

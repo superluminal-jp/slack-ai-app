@@ -23,6 +23,7 @@ import {
   logInfo,
   logWarn,
   CdkError,
+  applyNagPacks,
 } from "@slack-ai-app/cdk-tooling";
 
 const VALID_ENVIRONMENTS = ["dev", "prod"] as const;
@@ -156,4 +157,5 @@ logInfo("Web Fetch Agent stack created.", {
   context: { stackName },
 });
 
+applyNagPacks(app);
 app.synth();

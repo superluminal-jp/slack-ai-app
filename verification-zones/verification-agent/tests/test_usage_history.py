@@ -12,13 +12,13 @@ import pytest
 
 
 # ---------------------------------------------------------------------------
-# We import usage_history here; it will fail until T007 creates the file.
+# We import usage_history from src (path adjusted below).
 # ---------------------------------------------------------------------------
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src"))
 
-import usage_history  # noqa: E402  (will fail until T007)
+import usage_history  # noqa: E402
 from usage_history import (  # noqa: E402
     UsageRecord,
     PipelineResult,

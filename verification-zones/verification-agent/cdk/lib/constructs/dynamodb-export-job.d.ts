@@ -3,7 +3,7 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import { Construct } from "constructs";
 /**
- * DynamoDB Export Job construct (040).
+ * DynamoDB Export Job construct.
  *
  * Purpose: Trigger a daily full DynamoDB-to-S3 export at JST 00:00 (UTC 15:00)
  * via EventBridge Scheduler. Uses DynamoDB native ExportTableToPointInTime API

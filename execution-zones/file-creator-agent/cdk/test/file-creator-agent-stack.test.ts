@@ -1,6 +1,7 @@
 import * as cdk from "aws-cdk-lib";
-import { Template, Match } from "aws-cdk-lib/assertions";
+import { Template, Match, Annotations } from "aws-cdk-lib/assertions";
 import { REQUIRED_COST_ALLOCATION_TAG_KEYS } from "@slack-ai-app/cdk-tooling";
+import { AwsSolutionsChecks } from "cdk-nag";
 import { FileCreatorAgentStack } from "../lib/file-creator-agent-stack";
 
 describe("FileCreatorAgentStack", () => {
@@ -65,5 +66,20 @@ describe("FileCreatorAgentStack", () => {
       const crossAccountTemplate = Template.fromStack(crossAccountStack);
       crossAccountTemplate.hasOutput("FileCreatorAgentRuntimeArn", {});
     });
+  });
+});
+
+describe("cdk-nag security scan", () => {
+  it("has no unresolved cdk-nag errors", () => {
+    const nagApp = new cdk.App();
+    const nagStack = new FileCreatorAgentStack(nagApp, "NagTestStack", {
+      env: { account: "123456789012", region: "ap-northeast-1" },
+    });
+    cdk.Aspects.of(nagApp).add(new AwsSolutionsChecks({ verbose: true }));
+    const errors = Annotations.fromStack(nagStack).findError(
+      "*",
+      Match.stringLikeRegexp(".*")
+    );
+    expect(errors).toHaveLength(0);
   });
 });

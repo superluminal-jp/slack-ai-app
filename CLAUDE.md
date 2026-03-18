@@ -23,6 +23,7 @@ Auto-generated from all feature plans. Last updated: 2026-03-15
 - TypeScript 5.x (CDK) + `aws-cdk-lib` 2.215.0 (stable) — `aws-s3`, `aws-iam` (041-s3-replication-archive)
 - S3 (two buckets: existing source, new archive destination) (041-s3-replication-archive)
 - Python 3.11 + ruff (linting), pytest (test runner) (043-exec-cleanup)
+- TypeScript 5.x (CDK) + `cdk-nag` (AWS Solutions security scanning) (044-cdk-nag-governance)
 
 - Python 3.11 (コンテナ: `python:3.11-slim`, ARM64) + `bedrock-agentcore` v1.2.0 (Starlette ベース), `starlette`, `uvicorn` (020-fix-a2a-routing)
 
@@ -35,7 +36,7 @@ tests/
 
 ## Constitution (Non-Negotiable Rules)
 
-Full text: `.specify/memory/constitution.md` (v1.1.0). These rules apply regardless of whether speckit is used.
+Full text: `.specify/memory/constitution.md` (v1.2.0). These rules apply regardless of whether speckit is used.
 
 ### I. Spec-Driven Development
 Every code change starts with a spec. No PR without a corresponding spec in `specs/`.
@@ -100,6 +101,67 @@ DEPLOYMENT_ENV=dev ./scripts/deploy.sh
 - CHANGELOG: follow [Keep a Changelog](https://keepachangelog.com/); use Added, Changed, Fixed, Security, etc.
 - Module READMEs: include purpose, scope/non-scope, usage, dependencies, configuration, testing, limitations (see docs/DOCUMENTATION_STANDARDS.md).
 
+## Python Coding Standards
+
+### Logging
+
+Use `log(logger, level, event_type, data_dict)` from `logger_util.py` — never raw `print()`.
+
+**Required fields by level**:
+- `INFO`: `event_type` + context fields relevant to the event
+- `WARNING`: `event_type`, `error` (str), optionally `error_type` (class name)
+- `ERROR`: `event_type`, `error` (str), `error_type` (class name), `correlation_id`
+
+```python
+# Correct
+log(_logger, "info", "request.received", {"correlation_id": cid, "channel": ch})
+log(_logger, "error", "whitelist.check_failed", {
+    "correlation_id": cid, "error": str(exc), "error_type": type(exc).__name__
+})
+
+# Incorrect
+print(f"Received {ch}")          # raw print — prohibited
+logger.info("request received")  # unstructured — use log() helper
+```
+
+### Error Handling
+
+Match fail-open/fail-closed to the pipeline layer:
+
+```python
+# Security pipeline — fail CLOSED (return error, never continue)
+except Exception as exc:
+    log(_logger, "error", "security.check_failed", {
+        "correlation_id": cid, "error": str(exc), "error_type": type(exc).__name__
+    })
+    return error_response(...)
+
+# Infrastructure — fail OPEN (log + continue)
+except Exception as exc:
+    log(_logger, "warning", "storage.write_failed", {
+        "correlation_id": cid, "error": str(exc), "error_type": type(exc).__name__
+    })
+    # continue — non-blocking
+```
+
+Never use bare `except:`. Always log before handling.
+
+### Comments and Docstrings
+
+- Docstrings describe **what** and **why**, not **how** the code works
+- Inline comments explain non-obvious decisions or business rules
+- No spec numbers (e.g. `(027)`), branch names (e.g. `041-s3-replication-archive`), or task IDs (e.g. `T014`) in any code, docstring, or comment
+
+```python
+# Correct
+def check_whitelist(channel: str) -> bool:
+    """Return True if channel is in the allowed list. Fails open on lookup error."""
+
+# Incorrect — embeds process-tracking identifiers
+def check_whitelist(channel: str) -> bool:
+    """(027): Check whitelist table using DynamoDB GetItem and return bool result."""
+```
+
 ## Code Style
 
 Python 3.11 (コンテナ: `python:3.11-slim`, ARM64): Follow standard conventions
@@ -108,6 +170,7 @@ Python 3.11 (コンテナ: `python:3.11-slim`, ARM64): Follow standard conventio
 - 043-exec-cleanup: Removed spec-number annotations from all execution-zones comments/docstrings; removed unused imports (ruff F401 clean) and dead assignments (F841); fixed f-string without placeholder (F541); renamed spec-numbered test classes to intent-based names. Zero behavioral changes.
 - 042-code-cleanup: Removed spec-number annotations from all verification-zones comments/docstrings; migrated Lambda handler raw print() to structured logger calls; removed unused imports (ruff F401 clean); deleted orphan bedrock_client.py; fixed missing log_warn import in slack-response-handler; updated stale test patches (invoke_execution_agent → run_orchestration_loop).
 - 041-s3-replication-archive: S3 SRR from usage-history → usage-history-archive; all prefixes (content/, attachments/, dynamodb-exports/); deleteMarkerReplication disabled; cross-account ready via archiveAccountId config / ARCHIVE_ACCOUNT_ID env; new constructs UsageHistoryArchiveBucket + UsageHistoryReplication; versioning enabled on source bucket.
+- 044-cdk-nag-governance: Applied `cdk-nag` AwsSolutions security scanning across all CDK apps (synth + Jest); added targeted suppressions with written justifications; narrowed Bedrock IAM from wildcard to model-scoped ARNs; verified cost allocation tag coverage (including Scheduler); added/clarified governance standards (logging/error handling/comments) and banned process-tracking identifiers in code.
 
 
 <!-- MANUAL ADDITIONS START -->

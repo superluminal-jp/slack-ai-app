@@ -70,6 +70,19 @@ npx cdk synth
 npx cdk deploy SlackAI-Verification-Dev
 ```
 
+## CDK security scanning
+
+This CDK app runs `cdk-nag` (AWS Solutions checks) during:
+
+- **Synthesis** (`npx cdk synth`): `bin/cdk.ts` applies the nag pack to the app.
+- **Tests** (`npm test`): Jest includes a `"cdk-nag security scan"` assertion that requires zero unresolved violations.
+
+See `verification-zones/verification-agent/cdk/README.md` for suppression rules and IAM scope notes.
+
+## Clean code identifiers
+
+The repository constitution prohibits embedding spec numbers, branch names, and task IDs in source code, comments, docstrings, and test names. See `.specify/memory/constitution.md` (Principle VII).
+
 ## Execution Agent ARNs
 
 After deploying the execution zone, set the ARNs in `cdk.config.dev.json`:

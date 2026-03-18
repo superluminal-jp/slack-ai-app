@@ -20,6 +20,7 @@ import {
   logInfo,
   logWarn,
   CdkError,
+  applyNagPacks,
 } from "@slack-ai-app/cdk-tooling";
 
 const VALID_ENVIRONMENTS = ["dev", "prod"] as const;
@@ -147,4 +148,5 @@ logInfo("Docs Agent stack created.", {
   context: { stackName: docsStackName },
 });
 
+applyNagPacks(app);
 app.synth();

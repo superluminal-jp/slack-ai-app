@@ -172,7 +172,7 @@ class TestToolCallRecord:
 
 
 class TestOrchestrationAgentRun:
-    """Phase 3 (US1) — T010, T011: OrchestrationAgent.run() behaviour."""
+    """Phase 3 — OrchestrationAgent.run() behaviour."""
 
     def _make_request(self, **kwargs):
         from src.orchestrator import OrchestrationRequest
@@ -189,7 +189,7 @@ class TestOrchestrationAgentRun:
         return OrchestrationRequest(**defaults)
 
     def test_run_dispatches_and_returns_synthesized_result(self):
-        """T010: run() returns synthesized_text, agents_called, completion_status='complete'."""
+        """run() returns synthesized_text, agents_called, completion_status='complete'."""
         from src.orchestrator import OrchestrationAgent, OrchestrationResult
 
         registry = {
@@ -227,7 +227,7 @@ class TestOrchestrationAgentRun:
         assert result.turns_used == 2
 
     def test_run_returns_complete_when_one_agent_errors(self):
-        """T011: When one agent returns ERROR: but synthesized_text is non-empty, status is 'complete'."""
+        """When one agent returns ERROR: but synthesized_text is non-empty, status is 'complete'."""
         from src.orchestrator import OrchestrationAgent, OrchestrationResult
 
         registry = {"docs-agent": {"name": "Docs", "description": "d", "skills": []}}
@@ -259,8 +259,8 @@ class TestOrchestrationAgentRun:
         assert result.agents_called == ["docs-agent"]
 
 
-class TestOrchestrationAgentUS2:
-    """Phase 4 (US2) — T018, T019: Iterative loop behaviour."""
+class TestOrchestrationAgentPhase4:
+    """Phase 4 — Iterative loop behaviour."""
 
     def _make_request(self, max_turns=5):
         from src.orchestrator import OrchestrationRequest
@@ -274,7 +274,7 @@ class TestOrchestrationAgentUS2:
         )
 
     def test_two_turn_loop_turns_used_equals_two(self):
-        """T018: Two tool calls across turns → OrchestrationResult.turns_used == 2."""
+        """Two tool calls across turns → OrchestrationResult.turns_used == 2."""
         from src.orchestrator import OrchestrationAgent
 
         mock_bedrock = MagicMock()
@@ -304,7 +304,7 @@ class TestOrchestrationAgentUS2:
         assert result.completion_status == "complete"
 
     def test_max_turns_hook_firing_sets_partial_status(self):
-        """T019: MaxTurnsHook fires at turn limit → completion_status == 'partial'."""
+        """MaxTurnsHook fires at turn limit → completion_status == 'partial'."""
         from src.orchestrator import OrchestrationAgent
 
         mock_bedrock = MagicMock()
@@ -334,8 +334,8 @@ class TestOrchestrationAgentUS2:
         assert result.synthesized_text  # Non-empty
 
 
-class TestOrchestrationAgentUS3:
-    """Phase 5 (US3) — T024, T025: Self-correction and all-error detection."""
+class TestOrchestrationAgentPhase5:
+    """Phase 5 — Self-correction and all-error detection."""
 
     def _make_request(self):
         from src.orchestrator import OrchestrationRequest
@@ -349,7 +349,7 @@ class TestOrchestrationAgentUS3:
         )
 
     def test_error_on_turn1_then_success_is_complete(self):
-        """T024: Tool returns ERROR on turn 1, success on turn 2 → completion_status == 'complete'."""
+        """Tool returns ERROR on turn 1, success on turn 2 → completion_status == 'complete'."""
         from src.orchestrator import OrchestrationAgent
 
         mock_bedrock = MagicMock()
@@ -380,7 +380,7 @@ class TestOrchestrationAgentUS3:
         assert result.synthesized_text != ""
 
     def test_all_agent_errors_sets_error_status(self):
-        """T025: All tool results are ERROR + no agents_called → completion_status == 'error'."""
+        """All tool results are ERROR + no agents_called → completion_status == 'error'."""
         from src.orchestrator import OrchestrationAgent
 
         mock_bedrock = MagicMock()

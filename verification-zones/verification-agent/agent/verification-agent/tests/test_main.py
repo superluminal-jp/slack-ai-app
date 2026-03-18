@@ -595,8 +595,8 @@ class Test021FastAPIDirectRouting:
         assert "from strands" not in source, "main.py should not import strands"
 
 
-class TestUS3VersionConstraints:
-    """US3: Verify requirements.txt uses pinned (~= or ==) versions, no loose (>=) constraints."""
+class TestRequirementsVersionConstraints:
+    """Verify requirements.txt uses pinned (~= or ==) versions, no loose (>=) constraints."""
 
     def test_no_loose_version_constraints(self):
         """requirements.txt must not contain >= constraints (all must be ~= or ==)."""
@@ -621,14 +621,14 @@ class TestUS3VersionConstraints:
         )
 
 
-# ─── 022: Echo Mode Disable — Normal Flow & Security Check TDD ───
+# ─── Echo Mode Disable — Normal Flow & Security Check TDD ───
 
 
-class Test022NormalFlowDelegation:
-    """022 US1: Pipeline delegates to Execution Agent (normal flow)."""
+class TestNormalFlowDelegation:
+    """Pipeline delegates to Execution Agent (normal flow)."""
 
     def _make_payload(self, text="Hello", channel="C01234567", thread_ts="1234.5678",
-                      team_id="T1234", user_id="U1234", correlation_id="corr-022"):
+                      team_id="T1234", user_id="U1234", correlation_id="corr-echo"):
         return {
             "prompt": json.dumps({
                 "channel": channel,
@@ -650,7 +650,7 @@ class Test022NormalFlowDelegation:
     def test_echo_off_delegates_to_execution_agent(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
-        """T003: Echo mode off → invoke_execution_agent called, AI response posted to Slack."""
+        """Echo mode off → invoke_execution_agent called, AI response posted to Slack."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
         mock_invoke.return_value = json.dumps({
@@ -676,7 +676,7 @@ class Test022NormalFlowDelegation:
     def test_echo_off_no_echo_prefix_in_response(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
-        """T004: Echo mode off → response does NOT contain [Echo] prefix."""
+        """Echo mode off → response does NOT contain [Echo] prefix."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
         mock_invoke.return_value = json.dumps({
@@ -700,7 +700,7 @@ class Test022NormalFlowDelegation:
     def test_echo_off_with_file_artifact(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
-        """T005: Echo mode off → file artifact from execution agent forwarded to Slack."""
+        """Echo mode off → file artifact from execution agent forwarded to Slack."""
         import base64
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
@@ -737,7 +737,7 @@ class Test022NormalFlowDelegation:
     def test_echo_off_payload_contains_all_fields(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
-        """T006: Execution payload includes all required fields."""
+        """Execution payload includes all required fields."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
         mock_invoke.return_value = json.dumps({"status": "success", "response_text": "ok"})
@@ -768,7 +768,7 @@ class Test022NormalFlowDelegation:
     def test_echo_off_env_var_case_insensitive(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
-        """T007: Normal flow (delegation to execution agent) regardless of env."""
+        """Normal flow (delegation to execution agent) regardless of env."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
         mock_invoke.return_value = json.dumps({"status": "success", "response_text": "ok"})
@@ -781,8 +781,8 @@ class Test022NormalFlowDelegation:
             mock_invoke.assert_called_once(), f"invoke not called for ECHO_MODE={env_val!r}"
 
 
-class Test022SecurityCheckPipeline:
-    """022 US2: Security check pipeline order and failure isolation with echo mode off."""
+class TestSecurityCheckPipeline:
+    """Security check pipeline order and failure isolation with echo mode off."""
 
     def _make_payload(self, team_id="T1234", user_id="U1234"):
         return {
@@ -791,7 +791,7 @@ class Test022SecurityCheckPipeline:
                 "text": "Hello",
                 "bot_token": "xoxb-test",
                 "thread_ts": "1234.5678",
-                "correlation_id": "corr-022-sec",
+                "correlation_id": "corr-sec-pipeline",
                 "team_id": team_id,
                 "user_id": user_id,
             })
@@ -805,7 +805,7 @@ class Test022SecurityCheckPipeline:
     def test_existence_check_runs_before_authorization(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
-        """T008: When existence check fails, authorization is NOT called."""
+        """When existence check fails, authorization is NOT called."""
         from existence_check import ExistenceCheckError
         mock_existence.side_effect = ExistenceCheckError("Not found")
 
@@ -827,7 +827,7 @@ class Test022SecurityCheckPipeline:
     def test_authorization_runs_before_rate_limit(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
-        """T009: When authorization fails, rate_limit is NOT called."""
+        """When authorization fails, rate_limit is NOT called."""
         mock_auth.return_value = Mock(authorized=False, unauthorized_entities=["T_BAD"])
 
         from main import handle_message
@@ -848,7 +848,7 @@ class Test022SecurityCheckPipeline:
     def test_rate_limit_exception_class_returns_error(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
-        """T010: RateLimitExceededError exception returns rate_limit_exceeded error."""
+        """RateLimitExceededError exception returns rate_limit_exceeded error."""
         from rate_limiter import RateLimitExceededError
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.side_effect = RateLimitExceededError("Too many requests")
@@ -869,7 +869,7 @@ class Test022SecurityCheckPipeline:
     def test_authorization_exception_returns_error(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
-        """T011: Unexpected exception from authorize_request returns authorization_error."""
+        """Unexpected exception from authorize_request returns authorization_error."""
         mock_auth.side_effect = Exception("DynamoDB connection failed")
 
         from main import handle_message
@@ -888,7 +888,7 @@ class Test022SecurityCheckPipeline:
     def test_all_checks_pass_delegates_to_execution(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
-        """T012: When all 3 security checks pass, invoke_execution_agent is called."""
+        """When all 3 security checks pass, invoke_execution_agent is called."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
         mock_invoke.return_value = json.dumps({"status": "success", "response_text": "ok"})
@@ -913,11 +913,11 @@ class Test022SecurityCheckPipeline:
         mock_invoke.assert_called_once()
 
 
-# ─── 022: Echo Mode Disable — Execution Error Paths TDD ───
+# ─── Echo mode off — execution error paths ───
 
 
-class Test022ExecutionErrorPaths:
-    """022 US3: Verify execution agent error codes produce correct user-friendly messages."""
+class TestExecutionErrorPaths:
+    """Verify execution agent error codes produce correct user-friendly messages."""
 
     def _make_payload(self, text="Hello", channel="C01234567"):
         return {
@@ -926,7 +926,7 @@ class Test022ExecutionErrorPaths:
                 "text": text,
                 "bot_token": "xoxb-secret-bot-token",
                 "thread_ts": "1234.5678",
-                "correlation_id": "corr-022-err",
+                "correlation_id": "corr-err-path",
                 "team_id": "T1234",
                 "user_id": "U1234",
             })
@@ -940,7 +940,7 @@ class Test022ExecutionErrorPaths:
     def test_bedrock_throttling_error_posts_friendly_message(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
-        """T017: bedrock_throttling error code produces message containing '混雑'."""
+        """bedrock_throttling error code produces message containing '混雑'."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
         mock_invoke.return_value = json.dumps({
@@ -965,7 +965,7 @@ class Test022ExecutionErrorPaths:
     def test_access_denied_error_posts_friendly_message(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
-        """T018: access_denied error code produces message containing 'アクセス'."""
+        """access_denied error code produces message containing 'アクセス'."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
         mock_invoke.return_value = json.dumps({
@@ -990,7 +990,7 @@ class Test022ExecutionErrorPaths:
     def test_invalid_json_response_from_execution_posts_generic_error(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
-        """T019: Non-JSON response from execution agent posts generic error message to Slack."""
+        """Non-JSON response from execution agent posts generic error message to Slack."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
         mock_invoke.return_value = "THIS IS NOT JSON {{{"
@@ -1014,7 +1014,7 @@ class Test022ExecutionErrorPaths:
     def test_empty_response_from_execution_handles_gracefully(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
-        """T020: Empty string response from execution agent does not crash, posts error to Slack."""
+        """Empty string response from execution agent does not crash, posts error to Slack."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
         mock_invoke.return_value = ""
@@ -1036,7 +1036,7 @@ class Test022ExecutionErrorPaths:
     def test_exception_does_not_leak_internal_details(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
-        """T021: Exception from execution agent — Slack message does NOT contain stack trace, ARN, or token."""
+        """Exception from execution agent — Slack message does NOT contain stack trace, ARN, or token."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
         mock_invoke.side_effect = Exception(
@@ -1061,7 +1061,7 @@ class Test022ExecutionErrorPaths:
     def test_is_processing_reset_on_execution_exception(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke
     ):
-        """T022: pipeline.is_processing is False after execution agent raises exception."""
+        """pipeline.is_processing is False after execution agent raises exception."""
         import pipeline
 
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
@@ -1075,13 +1075,13 @@ class Test022ExecutionErrorPaths:
         assert pipeline.is_processing is False, "is_processing should be reset to False after exception"
 
 
-# ─── 022: Echo Mode Disable — Structured Logging TDD ───
+# ─── Echo mode off — structured logging ───
 
 
-class Test022StructuredLogging:
-    """022 US4: Verify structured logging conforms to AWS Well-Architected Operational Excellence."""
+class TestStructuredLogging:
+    """Verify structured logging conforms to AWS Well-Architected Operational Excellence."""
 
-    def _make_payload(self, text="Hello", correlation_id="corr-022-log"):
+    def _make_payload(self, text="Hello", correlation_id="corr-log-struct"):
         return {
             "prompt": json.dumps({
                 "channel": "C01234567",
@@ -1102,7 +1102,7 @@ class Test022StructuredLogging:
     def test_all_logs_are_valid_json(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke, capsys
     ):
-        """T025: Every log line is parseable JSON with level, event_type, service keys."""
+        """Every log line is parseable JSON with level, event_type, service keys."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
         mock_invoke.return_value = json.dumps({"status": "success", "response_text": "ok"})
@@ -1130,14 +1130,14 @@ class Test022StructuredLogging:
     def test_correlation_id_present_in_all_log_entries(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke, capsys
     ):
-        """T026: Every JSON log line contains correlation_id matching the request."""
+        """Every JSON log line contains correlation_id matching the request."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
         mock_invoke.return_value = json.dumps({"status": "success", "response_text": "ok"})
 
         from main import handle_message
 
-        test_corr_id = "corr-026-unique"
+        test_corr_id = "corr-log-unique"
         handle_message(self._make_payload(correlation_id=test_corr_id))
 
         captured = capsys.readouterr()
@@ -1159,7 +1159,7 @@ class Test022StructuredLogging:
     def test_security_check_logs_include_result(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke, capsys
     ):
-        """T027: Existence check, authorization, and rate limit steps emit log entries."""
+        """Existence check, authorization, and rate limit steps emit log entries."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
         mock_invoke.return_value = json.dumps({"status": "success", "response_text": "ok"})
@@ -1193,7 +1193,7 @@ class Test022StructuredLogging:
     def test_error_log_does_not_contain_bot_token(
         self, mock_existence, mock_auth, mock_rate, mock_send, mock_invoke, capsys
     ):
-        """T028: No log entry contains the bot_token value (no credential leakage)."""
+        """No log entry contains the bot_token value (no credential leakage)."""
         mock_auth.return_value = Mock(authorized=True, unauthorized_entities=[])
         mock_rate.return_value = (True, 9)
         mock_invoke.side_effect = RuntimeError("Execution failed")

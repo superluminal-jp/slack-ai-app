@@ -1,7 +1,7 @@
 import * as s3 from "aws-cdk-lib/aws-s3";
 import { Construct } from "constructs";
 /**
- * Usage history S3 replication construct (041).
+ * Usage history S3 replication construct.
  *
  * Purpose: Configure S3 Same-Region Replication (SRR) from the primary
  * usage-history bucket to an independent archive bucket. All objects across

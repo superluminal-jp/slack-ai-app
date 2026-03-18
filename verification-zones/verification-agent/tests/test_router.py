@@ -201,7 +201,7 @@ class TestRouter:
 
 
 class TestListAgentsRoute:
-    """Tests for the list_agents special route (034-router-list-agents)."""
+    """Tests for the list_agents special route."""
 
     def test_list_agents_constant_exists_with_correct_value(self):
         """LIST_AGENTS_AGENT_ID constant must exist and equal 'list_agents'."""

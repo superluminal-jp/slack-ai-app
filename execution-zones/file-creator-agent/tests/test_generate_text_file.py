@@ -1,5 +1,5 @@
 """
-Unit tests for generate_text_file tool (027 US1).
+Unit tests for generate_text_file tool.
 """
 
 import os
@@ -33,7 +33,7 @@ class TestGenerateTextFile:
         assert gf["mime_type"] == "text/csv"
 
     def test_sanitizes_filename(self):
-        """Tool applies sanitize_filename to output (T014)."""
+        """Tool applies sanitize_filename to output."""
         from tools.generate_text_file import generate_text_file
 
         tool_context = MagicMock()

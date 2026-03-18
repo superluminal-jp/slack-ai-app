@@ -1,6 +1,7 @@
 import * as cdk from "aws-cdk-lib";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import { Construct } from "constructs";
+import { NagSuppressions } from "cdk-nag";
 
 /**
  * S3 bucket for temporary file exchange between verification and execution zones.
@@ -55,6 +56,20 @@ export class FileExchangeBucket extends Construct {
         },
       ],
     });
+
+    const bucketResource = this.bucket.node.defaultChild ?? this.bucket;
+    NagSuppressions.addResourceSuppressions(
+      bucketResource,
+      [
+        {
+          id: "AwsSolutions-S1",
+          reason:
+            "Server access logging is not enabled on the file-exchange bucket. " +
+            "This is a temporary internal bucket with strict IAM access controls and short retention. " +
+            "Enabling server access logging would require an additional log bucket and increase operational cost for low-value telemetry.",
+        },
+      ],
+    );
 
     this.bucketName = this.bucket.bucketName;
     this.bucketArn = this.bucket.bucketArn;

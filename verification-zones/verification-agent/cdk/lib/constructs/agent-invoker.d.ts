@@ -2,7 +2,7 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as sqs from "aws-cdk-lib/aws-sqs";
 import { Construct } from "constructs";
 /**
- * Agent Invoker Lambda construct (016).
+ * Agent Invoker Lambda construct.
  *
  * Purpose: Consume agent-invocation requests from SQS and invoke the Verification Agent
  * via AgentCore InvokeAgentRuntime. Decouples Slack event handler from agent execution.

@@ -1,5 +1,5 @@
 """
-generate_chart_image tool for Execution Agent (027-slack-file-generation-best-practices).
+generate_chart_image tool for Execution Agent.
 
 Produces chart images (.png) and stores them in tool_context.invocation_state
 for the handler to extract and build file_artifact.

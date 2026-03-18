@@ -22,8 +22,9 @@ import * as logs from "aws-cdk-lib/aws-logs";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as sqs from "aws-cdk-lib/aws-sqs";
-import { Construct } from "constructs";
+import { Construct, IConstruct } from "constructs";
 import { getCostAllocationTagValues } from "@slack-ai-app/cdk-tooling";
+import { NagSuppressions } from "cdk-nag";
 
 /** Lifecycle configuration for AgentCore Runtime (optional). See research.md §2. */
 export interface AgentCoreLifecycleConfig {
@@ -174,7 +175,10 @@ export class VerificationAgentRuntime extends Construct {
           "bedrock:InvokeModel",
           "bedrock:InvokeModelWithResponseStream",
         ],
-        resources: ["*"],
+        resources: [
+          `arn:aws:bedrock:${stack.region}::foundation-model/*`,
+          `arn:aws:bedrock:${stack.region}:${stack.account}:inference-profile/*`,
+        ],
       })
     );
 
@@ -292,6 +296,24 @@ export class VerificationAgentRuntime extends Construct {
       props.usageHistoryBucket.grantPut(this.executionRole, "content/*");
       props.usageHistoryBucket.grantPut(this.executionRole, "attachments/*");
     }
+
+    NagSuppressions.addResourceSuppressions(
+      this.executionRole,
+      [
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "ECR GetAuthorizationToken requires resource:* (AWS service constraint, cannot be scoped to a repo ARN). " +
+            "X-Ray trace and sampling APIs do not support resource-level restrictions. " +
+            "CloudWatch PutMetricData requires resource:* (namespace scoped via condition key). " +
+            "CloudWatch Logs scoped to /aws/bedrock-agentcore/ prefix. " +
+            "Bedrock uses foundation-model/* and inference-profile/* ARN patterns (AWS ARN schema, version wildcard). " +
+            "AgentCore InvokeAgentRuntime uses runtime-specific ARNs when executionAgentArns are provided; " +
+            "fallback arn:aws:bedrock-agentcore:region:*:runtime/* is used only when no ARNs are configured at deploy time.",
+        },
+      ],
+      true,
+    );
 
     // Create AgentCore Runtime using L1 CfnResource
     this.runtime = new cdk.CfnResource(this, "Runtime", {

@@ -89,7 +89,7 @@ class TestAgentInvokerHandler:
     @patch.dict(os.environ, {"VERIFICATION_AGENT_ARN": "arn:aws:bedrock-agentcore:ap-northeast-1:456:runtime/verification-only", "AWS_REGION_NAME": "ap-northeast-1"})
     @patch("boto3.client")
     def test_invoke_agent_runtime_uses_verification_agent_arn_from_env(self, mock_boto_client):
-        """[US3] invoke_agent_runtime is called with VERIFICATION_AGENT_ARN from env, not Execution Agent ARN — ensures invocation target is Verification Agent which retains Slack posting responsibility."""
+        """invoke_agent_runtime is called with VERIFICATION_AGENT_ARN from env, not Execution Agent ARN — ensures invocation target is Verification Agent which retains Slack posting responsibility."""
         mock_agentcore = Mock()
         mock_boto_client.return_value = mock_agentcore
 

@@ -38,3 +38,4 @@ export declare class CdkError extends Error {
      */
     static throw(options: CdkErrorOptions): never;
 }
+//# sourceMappingURL=cdk-error.d.ts.map

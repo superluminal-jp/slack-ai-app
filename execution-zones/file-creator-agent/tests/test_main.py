@@ -118,7 +118,7 @@ class TestHandleMessageProcessing:
     def test_success_with_file_artifact(
         self, mock_attachments, mock_create_agent
     ):
-        """When file is returned, result has response_text and file_artifact (014 US1, 027)."""
+        """When file is returned, result has response_text and file_artifact."""
         def agent_side_effect(agent_input, **kwargs):
             invocation_state = kwargs.get("invocation_state", {})
             if invocation_state is not None:
@@ -164,7 +164,7 @@ class TestHandleMessageProcessing:
     def test_no_file_generated_result_has_no_file_artifact(
         self, mock_format, mock_attachments, mock_create_agent
     ):
-        """When no file is generated, completed result has no file_artifact (014 US2)."""
+        """When no file is generated, completed result has no file_artifact."""
         mock_agent = Mock(return_value=_make_agent_result("Text only."))
         mock_create_agent.return_value = mock_agent
         mock_attachments.return_value = []
@@ -188,7 +188,7 @@ class TestHandleMessageProcessing:
     def test_only_file_response_has_empty_response_text_and_file_artifact(
         self, mock_attachments, mock_create_agent
     ):
-        """When only file is returned, result has empty/minimal response_text and file_artifact (014 US2)."""
+        """When only file is returned, result has empty/minimal response_text and file_artifact."""
         def agent_side_effect(agent_input, **kwargs):
             invocation_state = kwargs.get("invocation_state", {})
             if invocation_state is not None:
@@ -510,8 +510,8 @@ class TestFastAPIDirectRouting:
         assert callable(tool_fn)
 
 
-class TestUS3VersionConstraints:
-    """US3: Verify requirements.txt uses pinned (~= or ==) versions, no loose (>=) constraints."""
+class TestRequirementsVersionConstraints:
+    """Verify requirements.txt uses pinned (~= or ==) versions, no loose (>=) constraints."""
 
     def test_no_loose_version_constraints(self):
         """requirements.txt must not contain >= constraints (all must be ~= or ==)."""
@@ -615,7 +615,7 @@ class TestJsonRpcZoneConnection:
             assert resp["result"].get("response_text") == "AI reply"
 
     def test_jsonrpc_execute_task_missing_text_returns_invalid_params(self):
-        """T023 [US2]: execute_task with params missing text returns error.code -32602, request id preserved.
+        """execute_task with params missing text returns error.code -32602, request id preserved.
         Only 'text' is required; channel/bot_token are Slack-specific and kept in verification zone."""
         import main
         body = json.dumps({
@@ -634,7 +634,7 @@ class TestJsonRpcZoneConnection:
 
     @patch("main.handle_message_tool")
     def test_jsonrpc_execute_task_exception_returns_internal_error_with_id(self, mock_tool):
-        """T024 [US2]: When processing throws, response has error.code -32603 or -32001, request id preserved."""
+        """When processing throws, response has error.code -32603 or -32001, request id preserved."""
         import main
         mock_tool.side_effect = RuntimeError("Simulated failure")
         body = json.dumps({

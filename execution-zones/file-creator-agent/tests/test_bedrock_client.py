@@ -1,5 +1,5 @@
 """
-Unit tests for bedrock_client_converse (US1 native document blocks).
+Unit tests for bedrock_client_converse (native document blocks).
 
 Tests:
 - prepare_document_content_converse: block format, name sanitization, format mapping, PPTX returns None
@@ -145,8 +145,8 @@ class TestInvokeBedrockWithDocuments:
         assert doc_parts[0]["document"]["source"]["bytes"] == b"raw bytes"
 
 
-class TestInvokeBedrockMultipleFilesUs3:
-    """Tests for combined prompt construction (US3): multiple docs + images, limits."""
+class TestInvokeBedrockMultipleFiles:
+    """Tests for combined prompt construction: multiple docs + images, limits."""
 
     @patch("bedrock_client_converse.boto3")
     def test_multiple_documents_and_images_in_single_call(self, mock_boto3):

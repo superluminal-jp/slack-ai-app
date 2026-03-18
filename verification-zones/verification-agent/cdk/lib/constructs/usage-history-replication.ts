@@ -2,6 +2,7 @@ import * as cdk from "aws-cdk-lib";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import { Construct } from "constructs";
+import { NagSuppressions } from "cdk-nag";
 
 /**
  * Usage history S3 replication construct.
@@ -54,6 +55,19 @@ export class UsageHistoryReplication extends Construct {
         actions: ["s3:GetReplicationConfiguration", "s3:ListBucket"],
         resources: [sourceBucket.bucketArn],
       })
+    );
+
+    NagSuppressions.addResourceSuppressions(
+      replicationRole,
+      [
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "S3 replication requires object-level permissions on all keys in the source and destination buckets. " +
+            "Policies are scoped to the specific bucket ARNs with object-level `/*` suffix (AWS S3 ARN model).",
+        },
+      ],
+      true,
     );
 
     // Source objects: read versioned objects for replication

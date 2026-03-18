@@ -1,6 +1,7 @@
 import * as cdk from "aws-cdk-lib";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import { Construct } from "constructs";
+import { NagSuppressions } from "cdk-nag";
 
 /**
  * Usage history S3 bucket construct.
@@ -63,6 +64,20 @@ export class UsageHistoryBucket extends Construct {
         },
       ],
     });
+
+    const bucketResource = this.bucket.node.defaultChild ?? this.bucket;
+    NagSuppressions.addResourceSuppressions(
+      bucketResource,
+      [
+        {
+          id: "AwsSolutions-S1",
+          reason:
+            "Server access logging is not enabled on the usage-history bucket. " +
+            "This is an internal audit bucket with no public access; data access is controlled via IAM. " +
+            "Enabling server access logging would create a circular dependency (log bucket → log bucket).",
+        },
+      ],
+    );
 
     this.bucketName = this.bucket.bucketName;
     this.bucketArn = this.bucket.bucketArn;

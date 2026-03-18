@@ -35,6 +35,7 @@ import {
   logInfo,
   logWarn,
   CdkError,
+  applyNagPacks,
 } from "@slack-ai-app/cdk-tooling";
 
 // Constants
@@ -331,5 +332,6 @@ logInfo("Verification stack created.", {
   context: { stackName: verificationStackName },
 });
 
+applyNagPacks(app);
 // Emit cloud assembly
 app.synth();

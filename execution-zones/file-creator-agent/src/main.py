@@ -141,8 +141,6 @@ def _map_error_to_response(error: Exception) -> tuple:
 def handle_message_tool(payload_json: str) -> str:
     """A2A メッセージを処理し、Bedrock で AI 推論を行い、フォーマット済みレスポンスを返す。
 
-    026 US3 (T014): ツール定義の明確化 — purpose、パラメータ、戻り値を明記。
-
     Purpose:
         Verification Agent から受け取った A2A ペイロードをパースし、Bedrock Converse API で
         AI 推論を実行。テキスト・添付ファイル（画像・ドキュメント）をマルチモーダル入力として
@@ -155,13 +153,13 @@ def handle_message_tool(payload_json: str) -> str:
                 - text (str): ユーザーメッセージ本文
                 - bot_token (str): Slack Bot Token
                 - thread_ts (str, optional): スレッドタイムスタンプ
-                - attachments (list, optional): 024 添付ファイル情報のリスト
+                - attachments (list, optional): 添付ファイル情報のリスト
                 - correlation_id (str, optional): トレース用 ID
 
     Returns:
         JSON 文字列。成功時: {"status": "success", "response_text": "...", "channel": "...", ...}
         エラー時: {"status": "error", "error_code": "...", "error_message": "...", ...}
-        file_artifact を含む場合: 014 生成ファイルのメタデータ。
+        file_artifact を含む場合: 生成ファイルのメタデータ。
     """
     global _active_tasks
     correlation_id = str(uuid.uuid4())
@@ -342,7 +340,7 @@ def handle_message_tool(payload_json: str) -> str:
                             )
                             image_formats_list.append("jpeg" if fmt == "jpg" else fmt)
 
-                    # US3 (FR-012): cap documents and images per Bedrock request; skip message if truncated
+                    # Cap documents and images per Bedrock request; skip message if truncated
                     MAX_DOCUMENTS_PER_REQUEST = 5
                     MAX_IMAGES_PER_REQUEST = 20
                     original_n_docs = len(native_documents) + (
@@ -397,7 +395,7 @@ def handle_message_tool(payload_json: str) -> str:
             if skip_msg:
                 prompt_for_bedrock = (prompt_for_bedrock or "") + skip_msg
 
-            # 027: Tool use control — when user requests file creation, prepend strong instruction
+            # Tool use control — when user requests file creation, prepend strong instruction
             # so the model reliably invokes generate_* tools instead of responding with text only
             if prompt_for_bedrock and _indicates_file_generation(prompt_for_bedrock):
                 prompt_for_bedrock = FILE_GENERATION_PROMPT_PREFIX + prompt_for_bedrock
@@ -415,8 +413,8 @@ def handle_message_tool(payload_json: str) -> str:
             )
             documents_first = native_documents if native_documents else None
 
-            # Build multimodal content blocks for Strands Agent
-            # T023 (US4): Attachments (native_documents, document_texts_fallback, images) are
+            # Build multimodal content blocks for Strands Agent.
+            # Attachments (native_documents, document_texts_fallback, images) are
             # passed to the agent via build_content_blocks; tools receive this context when
             # invoked, enabling attachment-based conversion (e.g., CSV attachment → Excel output).
             content_blocks = build_content_blocks(
@@ -432,7 +430,7 @@ def handle_message_tool(payload_json: str) -> str:
             else:
                 agent_input = [{"role": "user", "content": content_blocks}]
 
-            # invocation_state: mutable dict for tools to store generated_file (T012)
+            # invocation_state: mutable dict for tools to store generated_file
             invocation_state = {}
             agent = create_agent()
             try:
@@ -476,8 +474,8 @@ def handle_message_tool(payload_json: str) -> str:
                 if isinstance(block, dict) and "text" in block:
                     ai_response += block.get("text", "") or ""
 
-            # T012–T013: Extract file_artifact from invocation_state; validate size
-            # T025 (FR-008): Max 1 file per request — each tool overwrites invocation_state["generated_file"],
+            # Extract file_artifact from invocation_state; validate size.
+            # Max 1 file per request — each tool overwrites invocation_state["generated_file"],
             # so only one key exists; we extract at most one file_artifact.
             file_bytes = None
             file_name = None
@@ -493,7 +491,7 @@ def handle_message_tool(payload_json: str) -> str:
                         file_name = gf
                         mime_type = gm
                     else:
-                        # T013: Size exceed — omit file_artifact, add Japanese error
+                        # Size exceed — omit file_artifact, add Japanese error
                         size_err = "生成されたファイルがサイズ上限を超えているため、アップロードできませんでした。"
                         ai_response = (
                             f"{ai_response}\n{size_err}".strip()
@@ -631,7 +629,7 @@ def handle_message(payload):
     )
 
 
-# ─── JSON-RPC 2.0 (032: CSP-independent A2A) ───
+# ─── JSON-RPC 2.0 (CSP-independent A2A) ───
 
 def handle_invocation_body(body: bytes) -> dict:
     """
@@ -682,7 +680,7 @@ def handle_invocation_body(body: bytes) -> dict:
             "id": req_id,
         }
 
-    # execute_task: params as task payload (032 US2: validate required params before calling)
+    # execute_task: params as task payload (validate required params before calling)
     params = data.get("params") if isinstance(data.get("params"), dict) else {}
     _REQUIRED_PARAMS = ("text",)  # channel/bot_token are Slack-specific; kept in verification zone only
     missing = [k for k in _REQUIRED_PARAMS if not (params.get(k) and str(params.get(k)).strip())]
@@ -734,7 +732,7 @@ def agent_card_endpoint():
 
 @app.post("/")
 async def handle_invocation(request: Request):
-    """Handle invoke_agent_runtime payload as JSON-RPC 2.0 (032: CSP-independent A2A)."""
+    """Handle invoke_agent_runtime payload as JSON-RPC 2.0 (CSP-independent A2A)."""
     body = await request.body()
     content = handle_invocation_body(body)
     return JSONResponse(content=content)

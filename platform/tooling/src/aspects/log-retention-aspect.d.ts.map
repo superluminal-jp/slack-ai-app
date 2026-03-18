@@ -1,0 +1,1 @@
+{"version":3,"file":"log-retention-aspect.d.ts","sourceRoot":"","sources":["log-retention-aspect.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,UAAU,EAAE,MAAM,YAAY,CAAC;AACxC,OAAO,EAAE,OAAO,EAAe,MAAM,aAAa,CAAC;AAGnD;;;;;;;;;GASG;AACH,qBAAa,kBAAmB,YAAW,OAAO;IAChD,KAAK,CAAC,IAAI,EAAE,UAAU,GAAG,IAAI;CAU9B"}

@@ -6,6 +6,9 @@
     "lib": [
       "es2022"
     ],
+    "types": [
+      "node"
+    ],
     "declaration": true,
     "declarationMap": true,
     "outDir": ".",
@@ -23,10 +26,7 @@
     "inlineSources": true,
     "experimentalDecorators": true,
     "strictPropertyInitialization": false,
-    "skipLibCheck": true,
-    "typeRoots": [
-      "./node_modules/@types"
-    ]
+    "skipLibCheck": true
   },
   "include": [
     "src/**/*.ts",

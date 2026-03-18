@@ -1,5 +1,5 @@
 """
-Unit tests for s3_file_manager (US4 Secure Cross-Zone File Transfer, 028).
+Unit tests for s3_file_manager (Secure Cross-Zone File Transfer).
 
 Tests:
 - upload_file_to_s3: correct S3 key structure, content type set, error handling

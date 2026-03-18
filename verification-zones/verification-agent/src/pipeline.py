@@ -553,8 +553,8 @@ def run(payload: dict) -> str:
                 )
                 # Fail-open: continue with original text
 
-        # Enrich attachments with S3 pre-signed URLs (US4): download from Slack, upload to S3
-        # US3 (FR-012): max 5 files per request; excess are skipped with warning
+        # Enrich attachments with S3 pre-signed URLs: download from Slack, upload to S3
+        # Max 5 files per request; excess are skipped with warning
         MAX_FILES_PER_REQUEST = 5
         execution_attachments = attachments
         did_s3_upload = False

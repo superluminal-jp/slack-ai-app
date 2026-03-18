@@ -1,4 +1,4 @@
-"""Unit tests for generate_word tool (027 US2)."""
+"""Unit tests for generate_word tool."""
 
 import os
 import sys
@@ -32,7 +32,7 @@ class TestGenerateWord:
         assert len(gf["file_bytes"]) > 0
 
     def test_sanitizes_filename(self):
-        """Tool applies sanitize_filename (T019)."""
+        """Tool applies sanitize_filename."""
         from tools.generate_word import generate_word
 
         tool_context = MagicMock()

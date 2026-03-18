@@ -42,8 +42,8 @@ class TestSlackSignatureVerification:
 
     def test_valid_signature_verification(self):
         """
-        T030: Test valid HMAC SHA256 signature verification.
-        
+        Test valid HMAC SHA256 signature verification.
+
         Given a valid Slack request with correct signature
         When verify_signature is called
         Then it should return True (signature valid)
@@ -65,8 +65,8 @@ class TestSlackSignatureVerification:
 
     def test_invalid_signature_rejection(self):
         """
-        T031: Test invalid signature rejection.
-        
+        Test invalid signature rejection.
+
         Given a Slack request with incorrect signature
         When verify_signature is called
         Then it should return False (signature invalid)
@@ -88,8 +88,8 @@ class TestSlackSignatureVerification:
 
     def test_timestamp_validation_within_window(self):
         """
-        T032: Test timestamp validation within ±5 minutes window.
-        
+        Test timestamp validation within ±5 minutes window.
+
         Given a Slack request with timestamp within 5 minutes
         When verify_signature is called
         Then it should return True (timestamp valid)
@@ -111,8 +111,8 @@ class TestSlackSignatureVerification:
 
     def test_timestamp_validation_too_old(self):
         """
-        T032: Test timestamp validation rejects old timestamps (replay attack prevention).
-        
+        Test timestamp validation rejects old timestamps (replay attack prevention).
+
         Given a Slack request with timestamp older than 5 minutes
         When verify_signature is called
         Then it should return False (timestamp too old)
@@ -134,8 +134,8 @@ class TestSlackSignatureVerification:
 
     def test_timestamp_validation_too_new(self):
         """
-        T032: Test timestamp validation rejects future timestamps.
-        
+        Test timestamp validation rejects future timestamps.
+
         Given a Slack request with timestamp in the future (beyond 5 minutes)
         When verify_signature is called
         Then it should return False (timestamp in future)

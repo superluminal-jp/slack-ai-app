@@ -1,7 +1,7 @@
 import * as s3 from "aws-cdk-lib/aws-s3";
 import { Construct } from "constructs";
 /**
- * Usage history S3 archive bucket construct (041).
+ * Usage history S3 archive bucket construct.
  *
  * Purpose: Independent archive destination for S3 Same-Region Replication from
  * the primary usage-history bucket. Receives automatic copies of all objects

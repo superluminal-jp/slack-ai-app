@@ -4,10 +4,12 @@ import * as logs from "aws-cdk-lib/aws-logs";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as sqs from "aws-cdk-lib/aws-sqs";
+import * as iam from "aws-cdk-lib/aws-iam";
 import * as apigateway from "aws-cdk-lib/aws-apigateway";
 import * as wafv2 from "aws-cdk-lib/aws-wafv2";
 import { Construct } from "constructs";
 import { applyCostAllocationTags } from "@slack-ai-app/cdk-tooling";
+import { NagSuppressions } from "cdk-nag";
 import { SlackEventHandler } from "./constructs/slack-event-handler";
 import { TokenStorage } from "./constructs/token-storage";
 import { EventDedupe } from "./constructs/event-dedupe";
@@ -125,6 +127,25 @@ export class VerificationStack extends cdk.Stack {
       },
     );
 
+    // Slack credentials are static tokens managed externally (Slack app console).
+    // Programmatic rotation is not available from AWS because the token is issued and
+    // controlled by the Slack platform, not by an AWS-managed service.
+    for (const secret of [slackSigningSecretResource, slackBotTokenSecret]) {
+      const secretResource = secret.node.defaultChild ?? secret;
+      NagSuppressions.addResourceSuppressions(
+        secretResource,
+        [
+          {
+            id: "AwsSolutions-SMG4",
+            reason:
+              "Slack signing secret and bot token are issued by the Slack platform and cannot be rotated " +
+              "programmatically via AWS Secrets Manager rotation Lambda. " +
+              "Rotation must be performed manually through the Slack App console.",
+          },
+        ],
+      );
+    }
+
     // Order: DynamoDB tables and SQS/Secrets first; VerificationAgentRuntime depends on all of them
     const tokenStorage = new TokenStorage(this, "TokenStorage");
     const eventDedupe = new EventDedupe(this, "EventDedupe");
@@ -174,6 +195,20 @@ export class VerificationStack extends cdk.Stack {
       },
     });
     this.agentInvocationQueue = agentInvocationQueue;
+
+    // Enforce TLS-in-transit (deny non-SSL SQS requests).
+    for (const queue of [agentInvocationDlq, agentInvocationQueue]) {
+      queue.addToResourcePolicy(
+        new iam.PolicyStatement({
+          sid: "DenyInsecureTransport",
+          effect: iam.Effect.DENY,
+          principals: [new iam.AnyPrincipal()],
+          actions: ["sqs:*"],
+          resources: [queue.queueArn],
+          conditions: { Bool: { "aws:SecureTransport": "false" } },
+        }),
+      );
+    }
 
     // Runtime name must be unique per account (Dev and Prod coexist); default includes env from stack name
     const verificationAgentName =
@@ -289,6 +324,8 @@ export class VerificationStack extends cdk.Stack {
         stageName: "prod",
         throttlingBurstLimit: 50,
         throttlingRateLimit: 25,
+        loggingLevel: apigateway.MethodLoggingLevel.INFO,
+        dataTraceEnabled: false,
         accessLogDestination: new apigateway.LogGroupLogDestination(
           slackIngressApiAccessLogGroup,
         ),
@@ -316,6 +353,44 @@ export class VerificationStack extends cdk.Stack {
       .addResource("slack")
       .addResource("events");
     slackResource.addMethod("POST", slackIngressLambdaIntegration);
+
+    // API Gateway is fronting a Lambda that performs Slack signature verification and
+    // additional security checks. CDK-nag expects request validation and authorization
+    // at the API Gateway layer; for Slack event ingestion, those are implemented in the Lambda.
+    NagSuppressions.addResourceSuppressions(
+      slackIngressApi,
+      [
+        {
+          id: "AwsSolutions-APIG2",
+          reason:
+            "Slack event ingestion uses a proxy Lambda integration. Request validation is performed in " +
+            "the Lambda handler (Slack signature verification + payload validation) before any downstream actions.",
+        },
+        {
+          id: "AwsSolutions-APIG4",
+          reason:
+            "API Gateway authorization is handled by Slack request signature verification in the Lambda handler. " +
+            "Slack does not support AWS-native authorizers for this integration pattern.",
+        },
+        {
+          id: "AwsSolutions-COG4",
+          reason:
+            "Slack events are authenticated via Slack request signature verification in the Lambda handler, not Cognito user pools.",
+        },
+        {
+          id: "AwsSolutions-IAM4",
+          reason:
+            "API Gateway is configured with CloudWatch logging enabled, which uses AWS-managed service role policies " +
+            "(AmazonAPIGatewayPushToCloudWatchLogs). Using AWS-managed policies is the standard AWS pattern here.",
+        },
+        {
+          id: "AwsSolutions-APIG6",
+          reason:
+            "Stage-level logging is enabled via access logs and method logging configuration in deployOptions.",
+        },
+      ],
+      true,
+    );
 
     const slackIngressAclName = `${this.stackName}-slack-ingress-acl`;
     const slackIngressAclMetricName = `${this.stackName}SlackIngressAcl`.replace(

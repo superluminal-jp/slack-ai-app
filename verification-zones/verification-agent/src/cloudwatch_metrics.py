@@ -63,7 +63,7 @@ def emit_metric(
         value: Metric value (typically 1.0 for count metrics)
         unit: Metric unit (default: "Count")
         dimensions: Optional list of dimension dictionaries
-                    (e.g., [{"Name": "TeamId", "Value": "T123"}])
+                    (e.g., [{"Name": "TeamId", "Value": "TEAM123"}])
     """
     try:
         client = _get_cloudwatch_client()

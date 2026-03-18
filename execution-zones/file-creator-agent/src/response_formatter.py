@@ -3,7 +3,7 @@ Response formatter for Execution Zone to Verification Zone communication.
 
 This module formats responses from the execution zone into the ExecutionResponse
 format that will be sent to the verification zone via A2A (and historically SQS).
-Includes 014 support for generated_file artifact (contracts/a2a-file-artifact.yaml).
+Includes support for generated_file artifact (contracts/a2a-file-artifact.yaml).
 """
 
 from typing import Dict, Any, Optional, Tuple
@@ -223,7 +223,7 @@ def validate_execution_response(response: Dict[str, Any]) -> bool:
         rt = response.get("response_text")
         if not isinstance(rt, str):
             return False
-        # Allow empty response_text when file_artifact is present (014 file-only response)
+        # Allow empty response_text when file_artifact is present (file-only response)
         if not (rt.strip() or response.get("file_artifact")):
             return False
     elif status == "error":

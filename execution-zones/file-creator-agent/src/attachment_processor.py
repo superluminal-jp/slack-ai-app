@@ -175,9 +175,9 @@ def process_attachments(
         if correlation_id:
             log_data["correlation_id"] = correlation_id
 
-        # Download: prefer S3 pre-signed URL (US4); fallback to Slack when absent.
+        # Download: prefer S3 pre-signed URL; fallback to Slack when absent.
         # For images, expected_mimetype triggers magic-bytes validation in download_from_presigned_url;
-        # validated bytes are then passed as content for Bedrock image blocks (US2).
+        # validated bytes are then passed as content for Bedrock image blocks.
         if presigned_url:
             file_bytes = download_from_presigned_url(
                 presigned_url,

@@ -1,5 +1,5 @@
 """
-Tests for agent_tools.build_agent_tools() — feature 036-iterative-reasoning.
+Tests for agent_tools.build_agent_tools().
 
 TDD: these tests are written before the implementation exists.
 """

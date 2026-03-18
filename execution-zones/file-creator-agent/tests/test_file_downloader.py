@@ -1,5 +1,5 @@
 """
-Unit tests for file_downloader (US4 pre-signed URL download).
+Unit tests for file_downloader (pre-signed URL download).
 
 Tests for download_from_presigned_url:
 - Successful download returns bytes

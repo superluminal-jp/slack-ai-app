@@ -1,12 +1,12 @@
 """
-Unit tests for pipeline S3 integration (US4 Secure Cross-Zone File Transfer, 028).
+Unit tests for pipeline S3 integration (Secure Cross-Zone File Transfer).
 
 Tests:
 - Slack file download + S3 upload flow (mocked)
 - Pre-signed URL generation and inclusion in execution payload
 - S3 cleanup after successful response and on error (try/finally)
 - Payload does not contain bot_token for file operations; contains presigned_url per contract
-- 028: Large file artifact (> 200KB) routed via S3 (upload_generated_file_to_s3, build_file_artifact_s3)
+- Large file artifact (> 200KB) routed via S3 (upload_generated_file_to_s3, build_file_artifact_s3)
 """
 
 import base64
@@ -159,8 +159,8 @@ class TestPipelineS3Integration:
                         mock_cleanup.assert_called_once()
 
 
-class TestPipelineMultipleAttachmentsUs3:
-    """Tests for batch file upload (US3): multiple attachments, S3, cleanup."""
+class TestPipelineMultipleAttachments:
+    """Tests for batch file upload: multiple attachments, S3, cleanup."""
 
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.invoke_execution_agent")
@@ -321,7 +321,7 @@ class TestPipelineMultipleAttachmentsUs3:
 
 
 class TestPipelineLargeFileArtifactS3:
-    """Tests for 028: large file artifact (> 200KB) routed via S3."""
+    """Tests for large file artifact (> 200KB) routed via S3."""
 
     def _make_file_artifact_parts(self, size_bytes: int) -> list:
         """Returns file_artifact parts with contentBase64 of given size."""
@@ -382,7 +382,7 @@ class TestPipelineLargeFileArtifactS3:
 
 
 class TestPipelineSmallFileArtifactInline:
-    """Tests for 028: small file artifact (≤ 200KB) uses inline path (contentBase64)."""
+    """Tests for small file artifact (≤ 200KB) uses inline path (contentBase64)."""
 
     def _make_file_artifact_parts(self, size_bytes: int) -> list:
         """Returns file_artifact parts with contentBase64 of given size."""
@@ -465,8 +465,8 @@ class TestPipelineSmallFileArtifactInline:
                     assert "s3PresignedUrl" not in fa
 
 
-class Test032E2EFlowUnchanged:
-    """032 US3: End-to-end user flow unchanged; no JSON-RPC envelope exposed to Slack."""
+class TestE2EFlowUnchanged:
+    """End-to-end user flow unchanged; no JSON-RPC envelope exposed to Slack."""
 
     @patch("pipeline.send_slack_post_request")
     @patch("pipeline.invoke_execution_agent")
@@ -475,7 +475,7 @@ class Test032E2EFlowUnchanged:
     def test_success_path_passes_response_text_only_no_envelope(
         self, mock_existence, mock_auth, mock_invoke, mock_slack_post
     ):
-        """T032: Success path uses only result payload (response_text); no jsonrpc/id sent to Slack."""
+        """Success path uses only result payload (response_text); no jsonrpc/id sent to Slack."""
         mock_existence.return_value = MagicMock(exists=True)
         mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
         mock_invoke.return_value = json.dumps({
@@ -503,7 +503,7 @@ class Test032E2EFlowUnchanged:
     def test_error_path_passes_user_friendly_message_only_no_raw_envelope(
         self, mock_existence, mock_auth, mock_invoke, mock_slack_post
     ):
-        """T032: Error path uses mapped user-facing message only; no raw JSON-RPC error to Slack."""
+        """Error path uses mapped user-facing message only; no raw JSON-RPC error to Slack."""
         mock_existence.return_value = MagicMock(exists=True)
         mock_auth.return_value = MagicMock(authorized=True, unauthorized_entities=[])
         mock_invoke.return_value = json.dumps({
@@ -529,7 +529,7 @@ class Test032E2EFlowUnchanged:
                 assert "id" not in str(slack_kw.get("text", ""))
 
 
-class Test033RoutingIntegration:
+class TestRoutingIntegration:
     """Multi-agent routing integration in pipeline."""
 
     @patch("pipeline.send_slack_post_request")
@@ -626,5 +626,5 @@ class TestUnroutedFallback:
 
 @pytest.mark.skip(reason="要検証: E2E. Slack → Verification → Execution (JSON-RPC) → Verification → Slack. Run manually or in integration env.")
 def test_e2e_slack_verification_execution_slack_unchanged():
-    """T031/T033: E2E flow unchanged. Reply content and error messages equivalent to pre-JSON-RPC baseline."""
+    """E2E flow unchanged. Reply content and error messages equivalent to pre-JSON-RPC baseline."""
     pass

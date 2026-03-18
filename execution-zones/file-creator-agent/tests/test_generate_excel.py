@@ -1,4 +1,4 @@
-"""Unit tests for generate_excel tool (027 US2)."""
+"""Unit tests for generate_excel tool."""
 
 import os
 import sys
@@ -31,7 +31,7 @@ class TestGenerateExcel:
         assert len(gf["file_bytes"]) > 0
 
     def test_sanitizes_filename(self):
-        """Tool applies sanitize_filename (T019)."""
+        """Tool applies sanitize_filename."""
         from tools.generate_excel import generate_excel
 
         tool_context = MagicMock()

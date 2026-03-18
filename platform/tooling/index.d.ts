@@ -12,3 +12,5 @@ export * from "./src/utils/cdk-error";
 export * from "./src/utils/cost-allocation-tags";
 export * from "./src/utils/config-loader";
 export * from "./src/aspects/log-retention-aspect";
+export * from "./src/nag/nag-packs";
+//# sourceMappingURL=index.d.ts.map

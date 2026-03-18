@@ -56,7 +56,7 @@ class TestValidateFileForArtifact:
 
 
 class TestFormatSuccessResponseFileValidation:
-    """format_success_response includes user-facing message when file rejected (014 US3)."""
+    """format_success_response includes user-facing message when file is rejected."""
 
     def test_file_over_size_no_artifact_response_text_contains_message(self):
         with patch.dict(os.environ, {"MAX_FILE_SIZE_BYTES": "10"}):

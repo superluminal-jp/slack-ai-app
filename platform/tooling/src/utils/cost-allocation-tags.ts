@@ -83,6 +83,7 @@ const TAGGABLE_CFN_TYPES = new Set([
   "AWS::IAM::Role",
   "AWS::Logs::LogGroup",
   "AWS::ECR::Repository",
+  "AWS::Scheduler::Schedule",
 ]);
 
 /**

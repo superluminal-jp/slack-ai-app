@@ -1,4 +1,4 @@
-"""Unit tests for generate_chart_image tool (027 US3)."""
+"""Unit tests for generate_chart_image tool."""
 
 import os
 import sys
@@ -34,7 +34,7 @@ class TestGenerateChartImage:
         assert gf["file_bytes"][:8] == b"\x89PNG\r\n\x1a\n"
 
     def test_sanitizes_filename(self):
-        """Tool applies sanitize_filename (T022)."""
+        """Tool applies sanitize_filename."""
         from tools.generate_chart_image import generate_chart_image
 
         tool_context = MagicMock()

@@ -132,7 +132,7 @@ def test_execute_task_with_valid_params_returns_result():
     assert "result" in result
 
 
-# --- US1: Channel search acceptance tests ---
+# --- Channel search acceptance tests ---
 
 def test_execute_task_search_returns_success_status():
     """execute_task with search intent returns status=success."""
@@ -188,7 +188,7 @@ def test_execute_task_search_result_has_response_text():
     assert len(result["result"]["response_text"]) > 0
 
 
-# --- US2: Thread retrieval acceptance tests ---
+# --- Thread retrieval acceptance tests ---
 
 def test_execute_task_with_slack_url_returns_success():
     """execute_task with Slack URL intent returns status=success."""
@@ -216,7 +216,7 @@ def test_execute_task_with_slack_url_returns_success():
     assert "response_text" in result["result"]
 
 
-# --- US3: Channel history acceptance tests ---
+# --- Channel history acceptance tests ---
 
 def test_execute_task_channel_history_returns_success():
     """execute_task with channel history intent returns status=success."""

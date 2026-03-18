@@ -8,6 +8,7 @@ import * as cdk from "aws-cdk-lib";
 import * as iam from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
 import { getCostAllocationTagValues } from "@slack-ai-app/cdk-tooling";
+import { NagSuppressions } from "cdk-nag";
 
 export interface AgentCoreLifecycleConfig {
   readonly idleRuntimeSessionTimeoutSeconds?: number;
@@ -97,8 +98,27 @@ export class WebFetchAgentRuntime extends Construct {
         sid: "BedrockInvokeModel",
         effect: iam.Effect.ALLOW,
         actions: ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
-        resources: ["*"],
+        resources: [
+          `arn:aws:bedrock:${stack.region}::foundation-model/*`,
+          `arn:aws:bedrock:${stack.region}:${stack.account}:inference-profile/*`,
+        ],
       })
+    );
+
+    NagSuppressions.addResourceSuppressions(
+      this.executionRole,
+      [
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "ECR GetAuthorizationToken requires resource:* (AWS service constraint, cannot be scoped to a repo ARN). " +
+            "X-Ray trace and sampling APIs do not support resource-level restrictions. " +
+            "CloudWatch PutMetricData requires resource:* (namespace scoped via condition key). " +
+            "CloudWatch Logs scoped to /aws/bedrock-agentcore/ prefix. " +
+            "Bedrock uses foundation-model/* and inference-profile/* ARN patterns (AWS ARN schema, version wildcard).",
+        },
+      ],
+      true,
     );
 
     this.runtime = new cdk.CfnResource(this, "Runtime", {

@@ -1,6 +1,7 @@
 import * as cdk from "aws-cdk-lib";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import { Construct } from "constructs";
+import { NagSuppressions } from "cdk-nag";
 
 /**
  * Usage history S3 archive bucket construct.
@@ -27,6 +28,7 @@ export class UsageHistoryArchiveBucket extends Construct {
 
     const stackName = cdk.Stack.of(this).stackName;
 
+    // autoDeleteObjects adds a Lambda-backed Custom Resource; NagSuppressions added after bucket creation below
     this.bucket = new s3.Bucket(this, "Bucket", {
       bucketName: `${stackName.toLowerCase()}-usage-history-archive`,
       encryption: s3.BucketEncryption.S3_MANAGED,
@@ -65,5 +67,19 @@ export class UsageHistoryArchiveBucket extends Construct {
         },
       ],
     });
+
+    const bucketResource = this.bucket.node.defaultChild ?? this.bucket;
+    NagSuppressions.addResourceSuppressions(
+      bucketResource,
+      [
+        {
+          id: "AwsSolutions-S1",
+          reason:
+            "Server access logging is not enabled on the usage-history archive bucket. " +
+            "This is a replication destination with no public access; data access is controlled via IAM. " +
+            "Enabling server access logging would create a circular dependency (log bucket → log bucket).",
+        },
+      ],
+    );
   }
 }

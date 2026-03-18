@@ -1,5 +1,5 @@
 """
-Unit tests for hooks.py — MaxTurnsHook and ToolLoggingHook (feature 036-iterative-reasoning).
+Unit tests for hooks.py — MaxTurnsHook and ToolLoggingHook.
 
 TDD: these tests are written BEFORE the implementation and MUST FAIL initially.
 After implementing src/hooks.py they should all pass (GREEN).

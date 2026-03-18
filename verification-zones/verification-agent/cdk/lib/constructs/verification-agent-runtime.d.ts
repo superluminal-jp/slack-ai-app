@@ -47,17 +47,17 @@ export interface VerificationAgentRuntimeProps {
     readonly slackBotTokenSecret: secretsmanager.ISecret;
     /** Map of execution agent IDs to runtime ARNs (for A2A invocation) */
     readonly executionAgentArns?: Record<string, string>;
-    /** 019: SQS queue for Slack post requests; Agent sends here instead of calling Slack API */
+    /** SQS queue for Slack post requests; Agent sends here instead of calling Slack API */
     readonly slackPostRequestQueue?: sqs.IQueue;
     /** CloudWatch Log group for execution error debug (troubleshooting) */
     readonly errorDebugLogGroup?: logs.ILogGroup;
-    /** S3 bucket for temporary file exchange between zones (024) */
+    /** S3 bucket for temporary file exchange between zones */
     readonly fileExchangeBucket?: s3.IBucket;
-    /** ARN of the Slack Search Agent AgentCore Runtime (optional; 038) */
+    /** ARN of the Slack Search Agent AgentCore Runtime (optional) */
     readonly slackSearchAgentArn?: string;
-    /** DynamoDB table for usage history metadata (optional; 039) */
+    /** DynamoDB table for usage history metadata (optional) */
     readonly usageHistoryTable?: dynamodb.ITable;
-    /** S3 bucket for usage history content and attachments (optional; 039) */
+    /** S3 bucket for usage history content and attachments (optional) */
     readonly usageHistoryBucket?: s3.IBucket;
 }
 export declare class VerificationAgentRuntime extends Construct {

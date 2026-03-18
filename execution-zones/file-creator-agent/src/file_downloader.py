@@ -224,7 +224,7 @@ def download_from_presigned_url(
     """
     Download file from S3 (or any HTTP GET) via pre-signed URL. No Authorization header.
 
-    Used by execution agent when verification agent provides presigned_url (US4).
+    Used by execution agent when verification agent provides presigned_url.
     Retries on 5xx; validates Content-Type and optional magic bytes for images.
 
     Args:

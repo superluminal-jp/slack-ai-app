@@ -23,7 +23,7 @@ class TestDefaultValues:
         with patch.dict(os.environ, {}, clear=False):
             if "MAX_FILE_SIZE_BYTES" in os.environ:
                 del os.environ["MAX_FILE_SIZE_BYTES"]
-            assert fc.get_max_file_size_bytes() == 10 * 1024 * 1024  # 027: 10 MB default
+            assert fc.get_max_file_size_bytes() == 10 * 1024 * 1024  # 10 MB default
 
     def test_get_allowed_mime_types_default(self):
         with patch.dict(os.environ, {}, clear=False):
@@ -50,7 +50,7 @@ class TestEnvOverride:
 
     def test_max_file_size_bytes_invalid_fallback(self):
         with patch.dict(os.environ, {"MAX_FILE_SIZE_BYTES": "invalid"}):
-            assert fc.get_max_file_size_bytes() == 10 * 1024 * 1024  # 027: 10 MB fallback
+            assert fc.get_max_file_size_bytes() == 10 * 1024 * 1024  # 10 MB fallback
 
     def test_allowed_mime_types_from_env(self):
         with patch.dict(os.environ, {"ALLOWED_MIME_TYPES": "text/plain,application/pdf"}):

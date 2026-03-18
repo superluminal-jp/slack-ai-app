@@ -1,10 +1,8 @@
 """Router Agent for selecting target execution runtime.
 
-.. deprecated:: 036-iterative-reasoning
-   This module is deprecated and will be removed in a future release.
-   Routing is now handled by ``src/orchestrator.py`` (Strands agentic loop).
-   Imports from this module are kept for backward-compatibility only.
-   Do not add new functionality here.
+Deprecated. Routing is now handled by ``src/orchestrator.py`` (Strands agentic loop).
+Imports from this module are kept for backward-compatibility only.
+Do not add new functionality here.
 """
 
 import os
