@@ -26,7 +26,7 @@
 | `requests` | ~=2.31.0 | Apache-2.0 | ✅ |
 | `slack-sdk` | ~=3.27.0 | MIT | ✅ |
 | `beautifulsoup4` | ~=4.12.0 | MIT | ✅ |
-| `PyPDF2` | ~=3.0.0 | BSD-style | ✅ ⚠️ |
+| `pypdf` | ~=5.0.0 | BSD-style | ✅ |
 | `openpyxl` | ~=3.1.0 | MIT | ✅ |
 | `python-docx` | ~=1.1.0 | MIT | ✅ |
 | `python-pptx` | ~=1.0.0 | MIT | ✅ |
@@ -70,10 +70,7 @@
 
 ## 推奨事項
 
-1. **`PyPDF2` → `pypdf` への移行**
-   `PyPDF2` は deprecated。機能的後継である `pypdf` は同様の BSD ライセンスで積極的にメンテナンスされている。セキュリティパッチが今後提供されなくなるリスクがあるため、移行を推奨する。
-
-2. **定期的なライセンス監査の実施**
+1. **定期的なライセンス監査の実施**
    依存関係の追加・更新時は `pip-licenses`（Python）および `license-checker`（npm）を用いて自動チェックを行うことを推奨する。
 
 ---

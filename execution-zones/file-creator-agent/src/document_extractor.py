@@ -2,7 +2,7 @@
 Document extractor module for AgentCore Execution Agent.
 
 Extracts text content from various document formats:
-- PDF: PyPDF2
+- PDF: pypdf
 - DOCX: XML parsing (standard library, no lxml dependency)
 - CSV: built-in csv module
 - XLSX: openpyxl
@@ -22,9 +22,9 @@ from io import BytesIO, StringIO
 from typing import List, Optional
 
 try:
-    import PyPDF2
+    import pypdf
 except ImportError:
-    PyPDF2 = None
+    pypdf = None
 
 try:
     import openpyxl
@@ -52,12 +52,12 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> Optional[str]:
     Returns:
         Extracted text as string, or None if extraction fails
     """
-    if PyPDF2 is None:
+    if pypdf is None:
         return None
 
     try:
         pdf_file = BytesIO(pdf_bytes)
-        pdf_reader = PyPDF2.PdfReader(pdf_file)
+        pdf_reader = pypdf.PdfReader(pdf_file)
 
         text_parts = []
         for page in pdf_reader.pages:
