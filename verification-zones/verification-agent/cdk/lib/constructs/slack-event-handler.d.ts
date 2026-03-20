@@ -2,6 +2,7 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as sqs from "aws-cdk-lib/aws-sqs";
 import { Construct } from "constructs";
+import { ChannelIdEntry } from "../types/cdk-config";
 /**
  * Slack Event Handler Lambda construct.
  *
@@ -36,15 +37,15 @@ export interface SlackEventHandlerProps {
     configRevision?: string;
     /**
      * Channel IDs where the bot auto-replies to all messages without requiring a mention.
-     * Comma-separated string is set as AUTO_REPLY_CHANNEL_IDS env var.
+     * Accepts plain IDs or objects with id and label. Only IDs are passed to the Lambda env var.
      */
-    autoReplyChannelIds?: string[];
+    autoReplyChannelIds?: ChannelIdEntry[];
     /**
      * Channel IDs where @mention responses are allowed.
      * When set, app_mention events from other channels are silently ignored.
-     * Comma-separated string is set as MENTION_CHANNEL_IDS env var.
+     * Accepts plain IDs or objects with id and label. Only IDs are passed to the Lambda env var.
      */
-    mentionChannelIds?: string[];
+    mentionChannelIds?: ChannelIdEntry[];
 }
 export declare class SlackEventHandler extends Construct {
     readonly function: lambda.Function;

@@ -16,6 +16,15 @@
  * Key types: CdkConfig (validated shape). Key functions: loadCdkConfig, validateConfig, applyEnvOverrides.
  */
 /**
+ * A channel ID entry — either a plain Slack channel ID string or an object with
+ * an id and an optional human-readable label for management purposes.
+ * The label is never used for authorization; it only appears in logs.
+ */
+export type ChannelIdEntry = string | {
+    id: string;
+    label: string;
+};
+/**
  * Validated CDK configuration shape for the Verification Zone.
  * All required fields are enforced by CdkConfigSchema (Zod).
  * Optional fields (e.g. slackBotToken, executionAgentArns) may be set via env or config file.
@@ -42,9 +51,9 @@ export interface CdkConfig {
     /** Map of execution agent IDs to runtime ARNs for A2A (optional; from stack outputs or config) */
     executionAgentArns?: Record<string, string>;
     /** Channel IDs where the bot auto-replies without a mention (optional) */
-    autoReplyChannelIds?: string[];
+    autoReplyChannelIds?: ChannelIdEntry[];
     /** Channel IDs where @mention responses are allowed (optional; empty = all channels) */
-    mentionChannelIds?: string[];
+    mentionChannelIds?: ChannelIdEntry[];
     /** ARN of the Slack Search Agent AgentCore Runtime (optional) */
     slackSearchAgentArn?: string;
     /**

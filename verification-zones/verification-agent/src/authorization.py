@@ -153,10 +153,11 @@ def _get_whitelist_from_dynamodb() -> Dict[str, Set[str]]:
 
     try:
         dynamodb = boto3.client("dynamodb", region_name=os.environ.get("AWS_REGION_NAME", "ap-northeast-1"))
-        whitelist: Dict[str, Set[str]] = {
+        whitelist: Dict[str, Any] = {
             "team_ids": set(),
             "user_ids": set(),
             "channel_ids": set(),
+            "channel_labels": {},
         }
 
         # Query each entity type
@@ -181,6 +182,9 @@ def _get_whitelist_from_dynamodb() -> Dict[str, Set[str]]:
                             whitelist["user_ids"].add(entity_id)
                         elif entity_type == "channel_id":
                             whitelist["channel_ids"].add(entity_id)
+                            label = item.get("label", {}).get("S", "")
+                            if label:
+                                whitelist["channel_labels"][entity_id] = label
             except ClientError as e:
                 error_code = e.response.get("Error", {}).get("Code", "")
                 if error_code == "ResourceNotFoundException":
@@ -250,11 +254,23 @@ def _get_whitelist_from_secrets_manager() -> Dict[str, Set[str]]:
         except json.JSONDecodeError as e:
             raise WhitelistLoaderError(f"Invalid JSON format in whitelist secret: {str(e)}")
 
-        # Convert lists to sets
-        whitelist: Dict[str, Set[str]] = {
+        # Parse channel_ids — supports plain strings or {"id": "...", "label": "..."} objects
+        channel_ids: Set[str] = set()
+        channel_labels: Dict[str, str] = {}
+        for entry in secret_data.get("channel_ids", []):
+            if isinstance(entry, str):
+                channel_ids.add(entry)
+            elif isinstance(entry, dict) and "id" in entry:
+                channel_ids.add(entry["id"])
+                label = entry.get("label", "")
+                if label:
+                    channel_labels[entry["id"]] = label
+
+        whitelist: Dict[str, Any] = {
             "team_ids": set(secret_data.get("team_ids", [])),
             "user_ids": set(secret_data.get("user_ids", [])),
-            "channel_ids": set(secret_data.get("channel_ids", [])),
+            "channel_ids": channel_ids,
+            "channel_labels": channel_labels,
         }
 
         log_info("whitelist_loaded_from_secrets_manager", {
@@ -307,11 +323,26 @@ def _get_whitelist_from_env() -> Dict[str, Set[str]]:
     user_ids_str = os.environ.get("WHITELIST_USER_IDS", "")
     channel_ids_str = os.environ.get("WHITELIST_CHANNEL_IDS", "")
 
-    # Parse comma-separated values
-    whitelist: Dict[str, Set[str]] = {
+    # Parse channel IDs — supports plain IDs and "ID:label" format
+    channel_ids: Set[str] = set()
+    channel_labels: Dict[str, str] = {}
+    for token in channel_ids_str.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        parts = token.split(":", 1)
+        channel_id = parts[0].strip()
+        label = parts[1].strip() if len(parts) > 1 else ""
+        if channel_id:
+            channel_ids.add(channel_id)
+            if label:
+                channel_labels[channel_id] = label
+
+    whitelist: Dict[str, Any] = {
         "team_ids": set([id.strip() for id in team_ids_str.split(",") if id.strip()]),
         "user_ids": set([id.strip() for id in user_ids_str.split(",") if id.strip()]),
-        "channel_ids": set([id.strip() for id in channel_ids_str.split(",") if id.strip()]),
+        "channel_ids": channel_ids,
+        "channel_labels": channel_labels,
     }
 
     log_info("whitelist_loaded_from_env", {
@@ -353,6 +384,7 @@ def load_whitelist_config() -> Dict[str, Set[str]]:
             "team_ids": _whitelist_cache["team_ids"],
             "user_ids": _whitelist_cache["user_ids"],
             "channel_ids": _whitelist_cache["channel_ids"],
+            "channel_labels": _whitelist_cache.get("channel_labels", {}),
         }
 
     # Cache miss or expired - load from source
@@ -407,6 +439,7 @@ def load_whitelist_config() -> Dict[str, Set[str]]:
         "team_ids": whitelist["team_ids"],
         "user_ids": whitelist["user_ids"],
         "channel_ids": whitelist["channel_ids"],
+        "channel_labels": whitelist.get("channel_labels", {}),
         "cached_at": int(time.time()),
         "ttl": _cache_ttl,
     }
@@ -418,7 +451,12 @@ def load_whitelist_config() -> Dict[str, Set[str]]:
         "cached_at": _whitelist_cache["cached_at"],
     })
 
-    return whitelist
+    return {
+        "team_ids": whitelist["team_ids"],
+        "user_ids": whitelist["user_ids"],
+        "channel_ids": whitelist["channel_ids"],
+        "channel_labels": whitelist.get("channel_labels", {}),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -449,6 +487,7 @@ class AuthorizationResult:
     team_id: Optional[str] = None
     user_id: Optional[str] = None
     channel_id: Optional[str] = None
+    channel_label: Optional[str] = None
     unauthorized_entities: Optional[List[str]] = None
     error_message: Optional[str] = None
     timestamp: int = 0
@@ -569,16 +608,22 @@ def authorize_request(
     # Calculate latency
     elapsed_time = (time.time() - start_time) * 1000  # Convert to milliseconds
 
+    # Resolve channel label for logging and result
+    channel_label: Optional[str] = whitelist.get("channel_labels", {}).get(channel_id) if channel_id else None
+
     # Determine authorization result
     if len(unauthorized_entities) == 0:
         # All checked entities are authorized
-        log_info("whitelist_authorization_success", {
+        success_log: Dict[str, Any] = {
             "team_id": team_id,
             "user_id": user_id,
             "channel_id": channel_id,
             "checked_entities": checked_entities,
             "skipped_entities": skipped_entities if skipped_entities else None,
-        })
+        }
+        if channel_label:
+            success_log["channel_label"] = channel_label
+        log_info("whitelist_authorization_success", success_log)
         # Emit metrics for authorization success
         _emit_metric("WhitelistAuthorizationSuccess", 1.0)
         _emit_metric("WhitelistAuthorizationLatency", elapsed_time, "Milliseconds")
@@ -587,18 +632,22 @@ def authorize_request(
             team_id=team_id,
             user_id=user_id,
             channel_id=channel_id,
+            channel_label=channel_label,
             timestamp=timestamp,
         )
     else:
         # One or more entities are unauthorized
-        log_error("whitelist_authorization_failed", {
+        failure_log: Dict[str, Any] = {
             "team_id": team_id,
             "user_id": user_id,
             "channel_id": channel_id,
             "unauthorized_entities": unauthorized_entities,
             "checked_entities": checked_entities,
             "skipped_entities": skipped_entities if skipped_entities else None,
-        })
+        }
+        if channel_label:
+            failure_log["channel_label"] = channel_label
+        log_error("whitelist_authorization_failed", failure_log)
         # Emit metrics for authorization failure
         _emit_metric("WhitelistAuthorizationFailed", 1.0)
         _emit_metric("WhitelistAuthorizationLatency", elapsed_time, "Milliseconds")
@@ -607,6 +656,7 @@ def authorize_request(
             team_id=team_id,
             user_id=user_id,
             channel_id=channel_id,
+            channel_label=channel_label,
             unauthorized_entities=unauthorized_entities,
             timestamp=timestamp,
         )

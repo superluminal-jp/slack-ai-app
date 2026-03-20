@@ -14,8 +14,15 @@
     "time": "arn:aws:bedrock-agentcore:ap-northeast-1:EXECUTION_ACCOUNT_ID:runtime/TIME_RUNTIME_ID",
     "fetch-url": "arn:aws:bedrock-agentcore:ap-northeast-1:EXECUTION_ACCOUNT_ID:runtime/FETCH_URL_RUNTIME_ID"
   },
-  "autoReplyChannelIds": [],
-  "mentionChannelIds": [],
+  "_comment_autoReplyChannelIds": "Optional. Channel IDs where the bot auto-replies without requiring a @mention. Accepts plain IDs or objects with id and label.",
+  "autoReplyChannelIds": [
+    "C0EXAMPLE1",
+    { "id": "C0EXAMPLE2", "label": "#general" }
+  ],
+  "_comment_mentionChannelIds": "Optional. Channel IDs where @mention responses are allowed. When set, mentions from other channels are silently ignored. Accepts plain IDs or objects with id and label.",
+  "mentionChannelIds": [
+    { "id": "C0EXAMPLE3", "label": "#ai-bot" }
+  ],
   "_comment_archiveAccountId": "Optional. Set to a 12-digit AWS account ID to enable cross-account S3 replication for the usage-history archive bucket. Omit or leave empty for same-account replication (default). Env var: ARCHIVE_ACCOUNT_ID.",
   "archiveAccountId": ""
 }

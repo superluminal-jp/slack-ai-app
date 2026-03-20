@@ -169,7 +169,7 @@ def check_whitelist(channel: str) -> bool:
 Python 3.11 (コンテナ: `python:3.11-slim`, ARM64): Follow standard conventions
 
 ## Recent Changes
-- 047-whitelist-label: Added Python 3.11 (agents), TypeScript 5.x (CDK) + `boto3 ~=1.42.0`, `aws-cdk-lib` 2.215.0, `zod` (CDK config validation)
+- 047-whitelist-label: Added optional human-readable labels to whitelist channel entries. `AuthorizationResult.channel_label` (Python dataclass) populated from DynamoDB `label` attribute, Secrets Manager `{"id","label"}` object format, CDK config `ChannelIdEntry` type (`string | {id, label}`), or env var `ID:label` format. Labels appear in authorization logs but never affect access control. CDK: `ChannelIdEntry` union type in `cdk-config.ts`, `stack-config.ts`, `slack-event-handler.ts`; Lambda env vars receive IDs only.
 - 043-exec-cleanup: Removed spec-number annotations from all execution-zones comments/docstrings; removed unused imports (ruff F401 clean) and dead assignments (F841); fixed f-string without placeholder (F541); renamed spec-numbered test classes to intent-based names. Zero behavioral changes.
 - 042-code-cleanup: Removed spec-number annotations from all verification-zones comments/docstrings; migrated Lambda handler raw print() to structured logger calls; removed unused imports (ruff F401 clean); deleted orphan bedrock_client.py; fixed missing log_warn import in slack-response-handler; updated stale test patches (invoke_execution_agent → run_orchestration_loop).
 
