@@ -41,6 +41,7 @@ implementation fulfills it. No implementation decision is made without a corresp
 spec artifact: Specify → Plan → Tasks → Implement.
 
 **Non-negotiable rules**:
+
 - No pull request may be opened without a corresponding spec in `specs/`.
 - Acceptance criteria in the spec MUST be verifiable (Given/When/Then form).
 - Ambiguities MUST be resolved via `/speckit.clarify` before planning begins.
@@ -56,6 +57,7 @@ For every code change, tests MUST be written (or updated) first, confirmed faili
 then implementation written to pass. The Red → Green → Refactor cycle is mandatory.
 
 **Non-negotiable rules**:
+
 - Tests MUST exist and MUST fail before implementation begins.
 - Each task that touches production code MUST include a corresponding test task.
 - Refactor phase MUST keep all tests green.
@@ -80,6 +82,7 @@ preserve the multi-layered defense pipeline: existence check → whitelist → r
 execution. No layer may be bypassed or weakened.
 
 **Non-negotiable rules**:
+
 - Security checks (existence, whitelist, rate limit) MUST execute before any AI
   invocation or Slack reply.
 - AWS credentials MUST use least-privilege IAM; no wildcard resource policies.
@@ -96,6 +99,7 @@ issues) MUST fail open — allowing the pipeline to continue serving users. Secu
 check failures MUST fail closed — blocking the request.
 
 **Non-negotiable rules**:
+
 - Any `except` block in the security pipeline (existence check, whitelist, rate limit)
   MUST return an error response, not continue.
 - Any `except` block outside the security pipeline SHOULD log a WARNING and continue
@@ -112,6 +116,7 @@ MUST respect zone boundaries. Inter-zone communication MUST use the A2A protocol
 (Bedrock AgentCore `invoke_agent_runtime` + JSON-RPC 2.0).
 
 **Non-negotiable rules**:
+
 - Verification-zone code MUST NOT import or call execution-zone code directly.
 - New execution capabilities MUST be added as new execution agents or new skills on
   existing agents — not as logic inside the verification agent.
@@ -127,6 +132,7 @@ Source code, docstrings, inline comments, and test names MUST NOT contain
 process-tracking identifiers that are specific to the spec-kit workflow.
 
 **Non-negotiable rules**:
+
 - Spec numbers (e.g. `(027)`, `026 US1`) MUST NOT appear in code, docstrings, or comments.
 - Branch names (e.g. `041-s3-replication-archive`) MUST NOT appear in code or docstrings.
 - Task IDs (e.g. `T014`) and user story labels (e.g. `US1`) in isolation MUST NOT appear in code.
@@ -146,6 +152,7 @@ accurately reflects the actual codebase. Stale docs and broken deploy scripts ar
 treated as bugs, not tech debt.
 
 **Non-negotiable rules**:
+
 - `README.md` and `README.ja.md` MUST be updated in the same commit as any change that
   alters architecture, project structure, prerequisites, or user-facing behavior.
 - `CHANGELOG.md` MUST receive an `[Unreleased]` entry for every feature, fix, or
@@ -172,9 +179,9 @@ this hidden cost.
 **IaC**: AWS CDK v2 (TypeScript 5.x), one CDK app per agent zone
 **AI Platform**: Amazon Bedrock (model IDs via environment variables — never hardcoded)
 **Storage**: DynamoDB (dedupe, whitelist, rate_limit, existence_check_cache), S3
-  (temporary file exchange)
+(temporary file exchange)
 **Inter-agent protocol**: JSON-RPC 2.0 over Bedrock AgentCore `invoke_agent_runtime`
-  with AWS SigV4 authentication
+with AWS SigV4 authentication
 **Dependency pinning**: `~=` (compatible release) in `requirements.txt`
 **Linting**: `ruff check .` from `src/`
 
@@ -195,9 +202,11 @@ this hidden cost.
 **Spec numbering rule**: Each feature MUST use the next globally-available sequential
 number across ALL `specs/` directories. Before running `/speckit.specify`, determine the
 correct number by running:
+
 ```bash
 ls specs/ | grep -E '^[0-9]+' | sed 's/-.*//' | sort -n | tail -1
 ```
+
 Then use N+1. The `/speckit.specify` `--number` flag MUST be set explicitly to this
 value. Do not rely on the script's auto-detection, which only searches by short-name.
 
@@ -208,6 +217,7 @@ value. Do not rely on the script's auto-detection, which only searches by short-
 
 This constitution supersedes all other practices within this repository.
 Amendments require:
+
 1. A PR updating this file with a version bump (SemVer: MAJOR/MINOR/PATCH).
 2. A Sync Impact Report (HTML comment at top) listing changed principles and affected
    templates.
@@ -215,6 +225,7 @@ Amendments require:
 
 **Compliance review**: Every PR description MUST include a "Constitution Check" section
 confirming:
+
 - SDD traceability (Principle I): spec → plan → tasks → code
 - TDD cycle completed (Principle II): tests written first, all green
 - Docs and deploy scripts updated (Principle VI): README, CHANGELOG, CLAUDE.md, deploy.sh
@@ -223,6 +234,7 @@ If a violation is necessary, it MUST be justified in the Complexity Tracking tab
 `plan.md`.
 
 **Version policy**:
+
 - MAJOR: principle removed or fundamentally redefined
 - MINOR: principle added or materially expanded
 - PATCH: wording clarification, typo fix
