@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **PyPDF2 → pypdf migration** (`046-pypdf-migration`): Replaced the deprecated `PyPDF2~=3.0.0` with actively maintained successor `pypdf~=5.0.0` in `file-creator-agent`. Updated `document_extractor.py` import and API call (`pypdf.PdfReader`). Added unit tests for `extract_text_from_pdf`. No behavioral change.
+
 - **Developer docs updated to match current codebase** (`045-update-docs-and-prompts`): Updated `docs/developer/architecture.md` to reflect the 4-agent execution zone split (file-creator-agent, time-agent, docs-agent, fetch-url-agent), slack-search-agent in verification zone, 6 DynamoDB tables, usage-history S3 + SRR, PITR export, and cdk-nag governance. Updated `docs/developer/quickstart.md` with correct agent names, Slack Search Agent stack output, and current resource list. Rewrote `docs/developer/execution-agent-system-prompt.md` with accurate canonical-file table for all 5 agents.
 - **docs-agent system prompt improved** (`045-update-docs-and-prompts`): Added source citation instruction, storage-related search categories (DynamoDB, S3, PITR, replication), and expanded recommended keywords (slack-search-agent, cdk-nag, usage-history, Existence Check).
 

@@ -48,3 +48,8 @@ sys.modules["fastapi.responses"] = mock_fastapi.responses
 
 mock_uvicorn = MagicMock()
 sys.modules["uvicorn"] = mock_uvicorn
+
+# ─── Mock pypdf (broken cryptography backend in test environment) ───
+
+mock_pypdf = MagicMock()
+sys.modules["pypdf"] = mock_pypdf
