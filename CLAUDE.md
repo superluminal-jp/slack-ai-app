@@ -26,6 +26,8 @@ Auto-generated from all feature plans. Last updated: 2026-03-20
 - TypeScript 5.x (CDK) + `cdk-nag` (AWS Solutions security scanning) (044-cdk-nag-governance)
 - Python 3.11 (agents), TypeScript 5.x (CDK) + `boto3 ~=1.42.0`, `aws-cdk-lib` 2.215.0, `zod` (CDK config validation) (047-whitelist-label)
 - DynamoDB whitelist table (no schema migration — `label` is an optional attribute) (047-whitelist-label)
+- Python 3.11 + boto3 ~=1.42.0、pytest（テスト）— 新規依存なし (048-whitelist-entity-labels)
+- DynamoDB（変更なし — `label` はスパース属性として全エンティティタイプに適用可能） (048-whitelist-entity-labels)
 
 - Python 3.11 (コンテナ: `python:3.11-slim`, ARM64) + `bedrock-agentcore` v1.2.0 (Starlette ベース), `starlette`, `uvicorn` (020-fix-a2a-routing)
 
@@ -169,9 +171,9 @@ def check_whitelist(channel: str) -> bool:
 Python 3.11 (コンテナ: `python:3.11-slim`, ARM64): Follow standard conventions
 
 ## Recent Changes
+- 048-whitelist-entity-labels: Extended whitelist label support to `team_id` and `user_id` entries (symmetric with channel_id from 047). `AuthorizationResult` gains `team_label` and `user_label` Optional[str] fields (before `channel_label`). All three loaders updated: DynamoDB parses `label` sparse attribute on `team_id`/`user_id` items; Secrets Manager accepts `{"id","label"}` object format in `team_ids`/`user_ids` arrays; env vars parse `ID:label` colon-delimited format in `WHITELIST_TEAM_IDS`/`WHITELIST_USER_IDS`. Labels injected into success/failure logs when truthy; never affect authorization decisions. Both `src/authorization.py` (agent) and Lambda `whitelist_loader.py`/`authorization.py` copies updated. No new dependencies, CDK changes, or DynamoDB schema migration.
 - 047-whitelist-label: Added optional human-readable labels to whitelist channel entries. `AuthorizationResult.channel_label` (Python dataclass) populated from DynamoDB `label` attribute, Secrets Manager `{"id","label"}` object format, CDK config `ChannelIdEntry` type (`string | {id, label}`), or env var `ID:label` format. Labels appear in authorization logs but never affect access control. CDK: `ChannelIdEntry` union type in `cdk-config.ts`, `stack-config.ts`, `slack-event-handler.ts`; Lambda env vars receive IDs only.
 - 043-exec-cleanup: Removed spec-number annotations from all execution-zones comments/docstrings; removed unused imports (ruff F401 clean) and dead assignments (F841); fixed f-string without placeholder (F541); renamed spec-numbered test classes to intent-based names. Zero behavioral changes.
-- 042-code-cleanup: Removed spec-number annotations from all verification-zones comments/docstrings; migrated Lambda handler raw print() to structured logger calls; removed unused imports (ruff F401 clean); deleted orphan bedrock_client.py; fixed missing log_warn import in slack-response-handler; updated stale test patches (invoke_execution_agent → run_orchestration_loop).
 
 
 <!-- MANUAL ADDITIONS START -->
