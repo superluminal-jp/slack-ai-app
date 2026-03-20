@@ -89,11 +89,13 @@ class AuthorizationResult:
     team_id: Optional[str] = None
     user_id: Optional[str] = None
     channel_id: Optional[str] = None
+    team_label: Optional[str] = None
+    user_label: Optional[str] = None
     channel_label: Optional[str] = None
     unauthorized_entities: Optional[List[str]] = None
     error_message: Optional[str] = None
     timestamp: int = 0
-    
+
     def __post_init__(self):
         """Set timestamp if not provided."""
         if self.timestamp == 0:
@@ -210,7 +212,9 @@ def authorize_request(
     # Calculate latency
     elapsed_time = (time.time() - start_time) * 1000  # Convert to milliseconds
     
-    # Resolve channel label for logging and result
+    # Resolve labels for logging and result
+    team_label: Optional[str] = whitelist.get("team_labels", {}).get(team_id) if team_id else None
+    user_label: Optional[str] = whitelist.get("user_labels", {}).get(user_id) if user_id else None
     channel_label: Optional[str] = whitelist.get("channel_labels", {}).get(channel_id) if channel_id else None
 
     # Determine authorization result
@@ -223,6 +227,10 @@ def authorize_request(
             "checked_entities": checked_entities,
             "skipped_entities": skipped_entities if skipped_entities else None,
         }
+        if team_label:
+            success_log["team_label"] = team_label
+        if user_label:
+            success_log["user_label"] = user_label
         if channel_label:
             success_log["channel_label"] = channel_label
         log_info("whitelist_authorization_success", success_log)
@@ -234,6 +242,8 @@ def authorize_request(
             team_id=team_id,
             user_id=user_id,
             channel_id=channel_id,
+            team_label=team_label,
+            user_label=user_label,
             channel_label=channel_label,
             timestamp=timestamp,
         )
@@ -247,6 +257,10 @@ def authorize_request(
             "checked_entities": checked_entities,
             "skipped_entities": skipped_entities if skipped_entities else None,
         }
+        if team_label:
+            failure_log["team_label"] = team_label
+        if user_label:
+            failure_log["user_label"] = user_label
         if channel_label:
             failure_log["channel_label"] = channel_label
         log_error("whitelist_authorization_failed", failure_log)
@@ -258,6 +272,8 @@ def authorize_request(
             team_id=team_id,
             user_id=user_id,
             channel_id=channel_id,
+            team_label=team_label,
+            user_label=user_label,
             channel_label=channel_label,
             unauthorized_entities=unauthorized_entities,
             timestamp=timestamp,

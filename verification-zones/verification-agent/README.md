@@ -229,6 +229,44 @@ Example config for a second stack in the same account:
 DEPLOYMENT_ENV=prod npx cdk deploy SlackAI-Verification-Prod
 ```
 
+## Whitelist Authorization
+
+The Lambda authorizer restricts access by `team_id`, `user_id`, and `channel_id`. Only configured entities are checked — empty sets bypass that dimension.
+
+Configuration is loaded with the following priority (first that succeeds wins):
+
+1. **DynamoDB** — `WHITELIST_TABLE_NAME` table, `entity_type` PK / `entity_id` SK
+2. **Secrets Manager** — `WHITELIST_SECRET_NAME` JSON secret
+3. **Environment variables** — `WHITELIST_TEAM_IDS`, `WHITELIST_USER_IDS`, `WHITELIST_CHANNEL_IDS`
+
+### Optional labels
+
+Each whitelist entry can carry an optional human-readable label. Labels appear in authorization log events (`team_label`, `user_label`, `channel_label`) but **never affect access control**.
+
+| Source | team_id / user_id label format | channel_id label format |
+|--------|-------------------------------|------------------------|
+| DynamoDB | `"label"` sparse attribute on `team_id` / `user_id` items | `"label"` sparse attribute on `channel_id` items |
+| Secrets Manager | `{"id": "T001", "label": "My Workspace"}` in `team_ids` array | `{"id": "C001", "label": "#general"}` in `channel_ids` array |
+| Env vars | `T001:My Workspace,T002` in `WHITELIST_TEAM_IDS` | `C001:general,C002` in `WHITELIST_CHANNEL_IDS` |
+
+Plain string entries and labeled entries can be mixed freely in the same list.
+
+```bash
+# Env var examples
+WHITELIST_TEAM_IDS="T0123456789:My Workspace,T9876543210"
+WHITELIST_USER_IDS="U0123456789:@alice,U1111111111:@bob"
+WHITELIST_CHANNEL_IDS="C001,C002:#general"
+```
+
+```json
+// Secrets Manager example
+{
+  "team_ids": [{"id": "T0123456789", "label": "My Workspace"}, "T9876543210"],
+  "user_ids": [{"id": "U0123456789", "label": "@alice"}],
+  "channel_ids": ["C001", {"id": "C002", "label": "#general"}]
+}
+```
+
 ## Architecture: Orchestration Loop (036)
 
 The verification agent uses a **Strands agentic loop** to dispatch requests to multiple execution agents and synthesize their results into a single Slack reply.
