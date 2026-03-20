@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Whitelist channel labels** (`047-whitelist-label`): Administrators can now attach an optional human-readable label (e.g. `#general`) to each channel ID in the whitelist configuration. Labels are stored alongside IDs but never affect authorization — only the ID is used for access control. Supported in all four configuration sources: DynamoDB (`label` attribute on `channel_id` items), AWS Secrets Manager (object format `{"id": "C001", "label": "#general"}`), CDK config files (mixed array of plain strings and `{"id", "label"}` objects), and environment variables (`ID:label` comma-separated format). The `AuthorizationResult` dataclass gains an optional `channel_label` field; success/failure log events include the label when set. CDK `ChannelIdEntry` type (`string | { id, label }`) added to `cdk-config.ts`, `stack-config.ts`, and `slack-event-handler.ts`; Lambda env vars receive IDs only (labels stripped in CDK layer).
+
 ### Changed
 
 - **PyPDF2 → pypdf migration** (`046-pypdf-migration`): Replaced the deprecated `PyPDF2~=3.0.0` with actively maintained successor `pypdf~=5.0.0` in `file-creator-agent`. Updated `document_extractor.py` import and API call (`pypdf.PdfReader`). Added unit tests for `extract_text_from_pdf`. No behavioral change.

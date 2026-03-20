@@ -1,6 +1,6 @@
 # slack-ai-app Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-03-15
+Auto-generated from all feature plans. Last updated: 2026-03-20
 
 ## Active Technologies
 - Python 3.11 (コンテナ: `python:3.11-slim`, ARM64) + `strands-agents[a2a]~=1.25.0`, `fastapi`, `uvicorn`, `boto3`, `slack-sdk` (021-strands-migration-cleanup)
@@ -24,6 +24,8 @@ Auto-generated from all feature plans. Last updated: 2026-03-15
 - S3 (two buckets: existing source, new archive destination) (041-s3-replication-archive)
 - Python 3.11 + ruff (linting), pytest (test runner) (043-exec-cleanup)
 - TypeScript 5.x (CDK) + `cdk-nag` (AWS Solutions security scanning) (044-cdk-nag-governance)
+- Python 3.11 (agents), TypeScript 5.x (CDK) + `boto3 ~=1.42.0`, `aws-cdk-lib` 2.215.0, `zod` (CDK config validation) (047-whitelist-label)
+- DynamoDB whitelist table (no schema migration — `label` is an optional attribute) (047-whitelist-label)
 
 - Python 3.11 (コンテナ: `python:3.11-slim`, ARM64) + `bedrock-agentcore` v1.2.0 (Starlette ベース), `starlette`, `uvicorn` (020-fix-a2a-routing)
 
@@ -167,10 +169,9 @@ def check_whitelist(channel: str) -> bool:
 Python 3.11 (コンテナ: `python:3.11-slim`, ARM64): Follow standard conventions
 
 ## Recent Changes
+- 047-whitelist-label: Added optional human-readable labels to whitelist channel entries. `AuthorizationResult.channel_label` (Python dataclass) populated from DynamoDB `label` attribute, Secrets Manager `{"id","label"}` object format, CDK config `ChannelIdEntry` type (`string | {id, label}`), or env var `ID:label` format. Labels appear in authorization logs but never affect access control. CDK: `ChannelIdEntry` union type in `cdk-config.ts`, `stack-config.ts`, `slack-event-handler.ts`; Lambda env vars receive IDs only.
 - 043-exec-cleanup: Removed spec-number annotations from all execution-zones comments/docstrings; removed unused imports (ruff F401 clean) and dead assignments (F841); fixed f-string without placeholder (F541); renamed spec-numbered test classes to intent-based names. Zero behavioral changes.
 - 042-code-cleanup: Removed spec-number annotations from all verification-zones comments/docstrings; migrated Lambda handler raw print() to structured logger calls; removed unused imports (ruff F401 clean); deleted orphan bedrock_client.py; fixed missing log_warn import in slack-response-handler; updated stale test patches (invoke_execution_agent → run_orchestration_loop).
-- 041-s3-replication-archive: S3 SRR from usage-history → usage-history-archive; all prefixes (content/, attachments/, dynamodb-exports/); deleteMarkerReplication disabled; cross-account ready via archiveAccountId config / ARCHIVE_ACCOUNT_ID env; new constructs UsageHistoryArchiveBucket + UsageHistoryReplication; versioning enabled on source bucket.
-- 044-cdk-nag-governance: Applied `cdk-nag` AwsSolutions security scanning across all CDK apps (synth + Jest); added targeted suppressions with written justifications; narrowed Bedrock IAM from wildcard to model-scoped ARNs; verified cost allocation tag coverage (including Scheduler); added/clarified governance standards (logging/error handling/comments) and banned process-tracking identifiers in code.
 
 
 <!-- MANUAL ADDITIONS START -->

@@ -220,7 +220,7 @@ def post_to_slack(
                             },
                         )
                         break  # Success, exit retry loop
-                    except SlackApiError as retry_error:
+                    except SlackApiError:
                         if retry_attempt == max_retries - 1:
                             # Last retry failed, raise original error
                             log_exception(

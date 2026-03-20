@@ -278,7 +278,7 @@ def _verify_entity_with_retry(
                 # Emit failure metric for other API errors
                 _emit_metric("ExistenceCheckFailed", 1.0)
                 raise ExistenceCheckError(f"Slack API error verifying {entity_type}: {error_code}")
-        except (socket.timeout, TimeoutError) as e:
+        except (socket.timeout, TimeoutError):
             # Timeout error - fail closed (reject request)
             log_error("existence_check_timeout", {
                 "entity_type": entity_type,

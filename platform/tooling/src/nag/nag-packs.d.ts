@@ -17,4 +17,3 @@ export { NagSuppressions };
  * @param app - The CDK App instance
  */
 export declare function applyNagPacks(app: cdk.App): void;
-//# sourceMappingURL=nag-packs.d.ts.map

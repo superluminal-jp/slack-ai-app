@@ -140,9 +140,14 @@ npx cdk deploy --context 'mentionChannelIds=["C01234567","C89ABCDEF"]'
 
 **3. Config file (`cdk.config.{env}.json`)**
 
+Accepts plain IDs or objects with an optional `label` for easier management (label never affects authorization):
+
 ```json
 {
-  "mentionChannelIds": ["C01234567", "C89ABCDEF"]
+  "mentionChannelIds": [
+    "C01234567",
+    { "id": "C89ABCDEF", "label": "#ai-bot" }
+  ]
 }
 ```
 
@@ -174,9 +179,14 @@ npx cdk deploy --context 'autoReplyChannelIds=["C01234567","C89ABCDEF"]'
 
 **3. Config file (`cdk.config.{env}.json`)**
 
+Accepts plain IDs or objects with an optional `label` for easier management (label never affects authorization):
+
 ```json
 {
-  "autoReplyChannelIds": ["C01234567", "C89ABCDEF"]
+  "autoReplyChannelIds": [
+    "C01234567",
+    { "id": "C89ABCDEF", "label": "#general" }
+  ]
 }
 ```
 

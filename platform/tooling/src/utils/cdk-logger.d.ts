@@ -32,4 +32,3 @@ export declare function logWarn(message: string, options?: LogEntryOptions): voi
 export declare function logError(message: string, options?: LogEntryOptions): void;
 /** Convenience: log at debug level with optional phase/context */
 export declare function logDebug(message: string, options?: LogEntryOptions): void;
-//# sourceMappingURL=cdk-logger.d.ts.map

@@ -399,6 +399,27 @@ describe("VerificationStack", () => {
         },
       });
     });
+
+    it("should set AUTO_REPLY_CHANNEL_IDS with only IDs when object-format entries are provided", () => {
+      process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+      process.env.SLACK_SIGNING_SECRET = "test-signing-secret";
+      const app3 = new cdk.App();
+      const stack3 = new VerificationStack(app3, "TestVerificationStackAutoReplyObj", {
+        env: { account: "123456789012", region: "ap-northeast-1" },
+        autoReplyChannelIds: [
+          { id: "C0AFSG79T8D", label: "#general" },
+          "C1BBBBBBBBB",
+        ],
+      });
+      const t3 = Template.fromStack(stack3);
+      t3.hasResourceProperties("AWS::Lambda::Function", {
+        Environment: {
+          Variables: Match.objectLike({
+            AUTO_REPLY_CHANNEL_IDS: "C0AFSG79T8D,C1BBBBBBBBB",
+          }),
+        },
+      });
+    });
   });
 
   describe("Mention channel configuration", () => {
@@ -426,6 +447,27 @@ describe("VerificationStack", () => {
       });
       const t2 = Template.fromStack(stack2);
       t2.hasResourceProperties("AWS::Lambda::Function", {
+        Environment: {
+          Variables: Match.objectLike({
+            MENTION_CHANNEL_IDS: "C0AFSG79T8D,C2CCCCCCCCC",
+          }),
+        },
+      });
+    });
+
+    it("should set MENTION_CHANNEL_IDS with only IDs when object-format entries are provided", () => {
+      process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+      process.env.SLACK_SIGNING_SECRET = "test-signing-secret";
+      const app3 = new cdk.App();
+      const stack3 = new VerificationStack(app3, "TestVerificationStackMentionChannelsObj", {
+        env: { account: "123456789012", region: "ap-northeast-1" },
+        mentionChannelIds: [
+          { id: "C0AFSG79T8D", label: "#ai-bot" },
+          { id: "C2CCCCCCCCC", label: "#engineering" },
+        ],
+      });
+      const t3 = Template.fromStack(stack3);
+      t3.hasResourceProperties("AWS::Lambda::Function", {
         Environment: {
           Variables: Match.objectLike({
             MENTION_CHANNEL_IDS: "C0AFSG79T8D,C2CCCCCCCCC",
