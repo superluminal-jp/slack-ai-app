@@ -9,6 +9,7 @@
  */
 
 import * as cdk from "aws-cdk-lib";
+import { ChannelIdEntry } from "./cdk-config";
 
 /**
  * Configuration for the Verification Stack (Account A).
@@ -46,17 +47,19 @@ export interface VerificationStackProps extends cdk.StackProps {
 
   /**
    * Channel IDs where the bot auto-replies without requiring a mention.
-   * e.g. ["C0AFSG79T8D"]
+   * Accepts plain IDs or objects with id and label.
+   * e.g. ["C0AFSG79T8D"] or [{ id: "C0AFSG79T8D", label: "#general" }]
    */
-  readonly autoReplyChannelIds?: string[];
+  readonly autoReplyChannelIds?: ChannelIdEntry[];
 
   /**
    * Channel IDs where @mention responses are allowed.
    * When set, app_mention events from other channels are silently ignored.
    * When unset (default), @mentions are processed in every channel.
-   * e.g. ["C0AFSG79T8D"]
+   * Accepts plain IDs or objects with id and label.
+   * e.g. ["C0AFSG79T8D"] or [{ id: "C0AFSG79T8D", label: "#general" }]
    */
-  readonly mentionChannelIds?: string[];
+  readonly mentionChannelIds?: ChannelIdEntry[];
 
   /**
    * ARN of the Slack Search Agent AgentCore Runtime (optional).

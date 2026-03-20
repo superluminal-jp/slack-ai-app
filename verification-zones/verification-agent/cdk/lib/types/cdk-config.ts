@@ -21,6 +21,13 @@ import * as path from "path";
 import { z } from "zod";
 
 /**
+ * A channel ID entry — either a plain Slack channel ID string or an object with
+ * an id and an optional human-readable label for management purposes.
+ * The label is never used for authorization; it only appears in logs.
+ */
+export type ChannelIdEntry = string | { id: string; label: string };
+
+/**
  * Validated CDK configuration shape for the Verification Zone.
  * All required fields are enforced by CdkConfigSchema (Zod).
  * Optional fields (e.g. slackBotToken, executionAgentArns) may be set via env or config file.
@@ -47,9 +54,9 @@ export interface CdkConfig {
   /** Map of execution agent IDs to runtime ARNs for A2A (optional; from stack outputs or config) */
   executionAgentArns?: Record<string, string>;
   /** Channel IDs where the bot auto-replies without a mention (optional) */
-  autoReplyChannelIds?: string[];
+  autoReplyChannelIds?: ChannelIdEntry[];
   /** Channel IDs where @mention responses are allowed (optional; empty = all channels) */
-  mentionChannelIds?: string[];
+  mentionChannelIds?: ChannelIdEntry[];
   /** ARN of the Slack Search Agent AgentCore Runtime (optional) */
   slackSearchAgentArn?: string;
   /**
@@ -102,8 +109,12 @@ const CdkConfigSchema = z.object({
       )
     )
     .optional(),
-  autoReplyChannelIds: z.array(z.string()).optional(),
-  mentionChannelIds: z.array(z.string()).optional(),
+  autoReplyChannelIds: z.array(
+    z.union([z.string(), z.object({ id: z.string(), label: z.string() })])
+  ).optional(),
+  mentionChannelIds: z.array(
+    z.union([z.string(), z.object({ id: z.string(), label: z.string() })])
+  ).optional(),
   slackSearchAgentArn: z
     .string()
     .regex(
@@ -263,7 +274,7 @@ export function applyEnvOverrides(config: CdkConfig): CdkConfig {
 
   const parseAutoReplyChannelIds = (
     raw: string | undefined
-  ): string[] | undefined => {
+  ): ChannelIdEntry[] | undefined => {
     const value = raw?.trim();
     if (!value) return undefined;
     const ids = value.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
@@ -360,10 +371,10 @@ export function applyEnvOverrides(config: CdkConfig): CdkConfig {
     ),
     executionAgentArns: resolvedExecutionAgentArns,
     autoReplyChannelIds:
-      parseAutoReplyChannelIds(process.env.AUTO_REPLY_CHANNEL_IDS) ??
+      (parseAutoReplyChannelIds(process.env.AUTO_REPLY_CHANNEL_IDS) as ChannelIdEntry[] | undefined) ??
       config.autoReplyChannelIds,
     mentionChannelIds:
-      parseAutoReplyChannelIds(process.env.MENTION_CHANNEL_IDS) ??
+      (parseAutoReplyChannelIds(process.env.MENTION_CHANNEL_IDS) as ChannelIdEntry[] | undefined) ??
       config.mentionChannelIds,
     slackSearchAgentArn:
       slackSearchAgentArnFromEnv || config.slackSearchAgentArn,

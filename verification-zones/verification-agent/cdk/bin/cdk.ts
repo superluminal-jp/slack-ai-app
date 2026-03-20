@@ -28,6 +28,7 @@ import {
   loadCdkConfig,
   applyEnvOverrides,
   CdkConfig,
+  ChannelIdEntry,
 } from "../lib/types/cdk-config";
 import {
   LogRetentionAspect,
@@ -182,37 +183,69 @@ const verificationAgentName = getConfigString(
   `SlackAI_VerificationAgent_${environmentSuffix}`,
 );
 
-/** Parse a context value (string | string[] | undefined) into a string[]. */
-const parseChannelIdContext = (ctxRaw: unknown, fallback: string[]): string[] => {
+/**
+ * Parse a context value into a ChannelIdEntry[].
+ * Supports plain string CSV, JSON string arrays, and JSON object arrays.
+ * Each element may be a plain channel ID string or {"id": "...", "label": "..."}.
+ */
+const parseChannelIdContext = (ctxRaw: unknown, fallback: ChannelIdEntry[]): ChannelIdEntry[] => {
   if (ctxRaw === undefined) return fallback;
   if (typeof ctxRaw === "string") {
     try {
       const parsed = JSON.parse(ctxRaw) as unknown;
       if (Array.isArray(parsed)) {
-        return (parsed as unknown[]).map(String).filter((s) => s.trim() !== "");
+        return (parsed as unknown[]).flatMap((item): ChannelIdEntry[] => {
+          if (typeof item === "string" && item.trim() !== "") return [item.trim()];
+          if (
+            item !== null &&
+            typeof item === "object" &&
+            "id" in (item as object) &&
+            typeof (item as { id: unknown }).id === "string"
+          ) {
+            const entry = item as { id: string; label?: string };
+            if (entry.id.trim() !== "") {
+              return [{ id: entry.id.trim(), label: (entry.label ?? "").trim() }];
+            }
+          }
+          return [];
+        });
       }
     } catch {
-      // Not JSON — treat as comma-separated
+      // Not JSON — treat as comma-separated plain IDs
     }
     return ctxRaw.split(",").map((s) => s.trim()).filter((s) => s !== "");
   }
   if (Array.isArray(ctxRaw)) {
-    return (ctxRaw as unknown[]).map(String).filter((s) => s.trim() !== "");
+    return (ctxRaw as unknown[]).flatMap((item): ChannelIdEntry[] => {
+      if (typeof item === "string" && item.trim() !== "") return [item.trim()];
+      if (
+        item !== null &&
+        typeof item === "object" &&
+        "id" in (item as object) &&
+        typeof (item as { id: unknown }).id === "string"
+      ) {
+        const entry = item as { id: string; label?: string };
+        if (entry.id.trim() !== "") {
+          return [{ id: entry.id.trim(), label: (entry.label ?? "").trim() }];
+        }
+      }
+      return [];
+    });
   }
   return fallback;
 };
 
 // Auto-reply channel IDs (from context, config file, or env var).
-// --context autoReplyChannelIds=C123,C456  OR  ["C123","C456"] JSON array
-const autoReplyChannelIds: string[] = parseChannelIdContext(
+// --context autoReplyChannelIds=C123,C456  OR  [{"id":"C123","label":"#general"}] JSON array
+const autoReplyChannelIds: ChannelIdEntry[] = parseChannelIdContext(
   app.node.tryGetContext("autoReplyChannelIds"),
   config?.autoReplyChannelIds ?? []
 );
 
 // Mention-allowed channel IDs (from context, config file, or env var).
 // When set, app_mention events from other channels are silently ignored.
-// --context mentionChannelIds=C123,C456  OR  ["C123","C456"] JSON array
-const mentionChannelIds: string[] = parseChannelIdContext(
+// --context mentionChannelIds=C123,C456  OR  [{"id":"C123","label":"#general"}] JSON array
+const mentionChannelIds: ChannelIdEntry[] = parseChannelIdContext(
   app.node.tryGetContext("mentionChannelIds"),
   config?.mentionChannelIds ?? []
 );

@@ -5,6 +5,7 @@ import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as sqs from "aws-cdk-lib/aws-sqs";
 import { Construct } from "constructs";
 import { NagSuppressions } from "cdk-nag";
+import { ChannelIdEntry } from "../types/cdk-config";
 import * as path from "path";
 import { execSync } from "child_process";
 import * as fs from "fs";
@@ -43,15 +44,15 @@ export interface SlackEventHandlerProps {
   configRevision?: string;
   /**
    * Channel IDs where the bot auto-replies to all messages without requiring a mention.
-   * Comma-separated string is set as AUTO_REPLY_CHANNEL_IDS env var.
+   * Accepts plain IDs or objects with id and label. Only IDs are passed to the Lambda env var.
    */
-  autoReplyChannelIds?: string[];
+  autoReplyChannelIds?: ChannelIdEntry[];
   /**
    * Channel IDs where @mention responses are allowed.
    * When set, app_mention events from other channels are silently ignored.
-   * Comma-separated string is set as MENTION_CHANNEL_IDS env var.
+   * Accepts plain IDs or objects with id and label. Only IDs are passed to the Lambda env var.
    */
-  mentionChannelIds?: string[];
+  mentionChannelIds?: ChannelIdEntry[];
 }
 
 export class SlackEventHandler extends Construct {
@@ -134,11 +135,15 @@ export class SlackEventHandler extends Construct {
         ...(props.configRevision && { CONFIG_REVISION: props.configRevision }),
         // Channels where the bot auto-replies without requiring a mention
         ...(props.autoReplyChannelIds && props.autoReplyChannelIds.length > 0 && {
-          AUTO_REPLY_CHANNEL_IDS: props.autoReplyChannelIds.join(","),
+          AUTO_REPLY_CHANNEL_IDS: props.autoReplyChannelIds
+            .map((e) => (typeof e === "string" ? e : e.id))
+            .join(","),
         }),
         // Channels where @mention responses are allowed (empty = all channels)
         ...(props.mentionChannelIds && props.mentionChannelIds.length > 0 && {
-          MENTION_CHANNEL_IDS: props.mentionChannelIds.join(","),
+          MENTION_CHANNEL_IDS: props.mentionChannelIds
+            .map((e) => (typeof e === "string" ? e : e.id))
+            .join(","),
         }),
       },
     });

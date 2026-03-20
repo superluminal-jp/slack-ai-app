@@ -20,7 +20,7 @@ import os
 import time
 import boto3
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import Any, Dict, List, Optional
 from whitelist_loader import load_whitelist_config, AuthorizationError as LoaderError
 from logger import log_info, log_error
 
@@ -89,6 +89,7 @@ class AuthorizationResult:
     team_id: Optional[str] = None
     user_id: Optional[str] = None
     channel_id: Optional[str] = None
+    channel_label: Optional[str] = None
     unauthorized_entities: Optional[List[str]] = None
     error_message: Optional[str] = None
     timestamp: int = 0
@@ -209,16 +210,22 @@ def authorize_request(
     # Calculate latency
     elapsed_time = (time.time() - start_time) * 1000  # Convert to milliseconds
     
+    # Resolve channel label for logging and result
+    channel_label: Optional[str] = whitelist.get("channel_labels", {}).get(channel_id) if channel_id else None
+
     # Determine authorization result
     if len(unauthorized_entities) == 0:
         # All checked entities are authorized
-        log_info("whitelist_authorization_success", {
+        success_log: Dict[str, Any] = {
             "team_id": team_id,
             "user_id": user_id,
             "channel_id": channel_id,
             "checked_entities": checked_entities,
             "skipped_entities": skipped_entities if skipped_entities else None,
-        })
+        }
+        if channel_label:
+            success_log["channel_label"] = channel_label
+        log_info("whitelist_authorization_success", success_log)
         # Emit metrics for authorization success
         _emit_metric("WhitelistAuthorizationSuccess", 1.0)
         _emit_metric("WhitelistAuthorizationLatency", elapsed_time, "Milliseconds")
@@ -227,18 +234,22 @@ def authorize_request(
             team_id=team_id,
             user_id=user_id,
             channel_id=channel_id,
+            channel_label=channel_label,
             timestamp=timestamp,
         )
     else:
         # One or more entities are unauthorized
-        log_error("whitelist_authorization_failed", {
+        failure_log: Dict[str, Any] = {
             "team_id": team_id,
             "user_id": user_id,
             "channel_id": channel_id,
             "unauthorized_entities": unauthorized_entities,
             "checked_entities": checked_entities,
             "skipped_entities": skipped_entities if skipped_entities else None,
-        })
+        }
+        if channel_label:
+            failure_log["channel_label"] = channel_label
+        log_error("whitelist_authorization_failed", failure_log)
         # Emit metrics for authorization failure
         _emit_metric("WhitelistAuthorizationFailed", 1.0)
         _emit_metric("WhitelistAuthorizationLatency", elapsed_time, "Milliseconds")
@@ -247,6 +258,7 @@ def authorize_request(
             team_id=team_id,
             user_id=user_id,
             channel_id=channel_id,
+            channel_label=channel_label,
             unauthorized_entities=unauthorized_entities,
             timestamp=timestamp,
         )
