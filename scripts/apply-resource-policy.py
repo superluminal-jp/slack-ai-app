@@ -23,6 +23,9 @@ import json
 import os
 import sys
 
+import boto3
+from botocore.exceptions import ClientError
+
 
 def build_policy(execution_agent_arn: str, verification_role_arn: str, account_id: str) -> dict:
     """Build the IAM-style resource policy document."""
@@ -43,15 +46,15 @@ def build_policy(execution_agent_arn: str, verification_role_arn: str, account_i
 
 def apply_policy(execution_agent_arn: str, policy: dict, region: str | None = None) -> None:
     """Call PutResourcePolicy via boto3."""
-    try:
-        import boto3
-    except ImportError:
-        print("ERROR: boto3 is not installed. Run: pip install boto3", file=sys.stderr)
-        sys.exit(1)
-
-    session = boto3.Session(region_name=region or None)
+    session = boto3.Session(region_name=region if region else None)
     client = session.client("bedrock-agentcore-control")
-    client.put_resource_policy(resourceArn=execution_agent_arn, policy=json.dumps(policy))
+    try:
+        client.put_resource_policy(resourceArn=execution_agent_arn, policy=json.dumps(policy))
+    except ClientError as exc:
+        code = exc.response["Error"]["Code"]
+        msg = exc.response["Error"]["Message"]
+        print(f"ERROR: AWS API error [{code}]: {msg}", file=sys.stderr)
+        sys.exit(2)
 
 
 def main() -> None:

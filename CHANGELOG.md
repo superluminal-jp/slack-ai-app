@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **deploy.sh error handling and hardening** (`049-deploy-script-hardening`): Strengthened `cmd_status` by running all five CloudFormation `describe-stacks` calls in parallel (background jobs + `wait`), reducing sequential latency. Fixed `trap`/`mktemp` ordering in `cmd_deploy` so the EXIT trap fires even on early errors. Removed `export SLACK_BOT_TOKEN` and `export SLACK_SIGNING_SECRET` to prevent secret leakage into child processes. Extracted repeated jq ARN JSON assembly into a single `build_execution_agent_arns_json()` helper, eliminating three duplicate blocks. Unified ARN validity checks to `[[ -n "${var}" && "${var}" != "None" ]]` pattern. Updated `help` output to accurately describe the `all` subcommand as always force-rebuilding images.
+
+### Fixed
+
+- **apply-resource-policy.py ClientError handling** (`049-deploy-script-hardening`): `apply_policy()` now catches `botocore.exceptions.ClientError`, prints the AWS error code and message to stderr, and exits with code 2 instead of crashing silently. Moved `import boto3` and `from botocore.exceptions import ClientError` to module top level. Fixed `region=""` passing empty string to `boto3.Session`; now correctly converts empty string to `None`.
+
+### Changed
+
 - **PyPDF2 → pypdf migration** (`046-pypdf-migration`): Replaced the deprecated `PyPDF2~=3.0.0` with actively maintained successor `pypdf~=5.0.0` in `file-creator-agent`. Updated `document_extractor.py` import and API call (`pypdf.PdfReader`). Added unit tests for `extract_text_from_pdf`. No behavioral change.
 
 - **Developer docs updated to match current codebase** (`045-update-docs-and-prompts`): Updated `docs/developer/architecture.md` to reflect the 4-agent execution zone split (file-creator-agent, time-agent, docs-agent, fetch-url-agent), slack-search-agent in verification zone, 6 DynamoDB tables, usage-history S3 + SRR, PITR export, and cdk-nag governance. Updated `docs/developer/quickstart.md` with correct agent names, Slack Search Agent stack output, and current resource list. Rewrote `docs/developer/execution-agent-system-prompt.md` with accurate canonical-file table for all 5 agents.
