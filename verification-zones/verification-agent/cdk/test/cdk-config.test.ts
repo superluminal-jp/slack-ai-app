@@ -46,6 +46,14 @@ describe("CdkConfig ChannelIdEntry schema", () => {
       const config = validateConfig({ ...baseConfig, autoReplyChannelIds: [] });
       expect(config.autoReplyChannelIds).toEqual([]);
     });
+
+    it("accepts object-format entries with id only (no label)", () => {
+      const config = validateConfig({
+        ...baseConfig,
+        autoReplyChannelIds: [{ id: "C012345" }],
+      });
+      expect(config.autoReplyChannelIds).toEqual([{ id: "C012345" }]);
+    });
   });
 
   describe("mentionChannelIds", () => {
@@ -68,6 +76,14 @@ describe("CdkConfig ChannelIdEntry schema", () => {
         mentionChannelIds: ["C001", { id: "C002", label: "#engineering" }],
       });
       expect(config.mentionChannelIds).toEqual(["C001", { id: "C002", label: "#engineering" }]);
+    });
+
+    it("accepts object-format entries with id only (no label)", () => {
+      const config = validateConfig({
+        ...baseConfig,
+        mentionChannelIds: [{ id: "C012345" }],
+      });
+      expect(config.mentionChannelIds).toEqual([{ id: "C012345" }]);
     });
 
     it("accepts undefined (optional field)", () => {

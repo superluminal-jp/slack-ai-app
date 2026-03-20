@@ -25,7 +25,7 @@ import { z } from "zod";
  * an id and an optional human-readable label for management purposes.
  * The label is never used for authorization; it only appears in logs.
  */
-export type ChannelIdEntry = string | { id: string; label: string };
+export type ChannelIdEntry = string | { id: string; label?: string };
 
 /**
  * Validated CDK configuration shape for the Verification Zone.
@@ -110,10 +110,10 @@ const CdkConfigSchema = z.object({
     )
     .optional(),
   autoReplyChannelIds: z.array(
-    z.union([z.string(), z.object({ id: z.string(), label: z.string() })])
+    z.union([z.string(), z.object({ id: z.string(), label: z.string().optional() })])
   ).optional(),
   mentionChannelIds: z.array(
-    z.union([z.string(), z.object({ id: z.string(), label: z.string() })])
+    z.union([z.string(), z.object({ id: z.string(), label: z.string().optional() })])
   ).optional(),
   slackSearchAgentArn: z
     .string()

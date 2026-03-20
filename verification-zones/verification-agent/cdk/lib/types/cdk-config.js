@@ -86,8 +86,8 @@ const CdkConfigSchema = zod_1.z.object({
     executionAgentArns: zod_1.z
         .record(zod_1.z.string(), zod_1.z.string().regex(/^arn:aws:bedrock-agentcore:.+:\d{12}:runtime\/.+/, "executionAgentArns values must be valid AgentCore Runtime ARNs"))
         .optional(),
-    autoReplyChannelIds: zod_1.z.array(zod_1.z.union([zod_1.z.string(), zod_1.z.object({ id: zod_1.z.string(), label: zod_1.z.string() })])).optional(),
-    mentionChannelIds: zod_1.z.array(zod_1.z.union([zod_1.z.string(), zod_1.z.object({ id: zod_1.z.string(), label: zod_1.z.string() })])).optional(),
+    autoReplyChannelIds: zod_1.z.array(zod_1.z.union([zod_1.z.string(), zod_1.z.object({ id: zod_1.z.string(), label: zod_1.z.string().optional() })])).optional(),
+    mentionChannelIds: zod_1.z.array(zod_1.z.union([zod_1.z.string(), zod_1.z.object({ id: zod_1.z.string(), label: zod_1.z.string().optional() })])).optional(),
     slackSearchAgentArn: zod_1.z
         .string()
         .regex(/^arn:aws:bedrock-agentcore:.+:\d{12}:runtime\/.+/, "slackSearchAgentArn must be a valid AgentCore Runtime ARN")

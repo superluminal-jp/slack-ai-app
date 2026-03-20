@@ -22,7 +22,7 @@
  */
 export type ChannelIdEntry = string | {
     id: string;
-    label: string;
+    label?: string;
 };
 /**
  * Validated CDK configuration shape for the Verification Zone.
