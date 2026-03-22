@@ -1,6 +1,6 @@
 # slack-ai-app Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-03-20
+Auto-generated from all feature plans. Last updated: 2026-03-22
 
 ## Active Technologies
 - Python 3.11 (コンテナ: `python:3.11-slim`, ARM64) + `strands-agents[a2a]~=1.25.0`, `fastapi`, `uvicorn`, `boto3`, `slack-sdk` (021-strands-migration-cleanup)
@@ -30,6 +30,8 @@ Auto-generated from all feature plans. Last updated: 2026-03-20
 - DynamoDB（変更なし — `label` はスパース属性として全エンティティタイプに適用可能） (048-whitelist-entity-labels)
 - Python 3.11+ (`apply-resource-policy.py`), Bash 5.x (`deploy.sh`) + `boto3` (PutResourcePolicy API), `botocore.exceptions.ClientError` (エラー捕捉) (049-deploy-script-hardening)
 - N/A（スクリプト変更のみ） (049-deploy-script-hardening)
+- Bash 5.x (deploy scripts), TypeScript 5.x (CDK apps — no changes needed) + aws-cdk-lib 2.215.0 (existing), npm (workspace root), jq, aws CLI, shellcheck (validation) (050-per-agent-deploy-scripts)
+- N/A (scripts only — no storage changes) (050-per-agent-deploy-scripts)
 
 - Python 3.11 (コンテナ: `python:3.11-slim`, ARM64) + `bedrock-agentcore` v1.2.0 (Starlette ベース), `starlette`, `uvicorn` (020-fix-a2a-routing)
 
@@ -173,9 +175,9 @@ def check_whitelist(channel: str) -> bool:
 Python 3.11 (コンテナ: `python:3.11-slim`, ARM64): Follow standard conventions
 
 ## Recent Changes
+- 050-per-agent-deploy-scripts: Each agent zone now has a self-contained `scripts/deploy.sh` (auto npm install, `--force`, `--force-rebuild` flag). Root orchestrator delegates all CDK calls to per-agent scripts; verification script accepts `EXECUTION_AGENT_ARNS_JSON` + `SLACK_SEARCH_AGENT_ARN` env vars. ARN handoff via `get_stack_output` (CloudFormation). `scripts/README.md` documents standalone per-agent usage.
 - 049-deploy-script-hardening: Added Python 3.11+ (`apply-resource-policy.py`), Bash 5.x (`deploy.sh`) + `boto3` (PutResourcePolicy API), `botocore.exceptions.ClientError` (エラー捕捉)
 - 048-whitelist-entity-labels: Extended whitelist label support to `team_id` and `user_id` entries (symmetric with channel_id from 047). `AuthorizationResult` gains `team_label` and `user_label` Optional[str] fields (before `channel_label`). All three loaders updated: DynamoDB parses `label` sparse attribute on `team_id`/`user_id` items; Secrets Manager accepts `{"id","label"}` object format in `team_ids`/`user_ids` arrays; env vars parse `ID:label` colon-delimited format in `WHITELIST_TEAM_IDS`/`WHITELIST_USER_IDS`. Labels injected into success/failure logs when truthy; never affect authorization decisions. Both `src/authorization.py` (agent) and Lambda `whitelist_loader.py`/`authorization.py` copies updated. No new dependencies, CDK changes, or DynamoDB schema migration.
-- 047-whitelist-label: Added optional human-readable labels to whitelist channel entries. `AuthorizationResult.channel_label` (Python dataclass) populated from DynamoDB `label` attribute, Secrets Manager `{"id","label"}` object format, CDK config `ChannelIdEntry` type (`string | {id, label}`), or env var `ID:label` format. Labels appear in authorization logs but never affect access control. CDK: `ChannelIdEntry` union type in `cdk-config.ts`, `stack-config.ts`, `slack-event-handler.ts`; Lambda env vars receive IDs only.
 
 
 <!-- MANUAL ADDITIONS START -->

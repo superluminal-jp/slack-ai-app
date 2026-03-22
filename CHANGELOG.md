@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Per-agent deploy scripts and orchestrator delegation** (`050-per-agent-deploy-scripts`): Each agent zone now has a self-contained `scripts/deploy.sh` that auto-installs zone-local CDK `node_modules`, passes `--force` and `--require-approval never` to every `cdk deploy` call, and accepts a `--force-rebuild` flag to trigger image rebuilds. The root `scripts/deploy.sh` orchestrator now delegates all CDK invocations to these per-agent scripts instead of calling CDK directly, removing a class of wrong-CDK-app bugs caused by missing zone-local `node_modules`. The verification agent script accepts `EXECUTION_AGENT_ARNS_JSON` and `SLACK_SEARCH_AGENT_ARN` environment variables so both the orchestrator and standalone callers can pass runtime ARNs. ARN handoff uses CloudFormation outputs (`get_stack_output`) as the authoritative source. `scripts/README.md` documents the per-agent standalone usage.
+
 - **deploy.sh error handling and hardening** (`049-deploy-script-hardening`): Strengthened `cmd_status` by running all five CloudFormation `describe-stacks` calls in parallel (background jobs + `wait`), reducing sequential latency. Fixed `trap`/`mktemp` ordering in `cmd_deploy` so the EXIT trap fires even on early errors. Removed `export SLACK_BOT_TOKEN` and `export SLACK_SIGNING_SECRET` to prevent secret leakage into child processes. Extracted repeated jq ARN JSON assembly into a single `build_execution_agent_arns_json()` helper, eliminating three duplicate blocks. Unified ARN validity checks to `[[ -n "${var}" && "${var}" != "None" ]]` pattern. Updated `help` output to accurately describe the `all` subcommand as always force-rebuilding images.
 
 ### Fixed

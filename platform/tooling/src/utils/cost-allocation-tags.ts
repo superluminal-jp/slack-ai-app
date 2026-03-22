@@ -83,7 +83,7 @@ const TAGGABLE_CFN_TYPES = new Set([
   "AWS::IAM::Role",
   "AWS::Logs::LogGroup",
   "AWS::ECR::Repository",
-  "AWS::Scheduler::Schedule",
+  // AWS::Scheduler::Schedule does not support Tags in CloudFormation resource schema
 ]);
 
 /**
