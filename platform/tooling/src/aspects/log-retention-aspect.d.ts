@@ -13,3 +13,4 @@ import { IAspect } from "aws-cdk-lib";
 export declare class LogRetentionAspect implements IAspect {
     visit(node: IConstruct): void;
 }
+//# sourceMappingURL=log-retention-aspect.d.ts.map

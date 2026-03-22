@@ -45,7 +45,7 @@ export class UsageHistoryReplication extends Construct {
     // ── IAM Replication Role ──────────────────────────────────────────────
     const replicationRole = new iam.Role(this, "ReplicationRole", {
       assumedBy: new iam.ServicePrincipal("s3.amazonaws.com"),
-      description: "S3 replication role for usage-history → archive",
+      description: "S3 replication role for usage-history -> archive",
     });
 
     // Source bucket: list and configuration read
@@ -135,6 +135,7 @@ export class UsageHistoryReplication extends Construct {
         {
           id: "replicate-all-objects",
           status: "Enabled",
+          priority: 0, // Required when using V2 filter format
           filter: { prefix: "" }, // V2 format: empty prefix = all objects
           destination: {
             bucket: archiveBucket.bucketArn,

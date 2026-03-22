@@ -49,3 +49,4 @@ export declare function applyCostAllocationTags(scope: cdk.Stack, options: Apply
 export declare class CostAllocationTagAspect implements cdk.IAspect {
     visit(node: IConstruct): void;
 }
+//# sourceMappingURL=cost-allocation-tags.d.ts.map

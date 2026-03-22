@@ -21,7 +21,7 @@ PROJECT_ROOT="$(cd "${ZONE_ROOT}/../.." && pwd)"
 # npm workspaces: aws-cdk is hoisted to project root
 CDK_CLI="${CDK_DIR}/node_modules/.bin/cdk"
 if [[ ! -x "${CDK_CLI}" ]]; then
-    CDK_CLI="${PROJECT_ROOT}/node_modules/.bin/cdk"
+    CDK_CLI="${PROJECT_ROOT}/node_modules/aws-cdk/bin/cdk"
 fi
 AWS_REGION="${AWS_REGION:-ap-northeast-1}"
 PROFILE_ARGS="${AWS_PROFILE:+--profile ${AWS_PROFILE}}"
@@ -42,7 +42,12 @@ log_info "Deploying Docs Agent zone (env: ${DEPLOYMENT_ENV})"
 if [[ ! -x "${CDK_CLI}" ]]; then
     log_info "Installing CDK dependencies..."
     npm install --prefix "${PROJECT_ROOT}"
-    CDK_CLI="${PROJECT_ROOT}/node_modules/.bin/cdk"
+    CDK_CLI="${PROJECT_ROOT}/node_modules/aws-cdk/bin/cdk"
+fi
+
+if [[ ! -d "${PROJECT_ROOT}/node_modules" ]]; then
+    log_info "Installing workspace dependencies..."
+    npm install --prefix "${PROJECT_ROOT}"
 fi
 
 CONTEXT_ARGS="--context deploymentEnv=${DEPLOYMENT_ENV}"
@@ -57,7 +62,7 @@ DOCS_STACK="SlackAI-DocsExecution-${ENV_SUFFIX}"
 log_info "Deploying stack: ${DOCS_STACK}"
 cd "${CDK_DIR}"
 DEPLOYMENT_ENV="${DEPLOYMENT_ENV}" "${CDK_CLI}" deploy "${DOCS_STACK}" \
-    --require-approval never \
+    --require-approval never --force \
     ${CONTEXT_ARGS} \
     ${PROFILE_ARGS:+${PROFILE_ARGS}} \
     --region "${AWS_REGION}"
