@@ -86,7 +86,10 @@ def build_agent_tools(registry: dict, file_artifact_store: dict = None) -> list:
     """
     tools = []
     for agent_id, card in registry.items():
-        if not isinstance(card, dict):
+        # None = discovery disabled; use generic tool metadata (make_agent_tool defaults).
+        if card is None:
+            card = {}
+        elif not isinstance(card, dict):
             continue
         try:
             agent_tool = make_agent_tool(agent_id, card, file_artifact_store)

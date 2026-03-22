@@ -32,6 +32,7 @@ Auto-generated from all feature plans. Last updated: 2026-03-22
 - N/A（スクリプト変更のみ） (049-deploy-script-hardening)
 - Bash 5.x (deploy scripts), TypeScript 5.x (CDK apps — no changes needed) + aws-cdk-lib 2.215.0 (existing), npm (workspace root), jq, aws CLI, shellcheck (validation) (050-per-agent-deploy-scripts)
 - N/A (scripts only — no storage changes) (050-per-agent-deploy-scripts)
+- N/A（調査タスク — コード変更なし） + AWS CLI (aws bedrock-agentcore), AWS MCP Server, boto3（調査スクリプト用） (051-investigate-agentcore-idle-costs)
 
 - Python 3.11 (コンテナ: `python:3.11-slim`, ARM64) + `bedrock-agentcore` v1.2.0 (Starlette ベース), `starlette`, `uvicorn` (020-fix-a2a-routing)
 
@@ -175,9 +176,9 @@ def check_whitelist(channel: str) -> bool:
 Python 3.11 (コンテナ: `python:3.11-slim`, ARM64): Follow standard conventions
 
 ## Recent Changes
+- 051-investigate-agentcore-idle-costs: Added N/A（調査タスク — コード変更なし） + AWS CLI (aws bedrock-agentcore), AWS MCP Server, boto3（調査スクリプト用）
 - 050-per-agent-deploy-scripts: Each agent zone now has a self-contained `scripts/deploy.sh` (auto npm install, `--force`, `--force-rebuild` flag). Root orchestrator delegates all CDK calls to per-agent scripts; verification script accepts `EXECUTION_AGENT_ARNS_JSON` + `SLACK_SEARCH_AGENT_ARN` env vars. ARN handoff via `get_stack_output` (CloudFormation). `scripts/README.md` documents standalone per-agent usage.
 - 049-deploy-script-hardening: Added Python 3.11+ (`apply-resource-policy.py`), Bash 5.x (`deploy.sh`) + `boto3` (PutResourcePolicy API), `botocore.exceptions.ClientError` (エラー捕捉)
-- 048-whitelist-entity-labels: Extended whitelist label support to `team_id` and `user_id` entries (symmetric with channel_id from 047). `AuthorizationResult` gains `team_label` and `user_label` Optional[str] fields (before `channel_label`). All three loaders updated: DynamoDB parses `label` sparse attribute on `team_id`/`user_id` items; Secrets Manager accepts `{"id","label"}` object format in `team_ids`/`user_ids` arrays; env vars parse `ID:label` colon-delimited format in `WHITELIST_TEAM_IDS`/`WHITELIST_USER_IDS`. Labels injected into success/failure logs when truthy; never affect authorization decisions. Both `src/authorization.py` (agent) and Lambda `whitelist_loader.py`/`authorization.py` copies updated. No new dependencies, CDK changes, or DynamoDB schema migration.
 
 
 <!-- MANUAL ADDITIONS START -->
