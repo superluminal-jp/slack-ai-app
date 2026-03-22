@@ -21,3 +21,4 @@ export declare function loadJsonFile(filePath: string): Record<string, unknown> 
  * @returns Merged configuration object
  */
 export declare function mergeConfigs(...configs: (Record<string, unknown> | null)[]): Record<string, unknown>;
+//# sourceMappingURL=config-loader.d.ts.map

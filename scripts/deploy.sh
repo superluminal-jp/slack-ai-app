@@ -47,7 +47,7 @@ PYTHON3="${PROJECT_ROOT}/.venv/bin/python3"
 [[ ! -x "${PYTHON3}" ]] && PYTHON3="python3"
 
 # CDK CLI: prefer workspace-root hoisted binary
-CDK_CLI="${PROJECT_ROOT}/node_modules/.bin/cdk"
+CDK_CLI="${PROJECT_ROOT}/node_modules/aws-cdk/bin/cdk"
 VERIFY_CDK_CLI="${VERIFY_CDK_DIR}/node_modules/.bin/cdk"
 if [[ ! -x "${VERIFY_CDK_CLI}" ]]; then
     VERIFY_CDK_CLI="${CDK_CLI}"
@@ -270,13 +270,8 @@ _fetch_logs() {
 # ── Subcommand: deploy ───────────────────────────────────────
 
 cmd_deploy() {
-    # Non-local so these remain accessible when the EXIT trap fires after cmd_deploy returns
-    exec_outputs="" docs_outputs="" time_outputs="" fetch_outputs="" slack_search_outputs="" verify_outputs=""
     local force_rebuild="false"
     local pre_exec_arn pre_docs_arn pre_time_arn pre_fetch_arn preflight_execution_agent_arns_json=""
-    trap 'rm -f "${exec_outputs}" "${docs_outputs}" "${time_outputs}" "${fetch_outputs}" "${slack_search_outputs}" "${verify_outputs}"' EXIT
-    exec_outputs="$(mktemp)"; docs_outputs="$(mktemp)"; time_outputs="$(mktemp)"
-    fetch_outputs="$(mktemp)"; slack_search_outputs="$(mktemp)"; verify_outputs="$(mktemp)"
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -312,43 +307,27 @@ cmd_deploy() {
     if [[ -n "${pre_exec_arn}" && "${pre_exec_arn}" != "None" ]]; then
         preflight_execution_agent_arns_json=$(build_execution_agent_arns_json "${pre_exec_arn}" "${pre_docs_arn}" "${pre_time_arn}" "${pre_fetch_arn}")
         log_info "========== Preflight: Deploying Verification Stack with current runtime ARNs =========="
-        ( cd "${VERIFY_CDK_DIR}" && "${VERIFY_CDK_CLI}" deploy "${VERIFY_STACK}" \
-            ${PROFILE_ARGS} --require-approval never \
-            --outputs-file "${verify_outputs}" \
-            --context deploymentEnv="${DEPLOYMENT_ENV}" \
-            --context executionAgentArns="${preflight_execution_agent_arns_json}" ) \
+        DEPLOYMENT_ENV="${DEPLOYMENT_ENV}" AWS_REGION="${AWS_REGION}" \
+            EXECUTION_AGENT_ARNS_JSON="${preflight_execution_agent_arns_json}" \
+            "${PROJECT_ROOT}/verification-zones/verification-agent/scripts/deploy.sh" \
             || { log_error "Preflight failed: could not deploy ${VERIFY_STACK}"; exit 1; }
         log_success "Preflight Verification deploy completed"
     else
         log_info "Preflight skipped: ${EXEC_STACK} runtime ARN not found (first deploy path)"
     fi
 
-    # Phase 1: Execution Stack (file-creator-agent)
+    # Phase 1: File Creator Agent
     log_info "========== Phase 1/8: Deploying Execution Stack =========="
-    local exec_context="--context deploymentEnv=${DEPLOYMENT_ENV}"
-    if [[ "${force_rebuild}" == "true" || -n "${FORCE_EXECUTION_IMAGE_REBUILD:-}" ]]; then
-        local hash="${FORCE_EXECUTION_IMAGE_REBUILD:-$(date +%s)}"
-        exec_context+=" --context forceExecutionImageRebuild=${hash}"
-        log_info "Forcing Execution image rebuild (hash=${hash})"
-        [[ -d "${EXEC_CDK_DIR}/cdk.out" ]] && rm -rf "${EXEC_CDK_DIR}/cdk.out"
-    fi
-    local slack_search_context_args="--context deploymentEnv=${DEPLOYMENT_ENV}"
-    if [[ "${force_rebuild}" == "true" || -n "${FORCE_SLACK_SEARCH_IMAGE_REBUILD:-}" ]]; then
-        local ss_hash="${FORCE_SLACK_SEARCH_IMAGE_REBUILD:-$(date +%s)}"
-        slack_search_context_args+=" --context forceSlackSearchImageRebuild=${ss_hash}"
-        [[ -d "${SLACK_SEARCH_CDK_DIR}/cdk.out" ]] && rm -rf "${SLACK_SEARCH_CDK_DIR}/cdk.out"
-    fi
-
-    ( cd "${EXEC_CDK_DIR}" && "${CDK_CLI}" deploy "${EXEC_STACK}" \
-        ${PROFILE_ARGS} --require-approval never \
-        --outputs-file "${exec_outputs}" ${exec_context} ) \
-        || { log_error "Failed to deploy ${EXEC_STACK}"; exit 1; }
-
-    exec_arn=$(get_output_from_file_or_stack "${exec_outputs}" "${EXEC_STACK}" "FileCreatorAgentRuntimeArn")
-    [[ -z "${exec_arn}" || "${exec_arn}" == "None" ]] && { log_error "FileCreatorAgentRuntimeArn not found in outputs"; exit 1; }
+    local exec_force_arg=""
+    [[ "${force_rebuild}" == "true" || -n "${FORCE_EXECUTION_IMAGE_REBUILD:-}" ]] && exec_force_arg="--force-rebuild"
+    DEPLOYMENT_ENV="${DEPLOYMENT_ENV}" AWS_REGION="${AWS_REGION}" \
+        "${PROJECT_ROOT}/execution-zones/file-creator-agent/scripts/deploy.sh" ${exec_force_arg} \
+        || { log_error "Failed to deploy File Creator Agent"; exit 1; }
+    exec_arn=$(get_stack_output "${EXEC_STACK}" "FileCreatorAgentRuntimeArn")
+    [[ -z "${exec_arn}" || "${exec_arn}" == "None" ]] && { log_error "FileCreatorAgentRuntimeArn not found"; exit 1; }
     log_success "File Creator Stack deployed (ARN: ${exec_arn})"
 
-    # Phase 2: Docs Execution Stack
+    # Phase 2: Docs Agent
     log_info "========== Phase 2/8: Deploying Docs Execution Stack =========="
     local docs_src="${PROJECT_ROOT}/docs"
     local docs_agent_docs="${DOCS_CDK_DIR}/lib/docs-agent/docs"
@@ -357,45 +336,34 @@ cmd_deploy() {
         cp -r "${docs_src}" "${docs_agent_docs}"
         log_info "Copied docs/ into Docs Agent build context"
     fi
-    local docs_context="--context deploymentEnv=${DEPLOYMENT_ENV}"
-    if [[ "${force_rebuild}" == "true" || -n "${FORCE_DOCS_IMAGE_REBUILD:-}" ]]; then
-        local docs_hash="${FORCE_DOCS_IMAGE_REBUILD:-$(date +%s)}"
-        docs_context+=" --context forceDocsImageRebuild=${docs_hash}"
-        [[ -d "${DOCS_CDK_DIR}/cdk.out" ]] && rm -rf "${DOCS_CDK_DIR}/cdk.out"
-    fi
-    ( cd "${DOCS_CDK_DIR}" && "${CDK_CLI}" deploy "${DOCS_STACK}" \
-        ${PROFILE_ARGS} --require-approval never \
-        --outputs-file "${docs_outputs}" ${docs_context} ) \
-        || { log_error "Failed to deploy ${DOCS_STACK}"; exit 1; }
-
-    docs_arn=$(get_output_from_file_or_stack "${docs_outputs}" "${DOCS_STACK}" "DocsAgentRuntimeArn")
-    [[ -z "${docs_arn}" || "${docs_arn}" == "None" ]] && { log_error "DocsAgentRuntimeArn not found in outputs"; exit 1; }
+    local docs_force_arg=""
+    [[ "${force_rebuild}" == "true" || -n "${FORCE_DOCS_IMAGE_REBUILD:-}" ]] && docs_force_arg="--force-rebuild"
+    DEPLOYMENT_ENV="${DEPLOYMENT_ENV}" AWS_REGION="${AWS_REGION}" \
+        "${PROJECT_ROOT}/execution-zones/docs-agent/scripts/deploy.sh" ${docs_force_arg} \
+        || { log_error "Failed to deploy Docs Agent"; exit 1; }
+    docs_arn=$(get_stack_output "${DOCS_STACK}" "DocsAgentRuntimeArn")
+    [[ -z "${docs_arn}" || "${docs_arn}" == "None" ]] && { log_error "DocsAgentRuntimeArn not found"; exit 1; }
     log_success "Docs Execution Stack deployed (ARN: ${docs_arn})"
 
-    # Phase 3: Time Execution Stack
+    # Phase 3: Time Agent
     log_info "========== Phase 3/8: Deploying Time Execution Stack =========="
-    local time_context="--context deploymentEnv=${DEPLOYMENT_ENV}"
-    if [[ "${force_rebuild}" == "true" || -n "${FORCE_TIME_IMAGE_REBUILD:-}" ]]; then
-        local time_hash="${FORCE_TIME_IMAGE_REBUILD:-$(date +%s)}"
-        time_context+=" --context forceTimeImageRebuild=${time_hash}"
-        [[ -d "${TIME_CDK_DIR}/cdk.out" ]] && rm -rf "${TIME_CDK_DIR}/cdk.out"
-    fi
-    ( cd "${TIME_CDK_DIR}" && "${CDK_CLI}" deploy "${TIME_STACK}" \
-        ${PROFILE_ARGS} --require-approval never \
-        --outputs-file "${time_outputs}" ${time_context} ) \
-        || { log_error "Failed to deploy ${TIME_STACK}"; exit 1; }
-
-    time_arn=$(get_output_from_file_or_stack "${time_outputs}" "${TIME_STACK}" "TimeAgentRuntimeArn")
-    [[ -z "${time_arn}" || "${time_arn}" == "None" ]] && { log_error "TimeAgentRuntimeArn not found in outputs"; exit 1; }
+    local time_force_arg=""
+    [[ "${force_rebuild}" == "true" || -n "${FORCE_TIME_IMAGE_REBUILD:-}" ]] && time_force_arg="--force-rebuild"
+    DEPLOYMENT_ENV="${DEPLOYMENT_ENV}" AWS_REGION="${AWS_REGION}" \
+        "${PROJECT_ROOT}/execution-zones/time-agent/scripts/deploy.sh" ${time_force_arg} \
+        || { log_error "Failed to deploy Time Agent"; exit 1; }
+    time_arn=$(get_stack_output "${TIME_STACK}" "TimeAgentRuntimeArn")
+    [[ -z "${time_arn}" || "${time_arn}" == "None" ]] && { log_error "TimeAgentRuntimeArn not found"; exit 1; }
     log_success "Time Execution Stack deployed (ARN: ${time_arn})"
 
     # Phase 4: Slack Search Agent Stack
     log_info "========== Phase 4/8: Deploying Slack Search Agent Stack =========="
-    ( cd "${SLACK_SEARCH_CDK_DIR}" && "${SLACK_SEARCH_CDK_CLI}" deploy "${SLACK_SEARCH_STACK}" \
-        ${PROFILE_ARGS} --require-approval never \
-        --outputs-file "${slack_search_outputs}" ${slack_search_context_args} ) \
-        || { log_error "Failed to deploy ${SLACK_SEARCH_STACK}"; exit 1; }
-    slack_search_arn=$(get_output_from_file_or_stack "${slack_search_outputs}" "${SLACK_SEARCH_STACK}" "SlackSearchAgentRuntimeArn")
+    local slack_search_force_arg=""
+    [[ "${force_rebuild}" == "true" || -n "${FORCE_SLACK_SEARCH_IMAGE_REBUILD:-}" ]] && slack_search_force_arg="--force-rebuild"
+    DEPLOYMENT_ENV="${DEPLOYMENT_ENV}" AWS_REGION="${AWS_REGION}" \
+        "${PROJECT_ROOT}/verification-zones/slack-search-agent/scripts/deploy.sh" ${slack_search_force_arg} \
+        || { log_error "Failed to deploy Slack Search Agent"; exit 1; }
+    slack_search_arn=$(get_stack_output "${SLACK_SEARCH_STACK}" "SlackSearchAgentRuntimeArn")
     if [[ -n "${slack_search_arn}" && "${slack_search_arn}" != "None" ]]; then
         log_success "Slack Search Agent Stack deployed (ARN: ${slack_search_arn})"
         save_slack_search_arn_to_config "${slack_search_arn}"
@@ -406,17 +374,12 @@ cmd_deploy() {
 
     # Phase 5: Web Fetch Agent Stack
     log_info "========== Phase 5/8: Deploying Web Fetch Agent Stack =========="
-    local fetch_context="--context deploymentEnv=${DEPLOYMENT_ENV}"
-    if [[ "${force_rebuild}" == "true" || -n "${FORCE_WEB_FETCH_IMAGE_REBUILD:-}" ]]; then
-        local fetch_hash="${FORCE_WEB_FETCH_IMAGE_REBUILD:-$(date +%s)}"
-        fetch_context+=" --context forceWebFetchImageRebuild=${fetch_hash}"
-        [[ -d "${WEB_FETCH_CDK_DIR}/cdk.out" ]] && rm -rf "${WEB_FETCH_CDK_DIR}/cdk.out"
-    fi
-    ( cd "${WEB_FETCH_CDK_DIR}" && "${CDK_CLI}" deploy "${WEB_FETCH_STACK}" \
-        ${PROFILE_ARGS} --require-approval never \
-        --outputs-file "${fetch_outputs}" ${fetch_context} ) \
-        || { log_error "Failed to deploy ${WEB_FETCH_STACK}"; exit 1; }
-    fetch_arn=$(get_output_from_file_or_stack "${fetch_outputs}" "${WEB_FETCH_STACK}" "WebFetchAgentRuntimeArn")
+    local fetch_force_arg=""
+    [[ "${force_rebuild}" == "true" || -n "${FORCE_WEB_FETCH_IMAGE_REBUILD:-}" ]] && fetch_force_arg="--force-rebuild"
+    DEPLOYMENT_ENV="${DEPLOYMENT_ENV}" AWS_REGION="${AWS_REGION}" \
+        "${PROJECT_ROOT}/execution-zones/fetch-url-agent/scripts/deploy.sh" ${fetch_force_arg} \
+        || { log_error "Failed to deploy Web Fetch Agent"; exit 1; }
+    fetch_arn=$(get_stack_output "${WEB_FETCH_STACK}" "WebFetchAgentRuntimeArn")
     if [[ -n "${fetch_arn}" && "${fetch_arn}" != "None" ]]; then
         log_success "Web Fetch Stack deployed (ARN: ${fetch_arn})"
     else
@@ -429,16 +392,12 @@ cmd_deploy() {
 
     # Phase 6: Verification Stack (deployed from verification-zones/verification-agent/cdk/)
     log_info "========== Phase 6/8: Deploying Verification Stack =========="
-    local verify_ctx="--context deploymentEnv=${DEPLOYMENT_ENV}"
     local execution_agent_arns_json
     execution_agent_arns_json=$(build_execution_agent_arns_json "${exec_arn}" "${docs_arn}" "${time_arn}" "${fetch_arn}")
-    verify_ctx+=" --context executionAgentArns=${execution_agent_arns_json}"
-
-    ( cd "${VERIFY_CDK_DIR}" && \
+    DEPLOYMENT_ENV="${DEPLOYMENT_ENV}" AWS_REGION="${AWS_REGION}" \
+        EXECUTION_AGENT_ARNS_JSON="${execution_agent_arns_json}" \
         SLACK_SEARCH_AGENT_ARN="${slack_search_arn:-}" \
-        "${VERIFY_CDK_CLI}" deploy "${VERIFY_STACK}" \
-        ${PROFILE_ARGS} --require-approval never \
-        --outputs-file "${verify_outputs}" ${verify_ctx} ) \
+        "${PROJECT_ROOT}/verification-zones/verification-agent/scripts/deploy.sh" \
         || { log_error "Failed to deploy ${VERIFY_STACK}"; exit 1; }
     log_success "Verification Stack deployed"
 
@@ -474,8 +433,8 @@ cmd_deploy() {
     # Phase 8: Validate AgentCore runtimes
     log_info "========== Phase 8/8: AgentCore Validation =========="
     local handler_url verify_arn
-    handler_url=$(get_output_from_file_or_stack "${verify_outputs}" "${VERIFY_STACK}" "SlackEventHandlerApiGatewayUrl")
-    verify_arn=$(get_output_from_file_or_stack "${verify_outputs}" "${VERIFY_STACK}" "VerificationAgentRuntimeArn")
+    handler_url=$(get_stack_output "${VERIFY_STACK}" "SlackEventHandlerApiGatewayUrl")
+    verify_arn=$(get_stack_output "${VERIFY_STACK}" "VerificationAgentRuntimeArn")
     save_verification_arn_to_config "${verify_arn}"
     local eid did tid fid ssid vid
     eid=$(get_runtime_id "${exec_arn}"); did=$(get_runtime_id "${docs_arn}"); tid=$(get_runtime_id "${time_arn}")
