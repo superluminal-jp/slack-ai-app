@@ -166,17 +166,22 @@ export class VerificationAgentRuntime extends Construct {
       })
     );
 
-    // Router Agent runs Bedrock model inference for agent selection.
+    // Strands BedrockModel uses bedrock-runtime Converse/ConverseStream APIs for orchestration.
+    // InvokeModel/InvokeModelWithResponseStream retained for direct SDK calls if needed.
     this.executionRole.addToPolicy(
       new iam.PolicyStatement({
-        sid: "BedrockInvokeModel",
+        sid: "BedrockModelAccess",
         effect: iam.Effect.ALLOW,
         actions: [
+          "bedrock:Converse",
+          "bedrock:ConverseStream",
           "bedrock:InvokeModel",
           "bedrock:InvokeModelWithResponseStream",
         ],
         resources: [
-          `arn:aws:bedrock:${stack.region}::foundation-model/*`,
+          // Cross-region inference profiles route to any region in the profile;
+          // allow all regions so ConverseStream succeeds regardless of routing.
+          "arn:aws:bedrock:*::foundation-model/*",
           `arn:aws:bedrock:${stack.region}:${stack.account}:inference-profile/*`,
         ],
       })
@@ -244,7 +249,7 @@ export class VerificationAgentRuntime extends Construct {
       RATE_LIMIT_TABLE_NAME: props.rateLimitTable.tableName,
       EXISTENCE_CHECK_CACHE_TABLE: props.existenceCheckCacheTable.tableName,
       RATE_LIMIT_PER_MINUTE: "10",
-      ENABLE_AGENT_CARD_DISCOVERY: "true",
+      ENABLE_AGENT_CARD_DISCOVERY: "false",
       MAX_AGENT_TURNS: "5",
     };
     const executionAgentArnsMap: Record<string, string> = {

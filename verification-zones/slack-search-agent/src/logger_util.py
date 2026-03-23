@@ -32,7 +32,6 @@ def _setup() -> None:
     if logger.handlers:
         return
     logger.setLevel(getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO))
-    logger.propagate = False
     handler = _StdoutHandler()
     handler.setFormatter(logging.Formatter("%(message)s"))
     logger.addHandler(handler)

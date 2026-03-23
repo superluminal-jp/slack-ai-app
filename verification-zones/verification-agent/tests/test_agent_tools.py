@@ -103,6 +103,21 @@ def test_build_agent_tools_empty_registry_returns_empty_list():
     assert tools == []
 
 
+def test_build_agent_tools_none_card_still_builds_tools():
+    """When agent card discovery is off, cards are None; one tool per agent still builds."""
+    from agent_tools import build_agent_tools
+
+    registry_none = {
+        "docs-agent": None,
+        "time-agent": None,
+    }
+    tools = build_agent_tools(registry_none)
+
+    assert len(tools) == 2
+    names = {t.__name__ for t in tools}
+    assert names == {"invoke_docs_agent", "invoke_time_agent"}
+
+
 def test_make_agent_tool_docstring_contains_agent_description():
     """The generated tool's __doc__ must contain the agent's description."""
     from agent_tools import make_agent_tool
