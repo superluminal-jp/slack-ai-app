@@ -178,6 +178,7 @@ def check_whitelist(channel: str) -> bool:
 Python 3.11 (コンテナ: `python:3.11-slim`, ARM64): Follow standard conventions
 
 ## Recent Changes
+- 053-remove-legacy-code: Removed legacy `agent/verification-agent/` directory (~33 files), unused `api_gateway_client.py` + test, and deprecated `router.py` + test. Pure deletion — no new code. All targets confirmed unreferenced by production code via research.md analysis.
 - 052-fix-agentcore-logging: Added Python 3.11 (`python:3.11-slim`, ARM64) + `aws-opentelemetry-distro~=0.10.0` (already installed in all agents), `strands-agents[a2a,otel]~=1.25.0`, `pytest`
 - 051-investigate-agentcore-idle-costs: Added N/A（調査タスク — コード変更なし） + AWS CLI (aws bedrock-agentcore), AWS MCP Server, boto3（調査スクリプト用）
 - 050-per-agent-deploy-scripts: Each agent zone now has a self-contained `scripts/deploy.sh` (auto npm install, `--force`, `--force-rebuild` flag). Root orchestrator delegates all CDK calls to per-agent scripts; verification script accepts `EXECUTION_AGENT_ARNS_JSON` + `SLACK_SEARCH_AGENT_ARN` env vars. ARN handoff via `get_stack_output` (CloudFormation). `scripts/README.md` documents standalone per-agent usage.

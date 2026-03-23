@@ -2,11 +2,11 @@
 """
 Verify A2A contract: GET /ping and GET /.well-known/agent-card.json return 200.
 
-Run from the verification-agent directory (parent of scripts/):
+Run from the verification-agent src/ directory (parent of scripts/):
   python scripts/verify_a2a_endpoints.py
 
 Do NOT run under pytest (conftest mocks bedrock_agentcore). Use system Python
-or: cd cdk/lib/verification/agent/verification-agent && python scripts/verify_a2a_endpoints.py
+or: cd verification-zones/verification-agent/src && python scripts/verify_a2a_endpoints.py
 """
 
 import sys

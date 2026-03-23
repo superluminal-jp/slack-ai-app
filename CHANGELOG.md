@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **Legacy verification-agent directory deleted** (`053-remove-legacy-code`): Removed the entire `verification-zones/verification-agent/agent/verification-agent/` directory tree (~33 files) that was superseded by the `src/` + `tests/` layout. This tree contained stale copies of modules (e.g. `pipeline.py` still using the old `route_request` path) and was not referenced by Docker builds, CDK, or deploy scripts.
+- **Unused API Gateway client removed** (`053-remove-legacy-code`): Deleted `api_gateway_client.py` and `test_api_gateway_client.py` from `slack-event-handler/`. The module implemented SigV4-authenticated calls to the old Execution API Gateway, which was replaced by A2A via Bedrock AgentCore. `handler.py` did not import it.
+- **Deprecated router.py removed** (`053-remove-legacy-code`): Deleted `verification-zones/verification-agent/src/router.py` and its test. The module was marked deprecated (routing moved to `orchestrator.py`) and had zero production code references — only `test_router.py` imported it.
+
 ### Fixed
 
 - **AgentCore runtime structured logs now reach CloudWatch** (`052-fix-agentcore-logging`): Two-phase fix. Phase 1: removed `logger.propagate = False` from all deployed runtime logger utilities so named loggers propagate to the root logger. Phase 2: added `ENV OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true` to all 6 agent Dockerfiles — per [AWS ADOT docs](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-OTLP-UsingADOT.html), `opentelemetry-instrument` does NOT auto-install the Python logging bridge without this flag. Also corrected Dockerfile comment (AgentCore does not capture raw container stdout). Added per-agent `tests/test_logger_util.py` suites to validate propagation, stdout compatibility, root-handler delivery, and no duplicate stdout emission.

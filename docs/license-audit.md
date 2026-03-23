@@ -83,7 +83,6 @@
 - `execution-zones/time-agent/src/requirements.txt`
 - `verification-zones/slack-search-agent/src/requirements.txt`
 - `verification-zones/verification-agent/src/requirements.txt`
-- `verification-zones/verification-agent/agent/verification-agent/requirements.txt`
 - `verification-zones/verification-agent/cdk/lib/lambda/*/requirements.txt`（4ファイル）
 - `platform/tooling/package.json`
 - `execution-zones/*/cdk/package.json`（4ファイル）

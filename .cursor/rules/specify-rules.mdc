@@ -1,6 +1,12 @@
+---
+description: Project Development Guidelines
+globs: ["**/*"]
+alwaysApply: true
+---
+
 # slack-ai-app Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-02-07
+Auto-generated from all feature plans. Last updated: 2026-03-24
 
 ## Active Technologies
 - Python 3.11（Execution / Verification エージェント）、TypeScript 5.x（CDK） (014-a2a-file-to-slack)
@@ -24,6 +30,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-07
 - Filesystem — existing `docs/` directory (~32 markdown files, current top-level: explanation, how-to, implementation, presentation, reference, tutorials). (001-docs-restructure)
 - TypeScript 5.x (CDK app in `cdk/`) + aws-cdk-lib, constructs; Jest for CDK assertions (Template.fromStack) (031-cdk-cost-allocation-tags)
 - N/A (tags are template metadata; Cost Explorer uses tags from deployed resources) (031-cdk-cost-allocation-tags)
+- Python 3.11 (コンテナ: `python:3.11-slim`, ARM64), TypeScript 5.x (CDK) + 変更なし（削除のみ） (053-remove-legacy-code)
+- 変更なし（DynamoDB / S3 スキーマに影響なし） (053-remove-legacy-code)
 
 - Python 3.11（エージェントコード）、TypeScript 5.x（CDK インフラ） (013-agentcore-a2a-zones)
 
@@ -43,9 +51,9 @@ cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLO
 Python 3.11（エージェントコード）、TypeScript 5.x（CDK インフラ）: Follow standard conventions
 
 ## Recent Changes
+- 053-remove-legacy-code: Added Python 3.11 (コンテナ: `python:3.11-slim`, ARM64), TypeScript 5.x (CDK) + 変更なし（削除のみ）
 - 031-cdk-cost-allocation-tags: Added TypeScript 5.x (CDK app in `cdk/`) + aws-cdk-lib, constructs; Jest for CDK assertions (Template.fromStack)
 - 001-docs-restructure: Added Documentation only — Markdown; no application language in scope. + None (file moves, link updates, optional link-checker tooling).
-- 029-cdk-logging-error-handling: Added TypeScript 5.x (cdk/), Node.js 18+ + aws-cdk-lib 2.215.x, constructs ^10.x, Jest (tests), zod (config validation)
 
 
 <!-- MANUAL ADDITIONS START -->
