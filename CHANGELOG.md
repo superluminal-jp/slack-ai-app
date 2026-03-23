@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **AgentCore runtime structured logs now reach CloudWatch** (`052-fix-agentcore-logging`): Two-phase fix. Phase 1: removed `logger.propagate = False` from all deployed runtime logger utilities so named loggers propagate to the root logger. Phase 2: added `ENV OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true` to all 6 agent Dockerfiles — per [AWS ADOT docs](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-OTLP-UsingADOT.html), `opentelemetry-instrument` does NOT auto-install the Python logging bridge without this flag. Also corrected Dockerfile comment (AgentCore does not capture raw container stdout). Added per-agent `tests/test_logger_util.py` suites to validate propagation, stdout compatibility, root-handler delivery, and no duplicate stdout emission.
+
+- **Verification Agent Strands orchestration always returning error** (`fix/bedrock-converse-iam`): Added `bedrock:Converse` and `bedrock:ConverseStream` to the Verification Agent execution role IAM policy. Strands `BedrockModel` uses the `bedrock-runtime` Converse API exclusively — not `bedrock:InvokeModel`. Every call to `self._agent(prompt)` was silently failing with `AccessDeniedException`, causing the orchestration loop to return "エラーが発生しました。しばらくしてからお試しください。" for all Slack requests.
+
 ### Changed
 
 - **OpenTelemetry duplicate-configurator startup warning** (`051-investigate-agentcore-idle-costs`): All AgentCore agent Dockerfiles now run `pip uninstall -y opentelemetry-distro` after installing requirements. `aws-opentelemetry-distro` pulls in `opentelemetry-distro`, which registers a second `opentelemetry_configurator` entry point; `opentelemetry-instrument` then logged `Configuration of configurator not loaded, aws_configurator already loaded` on every cold start. Removing the stock distro package leaves only the AWS configurator while keeping ADOT instrumentation.

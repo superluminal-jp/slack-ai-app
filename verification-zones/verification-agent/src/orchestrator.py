@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+import sys
+import traceback
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -168,11 +170,19 @@ class OrchestrationAgent:
             file_artifact = self._file_artifact_store.get("file_artifact")
             return _parse_result(result, self._max_turns_hook, self._logging_hook, file_artifact)
         except Exception as e:
+            tb_str = traceback.format_exc()
             _log("ERROR", "orchestration_loop_error", {
                 "correlation_id": request.correlation_id,
                 "error": str(e),
                 "error_type": type(e).__name__,
             })
+            # Direct stdout as emergency fallback — visible in container logs
+            print(
+                f"[ORCHESTRATION_ERROR] correlation_id={request.correlation_id} "
+                f"error_type={type(e).__name__} error={e}\n{tb_str}",
+                file=sys.stdout,
+                flush=True,
+            )
             return OrchestrationResult(
                 synthesized_text="エラーが発生しました。しばらくしてからお試しください。",
                 turns_used=0,
