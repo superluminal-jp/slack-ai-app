@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Verification Agent Strands orchestration always returning error** (`fix/bedrock-converse-iam`): Added `bedrock:Converse` and `bedrock:ConverseStream` to the Verification Agent execution role IAM policy. Strands `BedrockModel` uses the `bedrock-runtime` Converse API exclusively — not `bedrock:InvokeModel`. Every call to `self._agent(prompt)` was silently failing with `AccessDeniedException`, causing the orchestration loop to return "エラーが発生しました。しばらくしてからお試しください。" for all Slack requests.
 
+- **Bedrock IAM parity across execution and verification agent runtimes** (`fix/bedrock-converse-iam`): Applied the same `bedrock:Converse` / `bedrock:ConverseStream` actions, `BedrockModelAccess` policy sid, and Japan foundation-model ARNs (`ap-northeast-1`, `ap-northeast-3`) to all execution-agent and slack-search-agent CDK runtime constructs so Strands/Bedrock calls succeed when using JP inference profiles.
+
 ### Changed
 
 - **OpenTelemetry duplicate-configurator startup warning** (`051-investigate-agentcore-idle-costs`): All AgentCore agent Dockerfiles now run `pip uninstall -y opentelemetry-distro` after installing requirements. `aws-opentelemetry-distro` pulls in `opentelemetry-distro`, which registers a second `opentelemetry_configurator` entry point; `opentelemetry-instrument` then logged `Configuration of configurator not loaded, aws_configurator already loaded` on every cold start. Removing the stock distro package leaves only the AWS configurator while keeping ADOT instrumentation.

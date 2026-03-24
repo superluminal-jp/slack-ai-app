@@ -179,9 +179,8 @@ export class VerificationAgentRuntime extends Construct {
           "bedrock:InvokeModelWithResponseStream",
         ],
         resources: [
-          // Cross-region inference profiles route to any region in the profile;
-          // allow all regions so ConverseStream succeeds regardless of routing.
-          "arn:aws:bedrock:*::foundation-model/*",
+          `arn:aws:bedrock:ap-northeast-1::foundation-model/*`,
+          `arn:aws:bedrock:ap-northeast-3::foundation-model/*`,
           `arn:aws:bedrock:${stack.region}:${stack.account}:inference-profile/*`,
         ],
       })
@@ -249,7 +248,7 @@ export class VerificationAgentRuntime extends Construct {
       RATE_LIMIT_TABLE_NAME: props.rateLimitTable.tableName,
       EXISTENCE_CHECK_CACHE_TABLE: props.existenceCheckCacheTable.tableName,
       RATE_LIMIT_PER_MINUTE: "10",
-      ENABLE_AGENT_CARD_DISCOVERY: "false",
+      ENABLE_AGENT_CARD_DISCOVERY: "true",
       MAX_AGENT_TURNS: "5",
     };
     const executionAgentArnsMap: Record<string, string> = {
@@ -312,7 +311,7 @@ export class VerificationAgentRuntime extends Construct {
             "X-Ray trace and sampling APIs do not support resource-level restrictions. " +
             "CloudWatch PutMetricData requires resource:* (namespace scoped via condition key). " +
             "CloudWatch Logs scoped to /aws/bedrock-agentcore/ prefix. " +
-            "Bedrock uses foundation-model/* and inference-profile/* ARN patterns (AWS ARN schema, version wildcard). " +
+            "Bedrock uses foundation-model/* (ap-northeast-1/3 for JP inference profiles) and inference-profile/* ARN patterns. " +
             "AgentCore InvokeAgentRuntime uses runtime-specific ARNs when executionAgentArns are provided; " +
             "fallback arn:aws:bedrock-agentcore:region:*:runtime/* is used only when no ARNs are configured at deploy time.",
         },

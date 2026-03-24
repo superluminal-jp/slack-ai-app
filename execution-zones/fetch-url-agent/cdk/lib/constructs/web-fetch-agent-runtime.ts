@@ -95,11 +95,17 @@ export class WebFetchAgentRuntime extends Construct {
 
     this.executionRole.addToPolicy(
       new iam.PolicyStatement({
-        sid: "BedrockInvokeModel",
+        sid: "BedrockModelAccess",
         effect: iam.Effect.ALLOW,
-        actions: ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+        actions: [
+          "bedrock:Converse",
+          "bedrock:ConverseStream",
+          "bedrock:InvokeModel",
+          "bedrock:InvokeModelWithResponseStream",
+        ],
         resources: [
-          `arn:aws:bedrock:${stack.region}::foundation-model/*`,
+          `arn:aws:bedrock:ap-northeast-1::foundation-model/*`,
+          `arn:aws:bedrock:ap-northeast-3::foundation-model/*`,
           `arn:aws:bedrock:${stack.region}:${stack.account}:inference-profile/*`,
         ],
       })
@@ -115,7 +121,7 @@ export class WebFetchAgentRuntime extends Construct {
             "X-Ray trace and sampling APIs do not support resource-level restrictions. " +
             "CloudWatch PutMetricData requires resource:* (namespace scoped via condition key). " +
             "CloudWatch Logs scoped to /aws/bedrock-agentcore/ prefix. " +
-            "Bedrock uses foundation-model/* and inference-profile/* ARN patterns (AWS ARN schema, version wildcard).",
+            "Bedrock uses foundation-model/* (ap-northeast-1/3 for JP inference profiles) and inference-profile/* ARN patterns.",
         },
       ],
       true,
