@@ -67,4 +67,53 @@ DEPLOYMENT_ENV="${DEPLOYMENT_ENV}" "${CDK_CLI}" deploy "${DOCS_STACK}" \
     ${PROFILE_ARGS:+${PROFILE_ARGS}} \
     --region "${AWS_REGION}"
 
+# ── DynamoDB Agent Registry ───────────────────────────────
+register_agent_in_dynamodb() {
+    local agent_id="docs"
+    local verify_stack="SlackAI-Verification-${ENV_SUFFIX}"
+
+    local table_name="${AGENT_REGISTRY_TABLE:-}"
+    if [[ -z "${table_name}" ]]; then
+        table_name=$(aws cloudformation describe-stacks \
+            --stack-name "${verify_stack}" --region "${AWS_REGION}" ${PROFILE_ARGS} \
+            --query "Stacks[0].Outputs[?OutputKey=='AgentRegistryTableName'].OutputValue" \
+            --output text 2>/dev/null || echo "")
+    fi
+    if [[ -z "${table_name}" || "${table_name}" == "None" ]]; then
+        log_warning "Agent registry table not found; skipping DynamoDB registration"
+        return 0
+    fi
+
+    local runtime_arn
+    runtime_arn=$(aws cloudformation describe-stacks \
+        --stack-name "${DOCS_STACK}" --region "${AWS_REGION}" ${PROFILE_ARGS} \
+        --query "Stacks[0].Outputs[?OutputKey=='DocsAgentRuntimeArn'].OutputValue" \
+        --output text 2>/dev/null || echo "")
+    if [[ -z "${runtime_arn}" || "${runtime_arn}" == "None" ]]; then
+        log_warning "DocsAgentRuntimeArn not found; skipping DynamoDB registration"
+        return 0
+    fi
+
+    local updated_at
+    updated_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    log_info "Registering ${agent_id} in DynamoDB registry: ${table_name}"
+    aws dynamodb put-item \
+        --table-name "${table_name}" \
+        --region "${AWS_REGION}" ${PROFILE_ARGS} \
+        --item "{
+            \"env\": {\"S\": \"${DEPLOYMENT_ENV}\"},
+            \"agent_id\": {\"S\": \"${agent_id}\"},
+            \"arn\": {\"S\": \"${runtime_arn}\"},
+            \"api\": {\"M\": {\"protocol\": {\"S\": \"a2a\"}, \"transport\": {\"S\": \"agentcore\"}, \"agent_card_method\": {\"S\": \"get_agent_card\"}, \"well_known_path\": {\"S\": \"/.well-known/agent-card.json\"}}},
+            \"description\": {\"S\": \"Slack AI App向けのプロジェクトドキュメント検索エージェント。プロジェクトの設計書・仕様書・アーキテクチャドキュメントを検索し、ユーザーの質問に回答する。\"},
+            \"skills\": {\"L\": [{\"M\": {\"id\": {\"S\": \"search-docs\"}, \"name\": {\"S\": \"Slack AI App Project Docs Search\"}, \"description\": {\"S\": \"Search project documentation including design specs, architecture docs, and technical references\"}}}]},
+            \"updated_at\": {\"S\": \"${updated_at}\"}
+        }" \
+        && log_success "Agent ${agent_id} registered in DynamoDB" \
+        || log_warning "Failed to register ${agent_id} in DynamoDB (non-fatal)"
+}
+
+register_agent_in_dynamodb
+
 log_success "Docs Agent zone deployed successfully"

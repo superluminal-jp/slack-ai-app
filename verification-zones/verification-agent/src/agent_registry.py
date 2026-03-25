@@ -1,10 +1,17 @@
-"""Execution agent registry for multi-agent routing."""
+"""Execution agent registry for multi-agent routing.
 
-import json
+Reads all agent entries from a DynamoDB table at startup via a single Query
+on PK=env. Each item contains an agent's ARN, description, and skills.
+"""
+
 import os
-from typing import Dict, Optional
+import time
+from typing import Any, Dict, Optional
 
-from a2a_client import discover_agent_card
+import boto3
+from boto3.dynamodb.conditions import Key
+from pydantic import BaseModel
+
 from logger_util import get_logger, log
 
 _logger = get_logger()
@@ -12,6 +19,20 @@ DEFAULT_AGENT_ID = "file-creator"
 
 _AGENT_ARNS: Dict[str, str] = {}
 _AGENT_CARDS: Dict[str, Optional[dict]] = {}
+_LAST_REFRESH_UNIX_S: float = 0.0
+
+
+class AgentSkill(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+
+
+class AgentRegistryEntry(BaseModel):
+    arn: str
+    description: str
+    skills: list[AgentSkill] = []
+    api: Dict[str, Any] = {}
 
 
 def _log(level: str, event_type: str, data: dict) -> None:
@@ -19,108 +40,166 @@ def _log(level: str, event_type: str, data: dict) -> None:
     log(_logger, level, event_type, data, service="verification-agent-registry")
 
 
-def _load_agent_arns() -> Dict[str, str]:
-    """Load agent-id to runtime-arn mapping from environment variables."""
-    raw_map = os.environ.get("EXECUTION_AGENT_ARNS", "").strip()
-    if raw_map:
-        try:
-            parsed = json.loads(raw_map)
-            if isinstance(parsed, dict):
-                cleaned: Dict[str, str] = {}
-                for key, value in parsed.items():
-                    agent_id = str(key).strip()
-                    arn = value.strip() if isinstance(value, str) else ""
-                    if agent_id and arn:
-                        cleaned[agent_id] = arn
-                if cleaned:
-                    return cleaned
-        except (json.JSONDecodeError, TypeError, ValueError) as e:
-            _log("WARN", "agent_registry_parse_failed", {"error": str(e)})
+def _load_from_dynamodb(
+    table_name: str, env: str
+) -> tuple[Dict[str, str], Dict[str, Optional[dict]]]:
+    """Load all agent entries from DynamoDB via a single Query on PK=env.
 
-    return {}
+    Returns (arns, cards) where arns maps agent-id to ARN string
+    and cards maps agent-id to the full entry dict.
+    """
+    arns: Dict[str, str] = {}
+    cards: Dict[str, Optional[dict]] = {}
+
+    try:
+        # AgentCore runtimes may not set a default boto3 region consistently.
+        # DynamoDB is regional; explicitly pin to the app region to avoid
+        # accidentally querying a same-named table in a different region.
+        region_name = (
+            os.environ.get("AWS_REGION_NAME")
+            or os.environ.get("AWS_REGION")
+            or "ap-northeast-1"
+        )
+        table = boto3.resource("dynamodb", region_name=region_name).Table(table_name)
+        response = table.query(KeyConditionExpression=Key("env").eq(env))
+    except Exception as e:
+        _log("warning", "dynamodb_query_failed", {
+            "dynamodb_region": region_name if "region_name" in locals() else None,
+            "table": table_name,
+            "env": env,
+            "error": str(e),
+            "error_type": type(e).__name__,
+        })
+        return arns, cards
+
+    items = response.get("Items", [])
+    if not items:
+        _log("info", "dynamodb_query_empty", {
+            "dynamodb_region": region_name,
+            "table": table_name,
+            "env": env,
+        })
+        return arns, cards
+
+    for item in items:
+        agent_id = item.get("agent_id", "")
+        if not agent_id:
+            continue
+
+        try:
+            # Convert skills from DynamoDB list-of-map to Pydantic-compatible format
+            skills_raw = item.get("skills", [])
+            entry = AgentRegistryEntry(
+                arn=item.get("arn", ""),
+                description=item.get("description", ""),
+                skills=skills_raw,
+                api=item.get("api", {}) if isinstance(item.get("api", {}), dict) else {},
+            )
+        except Exception as e:
+            _log("error", "agent_card_parse_failed", {
+                "table": table_name,
+                "agent_id": agent_id,
+                "error": str(e),
+                "error_type": type(e).__name__,
+            })
+            continue
+
+        if not entry.arn:
+            _log("warning", "agent_card_missing_arn", {
+                "table": table_name,
+                "agent_id": agent_id,
+            })
+            continue
+
+        arns[agent_id] = entry.arn
+        cards[agent_id] = entry.model_dump()
+
+    return arns, cards
 
 
 def initialize_registry() -> None:
-    """Initialize registry from env and discover agent cards for each target runtime."""
+    """Initialize registry by querying all agent entries from DynamoDB."""
     global _AGENT_ARNS, _AGENT_CARDS
 
-    _AGENT_ARNS = _load_agent_arns()
-    _AGENT_CARDS = {}
+    table_name = os.environ.get("AGENT_REGISTRY_TABLE", "").strip()
+    env = os.environ.get("AGENT_REGISTRY_ENV", "").strip()
 
-    if not _AGENT_ARNS:
-        _log("WARN", "agent_registry_empty", {"message": "No execution agent ARN configured"})
-        return
-
-    discovery_enabled = os.environ.get("ENABLE_AGENT_CARD_DISCOVERY", "false").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
-    if not discovery_enabled:
-        for agent_id in _AGENT_ARNS.keys():
-            _AGENT_CARDS[agent_id] = None
-        _log("INFO", "agent_registry_initialized_without_discovery", {
-            "agent_ids": sorted(_AGENT_ARNS.keys()),
-            "agent_count": len(_AGENT_ARNS),
-            "multi_agent": len(_AGENT_ARNS) > 1,
+    if not table_name or not env:
+        _AGENT_ARNS = {}
+        _AGENT_CARDS = {}
+        _log("warning", "agent_registry_env_missing", {
+            "message": "AGENT_REGISTRY_TABLE or AGENT_REGISTRY_ENV not set",
         })
         return
 
-    for agent_id, arn in _AGENT_ARNS.items():
-        try:
-            _AGENT_CARDS[agent_id] = discover_agent_card(arn)
-        except Exception as e:
-            _AGENT_CARDS[agent_id] = None
-            _log("WARN", "agent_card_discovery_failed", {
-                "agent_id": agent_id,
-                "arn": arn,
-                "error": str(e),
-            })
+    _AGENT_ARNS, _AGENT_CARDS = _load_from_dynamodb(table_name, env)
 
-    _log("INFO", "agent_registry_initialized", {
+    _log("info", "agent_registry_initialized", {
         "agent_ids": sorted(_AGENT_ARNS.keys()),
         "agent_count": len(_AGENT_ARNS),
         "multi_agent": len(_AGENT_ARNS) > 1,
+        "source": "dynamodb",
+        "table": table_name,
+        "env": env,
     })
 
 
-def refresh_missing_cards() -> bool:
-    """Re-attempt agent card discovery for entries that are still None.
+def refresh_registry() -> None:
+    """Re-query all agent entries from DynamoDB and replace registry state."""
+    global _AGENT_ARNS, _AGENT_CARDS
 
-    Returns True if at least one new card was discovered.
+    table_name = os.environ.get("AGENT_REGISTRY_TABLE", "").strip()
+    env = os.environ.get("AGENT_REGISTRY_ENV", "").strip()
+
+    if not table_name or not env:
+        return
+
+    _AGENT_ARNS, _AGENT_CARDS = _load_from_dynamodb(table_name, env)
+    global _LAST_REFRESH_UNIX_S
+    _LAST_REFRESH_UNIX_S = time.time()
+
+    _log("info", "agent_registry_refreshed", {
+        "agent_ids": sorted(_AGENT_ARNS.keys()),
+        "agent_count": len(_AGENT_ARNS),
+    })
+
+
+def refresh_registry_if_stale(max_age_seconds: int = 60) -> bool:
+    """Refresh registry if the last refresh is older than max_age_seconds.
+
+    Purpose:
+      Keep the in-memory registry consistent with DynamoDB even when the runtime
+      stays warm across deployments.
+
+    Parameters:
+      max_age_seconds: Minimum seconds between refreshes (>= 1 recommended).
+
+    Returns:
+      True when a refresh was attempted (success or fail-open), False otherwise.
+
+    Side effects:
+      May call DynamoDB Query and update the module-level caches.
+
+    Error handling:
+      Fail-open: any exception is logged and returns True (attempted) while
+      keeping the previous cache.
     """
-    discovery_enabled = os.environ.get("ENABLE_AGENT_CARD_DISCOVERY", "false").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
-    if not discovery_enabled:
+    if not isinstance(max_age_seconds, int) or max_age_seconds < 1:
+        max_age_seconds = 60
+
+    now = time.time()
+    age = now - _LAST_REFRESH_UNIX_S
+    if _LAST_REFRESH_UNIX_S > 0 and age < max_age_seconds:
         return False
 
-    refreshed = False
-    for agent_id, card in list(_AGENT_CARDS.items()):
-        if card is not None:
-            continue
-        arn = _AGENT_ARNS.get(agent_id, "")
-        if not arn:
-            continue
-        try:
-            result = discover_agent_card(arn)
-            if result is not None:
-                _AGENT_CARDS[agent_id] = result
-                refreshed = True
-                _log("INFO", "agent_card_lazy_discovery_success", {
-                    "agent_id": agent_id,
-                })
-        except Exception as e:
-            _log("WARN", "agent_card_lazy_discovery_failed", {
-                "agent_id": agent_id,
-                "error": str(e),
-            })
-
-    return refreshed
+    try:
+        refresh_registry()
+    except Exception as e:
+        _log("warning", "agent_registry_refresh_failed", {
+            "error": str(e),
+            "error_type": type(e).__name__,
+        })
+    return True
 
 
 def get_agent_arn(agent_id: str) -> str:

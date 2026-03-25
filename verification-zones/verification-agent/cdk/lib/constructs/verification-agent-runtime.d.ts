@@ -55,6 +55,10 @@ export interface VerificationAgentRuntimeProps {
     readonly fileExchangeBucket?: s3.IBucket;
     /** ARN of the Slack Search Agent AgentCore Runtime (optional) */
     readonly slackSearchAgentArn?: string;
+    /** DynamoDB table for agent registry */
+    readonly agentRegistryTable?: dynamodb.ITable;
+    /** Environment identifier for agent registry partition key (e.g. "dev", "prod") */
+    readonly agentRegistryEnv?: string;
     /** DynamoDB table for usage history metadata (optional) */
     readonly usageHistoryTable?: dynamodb.ITable;
     /** S3 bucket for usage history content and attachments (optional) */

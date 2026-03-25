@@ -284,7 +284,7 @@ OrchestrationAgent (src/orchestrator.py)
        │
        ├── invoke_docs-agent  ──► docs-agent (A2A)
        ├── invoke_time-agent  ──► time-agent (A2A)
-       ├── slack_search       ──► slack-search-agent (A2A, if SLACK_SEARCH_AGENT_ARN set)
+       ├── slack_search       ──► slack-search-agent (A2A, if registered in DynamoDB agent registry)
        └── invoke_*           ──► any registered agent (A2A)
        │
        ▼
@@ -294,7 +294,7 @@ synthesized reply → Slack
 **Key components:**
 - `src/orchestrator.py` — `OrchestrationAgent`, `run_orchestration_loop`, dataclasses (`OrchestrationRequest` includes `channel` + `bot_token` for Slack Search)
 - `src/agent_tools.py` — `build_agent_tools()` generates one Strands `@tool` per registered agent
-- `src/slack_search_tool.py` — `make_slack_search_tool(channel, bot_token, correlation_id)` factory; activated when `SLACK_SEARCH_AGENT_ARN` is set
+- `src/slack_search_tool.py` — `make_slack_search_tool(channel, bot_token, correlation_id)` factory; activated when `slack-search` agent is registered in DynamoDB agent registry
 - `src/hooks.py` — `MaxTurnsHook` (turn limiter), `ToolLoggingHook` (structured logging)
 - `MAX_AGENT_TURNS` env var — maximum reasoning turns (default: 5, range: 1–10)
 
@@ -304,9 +304,9 @@ synthesized reply → Slack
 - Turn limit reached → `completion_status="partial"`, partial-result note appended
 - All agents fail → `completion_status="error"`, user-friendly message
 
-## Slack Search Agent Integration (038)
+## Slack Search Agent Integration
 
-The verification agent can optionally delegate Slack search tasks to a dedicated **Slack Search Agent**. When `SLACK_SEARCH_AGENT_ARN` is configured, the orchestrator gains a `slack_search` tool that can:
+The verification agent can optionally delegate Slack search tasks to a dedicated **Slack Search Agent**. When `slack-search` is registered in the DynamoDB agent registry, the orchestrator gains a `slack_search` tool that can:
 
 - Search channel history by keyword
 - Retrieve thread content from a Slack URL
@@ -317,18 +317,10 @@ Access is restricted to the calling channel and public channels. Private channel
 ### Prerequisites
 
 1. Deploy the Slack Search Agent: `DEPLOYMENT_ENV=dev ./verification-zones/slack-search-agent/scripts/deploy.sh`
-2. Copy the `SlackSearchAgentRuntimeArn` output
-3. Set it in `cdk.config.dev.json`:
+   - The deploy script automatically registers the agent in the DynamoDB agent registry
+2. Re-deploy the verification agent: `DEPLOYMENT_ENV=dev ./scripts/deploy.sh`
 
-```json
-{
-  "slackSearchAgentArn": "arn:aws:bedrock-agentcore:ap-northeast-1:ACCOUNT:runtime/SlackAI_SlackSearch_Dev-SUFFIX"
-}
-```
-
-4. Re-deploy the verification agent: `DEPLOYMENT_ENV=dev ./scripts/deploy.sh`
-
-If `slackSearchAgentArn` is omitted, the `slack_search` tool is not added to the orchestrator and the feature is silently disabled.
+If `slack-search` is not in the agent registry, the `slack_search` tool is not added to the orchestrator and the feature is silently disabled.
 
 ## Usage History (039)
 

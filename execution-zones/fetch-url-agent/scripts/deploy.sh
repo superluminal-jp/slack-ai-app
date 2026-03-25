@@ -67,4 +67,53 @@ DEPLOYMENT_ENV="${DEPLOYMENT_ENV}" "${CDK_CLI}" deploy "${WEB_FETCH_STACK}" \
     ${PROFILE_ARGS:+${PROFILE_ARGS}} \
     --region "${AWS_REGION}"
 
+# ── DynamoDB Agent Registry ───────────────────────────────
+register_agent_in_dynamodb() {
+    local agent_id="fetch-url"
+    local verify_stack="SlackAI-Verification-${ENV_SUFFIX}"
+
+    local table_name="${AGENT_REGISTRY_TABLE:-}"
+    if [[ -z "${table_name}" ]]; then
+        table_name=$(aws cloudformation describe-stacks \
+            --stack-name "${verify_stack}" --region "${AWS_REGION}" ${PROFILE_ARGS} \
+            --query "Stacks[0].Outputs[?OutputKey=='AgentRegistryTableName'].OutputValue" \
+            --output text 2>/dev/null || echo "")
+    fi
+    if [[ -z "${table_name}" || "${table_name}" == "None" ]]; then
+        log_warning "Agent registry table not found; skipping DynamoDB registration"
+        return 0
+    fi
+
+    local runtime_arn
+    runtime_arn=$(aws cloudformation describe-stacks \
+        --stack-name "${WEB_FETCH_STACK}" --region "${AWS_REGION}" ${PROFILE_ARGS} \
+        --query "Stacks[0].Outputs[?OutputKey=='WebFetchAgentRuntimeArn'].OutputValue" \
+        --output text 2>/dev/null || echo "")
+    if [[ -z "${runtime_arn}" || "${runtime_arn}" == "None" ]]; then
+        log_warning "WebFetchAgentRuntimeArn not found; skipping DynamoDB registration"
+        return 0
+    fi
+
+    local updated_at
+    updated_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    log_info "Registering ${agent_id} in DynamoDB registry: ${table_name}"
+    aws dynamodb put-item \
+        --table-name "${table_name}" \
+        --region "${AWS_REGION}" ${PROFILE_ARGS} \
+        --item "{
+            \"env\": {\"S\": \"${DEPLOYMENT_ENV}\"},
+            \"agent_id\": {\"S\": \"${agent_id}\"},
+            \"arn\": {\"S\": \"${runtime_arn}\"},
+            \"api\": {\"M\": {\"protocol\": {\"S\": \"a2a\"}, \"transport\": {\"S\": \"agentcore\"}, \"agent_card_method\": {\"S\": \"get_agent_card\"}, \"well_known_path\": {\"S\": \"/.well-known/agent-card.json\"}}},
+            \"description\": {\"S\": \"指定URLのWebコンテンツをテキストとして取得する専用エージェント。URLを受け取り、そのページの内容をテキスト形式で返す。\"},
+            \"skills\": {\"L\": [{\"M\": {\"id\": {\"S\": \"fetch_url\"}, \"name\": {\"S\": \"Fetch URL\"}, \"description\": {\"S\": \"Fetches web content from a given URL and returns it as text\"}}}]},
+            \"updated_at\": {\"S\": \"${updated_at}\"}
+        }" \
+        && log_success "Agent ${agent_id} registered in DynamoDB" \
+        || log_warning "Failed to register ${agent_id} in DynamoDB (non-fatal)"
+}
+
+register_agent_in_dynamodb
+
 log_success "Web Fetch Agent zone deployed successfully"

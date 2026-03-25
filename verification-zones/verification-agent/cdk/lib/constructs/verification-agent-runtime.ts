@@ -60,6 +60,10 @@ export interface VerificationAgentRuntimeProps {
   readonly fileExchangeBucket?: s3.IBucket;
   /** ARN of the Slack Search Agent AgentCore Runtime (optional) */
   readonly slackSearchAgentArn?: string;
+  /** DynamoDB table for agent registry */
+  readonly agentRegistryTable?: dynamodb.ITable;
+  /** Environment identifier for agent registry partition key (e.g. "dev", "prod") */
+  readonly agentRegistryEnv?: string;
   /** DynamoDB table for usage history metadata (optional) */
   readonly usageHistoryTable?: dynamodb.ITable;
   /** S3 bucket for usage history content and attachments (optional) */
@@ -248,24 +252,15 @@ export class VerificationAgentRuntime extends Construct {
       RATE_LIMIT_TABLE_NAME: props.rateLimitTable.tableName,
       EXISTENCE_CHECK_CACHE_TABLE: props.existenceCheckCacheTable.tableName,
       RATE_LIMIT_PER_MINUTE: "10",
-      ENABLE_AGENT_CARD_DISCOVERY: "true",
       MAX_AGENT_TURNS: "5",
     };
-    const executionAgentArnsMap: Record<string, string> = {
-      ...(props.executionAgentArns || {}),
-    };
-    // Backward compatibility for older key while routing default agent is file-creator.
-    if (
-      executionAgentArnsMap.general &&
-      !executionAgentArnsMap["file-creator"]
-    ) {
-      executionAgentArnsMap["file-creator"] = executionAgentArnsMap.general;
-      delete executionAgentArnsMap.general;
+    if (props.agentRegistryTable) {
+      environmentVariables.AGENT_REGISTRY_TABLE =
+        props.agentRegistryTable.tableName;
     }
-    if (Object.keys(executionAgentArnsMap).length > 0) {
-      environmentVariables.EXECUTION_AGENT_ARNS = JSON.stringify(
-        executionAgentArnsMap
-      );
+    if (props.agentRegistryEnv) {
+      environmentVariables.AGENT_REGISTRY_ENV =
+        props.agentRegistryEnv;
     }
     if (props.slackPostRequestQueue) {
       environmentVariables.SLACK_POST_REQUEST_QUEUE_URL =
@@ -286,8 +281,9 @@ export class VerificationAgentRuntime extends Construct {
       props.fileExchangeBucket.grantDelete(this.executionRole, "attachments/*");
       props.fileExchangeBucket.grantReadWrite(this.executionRole, "generated_files/*");
     }
-    if (props.slackSearchAgentArn) {
-      environmentVariables.SLACK_SEARCH_AGENT_ARN = props.slackSearchAgentArn;
+    // Agent registry DynamoDB read permissions (Query)
+    if (props.agentRegistryTable) {
+      props.agentRegistryTable.grantReadData(this.executionRole);
     }
     if (props.usageHistoryTable) {
       environmentVariables.USAGE_HISTORY_TABLE_NAME =
