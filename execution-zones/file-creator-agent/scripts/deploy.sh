@@ -67,4 +67,53 @@ DEPLOYMENT_ENV="${DEPLOYMENT_ENV}" "${CDK_CLI}" deploy "${FILE_CREATOR_STACK}" \
     ${PROFILE_ARGS:+${PROFILE_ARGS}} \
     --region "${AWS_REGION}"
 
+# ── DynamoDB Agent Registry ───────────────────────────────
+register_agent_in_dynamodb() {
+    local agent_id="file-creator"
+    local verify_stack="SlackAI-Verification-${ENV_SUFFIX}"
+
+    local table_name="${AGENT_REGISTRY_TABLE:-}"
+    if [[ -z "${table_name}" ]]; then
+        table_name=$(aws cloudformation describe-stacks \
+            --stack-name "${verify_stack}" --region "${AWS_REGION}" ${PROFILE_ARGS} \
+            --query "Stacks[0].Outputs[?OutputKey=='AgentRegistryTableName'].OutputValue" \
+            --output text 2>/dev/null || echo "")
+    fi
+    if [[ -z "${table_name}" || "${table_name}" == "None" ]]; then
+        log_warning "Agent registry table not found; skipping DynamoDB registration"
+        return 0
+    fi
+
+    local runtime_arn
+    runtime_arn=$(aws cloudformation describe-stacks \
+        --stack-name "${FILE_CREATOR_STACK}" --region "${AWS_REGION}" ${PROFILE_ARGS} \
+        --query "Stacks[0].Outputs[?OutputKey=='FileCreatorAgentRuntimeArn'].OutputValue" \
+        --output text 2>/dev/null || echo "")
+    if [[ -z "${runtime_arn}" || "${runtime_arn}" == "None" ]]; then
+        log_warning "FileCreatorAgentRuntimeArn not found; skipping DynamoDB registration"
+        return 0
+    fi
+
+    local updated_at
+    updated_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    log_info "Registering ${agent_id} in DynamoDB registry: ${table_name}"
+    aws dynamodb put-item \
+        --table-name "${table_name}" \
+        --region "${AWS_REGION}" ${PROFILE_ARGS} \
+        --item "{
+            \"env\": {\"S\": \"${DEPLOYMENT_ENV}\"},
+            \"agent_id\": {\"S\": \"${agent_id}\"},
+            \"arn\": {\"S\": \"${runtime_arn}\"},
+            \"api\": {\"M\": {\"protocol\": {\"S\": \"a2a\"}, \"transport\": {\"S\": \"agentcore\"}, \"agent_card_method\": {\"S\": \"get_agent_card\"}, \"well_known_path\": {\"S\": \"/.well-known/agent-card.json\"}}},
+            \"description\": {\"S\": \"ファイル生成特化エージェント。Excel、Word、PowerPoint、グラフ画像、テキストファイルの生成に対応。ビジネス文書やプレゼン資料のガイドライン取得も可能。\"},
+            \"skills\": {\"L\": [{\"M\": {\"id\": {\"S\": \"generate_excel\"}, \"name\": {\"S\": \"Generate Excel File\"}, \"description\": {\"S\": \"Generate Excel spreadsheet files\"}}}, {\"M\": {\"id\": {\"S\": \"generate_word\"}, \"name\": {\"S\": \"Generate Word Document\"}, \"description\": {\"S\": \"Generate Word document files\"}}}, {\"M\": {\"id\": {\"S\": \"generate_powerpoint\"}, \"name\": {\"S\": \"Generate PowerPoint Presentation\"}, \"description\": {\"S\": \"Generate PowerPoint presentation files\"}}}, {\"M\": {\"id\": {\"S\": \"generate_chart_image\"}, \"name\": {\"S\": \"Generate Chart Image\"}, \"description\": {\"S\": \"Generate chart and graph images\"}}}, {\"M\": {\"id\": {\"S\": \"generate_text_file\"}, \"name\": {\"S\": \"Generate Text File\"}, \"description\": {\"S\": \"Generate plain text files\"}}}, {\"M\": {\"id\": {\"S\": \"get_business_document_guidelines\"}, \"name\": {\"S\": \"Get Business Document Guidelines\"}, \"description\": {\"S\": \"Get guidelines for creating business documents\"}}}, {\"M\": {\"id\": {\"S\": \"get_presentation_slide_guidelines\"}, \"name\": {\"S\": \"Get Presentation Slide Guidelines\"}, \"description\": {\"S\": \"Get guidelines for creating presentation slides\"}}}]},
+            \"updated_at\": {\"S\": \"${updated_at}\"}
+        }" \
+        && log_success "Agent ${agent_id} registered in DynamoDB" \
+        || log_warning "Failed to register ${agent_id} in DynamoDB (non-fatal)"
+}
+
+register_agent_in_dynamodb
+
 log_success "File Creator Agent zone deployed successfully"

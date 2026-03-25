@@ -1,7 +1,7 @@
 """Strands agentic loop orchestrator for multi-agent iterative reasoning."""
 from __future__ import annotations
 
-import os
+import agent_registry as _agent_registry_module
 import sys
 import traceback
 from dataclasses import dataclass
@@ -131,8 +131,8 @@ class OrchestrationAgent:
         self._file_artifact_store: dict = {}
         self._tools = build_agent_tools(agent_registry, self._file_artifact_store)
 
-        # Add Slack Search tool when ARN is configured and request context is available
-        if channel and bot_token and os.environ.get("SLACK_SEARCH_AGENT_ARN"):
+        # Add Slack Search tool when registered in S3 registry and request context is available
+        if channel and bot_token and _agent_registry_module.get_agent_arn("slack-search"):
             from slack_search_tool import make_slack_search_tool
             slack_tool = make_slack_search_tool(channel, bot_token, correlation_id)
             self._tools.append(slack_tool)

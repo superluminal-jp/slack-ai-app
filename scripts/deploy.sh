@@ -198,6 +198,46 @@ ensure_boto3() {
         || { log_error "boto3 install failed. Run: ${PYTHON3} -m pip install boto3"; return 1; }
 }
 
+verify_agent_card_runtime() {
+    local label="$1" runtime_arn="$2"
+    [[ -z "${runtime_arn}" || "${runtime_arn}" == "None" ]] && return 0
+    ensure_boto3 || { log_warning "Skipping agent card check (${label}) — boto3 unavailable"; return 0; }
+
+    log_info "Verifying Agent Card (${label}) via get_agent_card..."
+    local out
+    out=$(AWS_REGION="${AWS_REGION}" "${PYTHON3}" - <<PYEOF 2>/dev/null
+import json, os, sys, uuid
+import boto3
+
+region = os.environ.get("AWS_REGION", "ap-northeast-1")
+arn = "${runtime_arn}"
+client = boto3.client("bedrock-agentcore", region_name=region)
+req = {"jsonrpc": "2.0", "method": "get_agent_card", "id": str(uuid.uuid4())}
+resp = client.invoke_agent_runtime(
+    agentRuntimeArn=arn,
+    runtimeSessionId=str(uuid.uuid4()),
+    payload=json.dumps(req).encode("utf-8"),
+)
+body = resp.get("response")
+raw = body.read().decode("utf-8") if hasattr(body, "read") else (body or "")
+obj = json.loads(raw) if raw else {}
+card = obj.get("result")
+name = card.get("name") if isinstance(card, dict) else None
+skills = card.get("skills") if isinstance(card, dict) else None
+print(json.dumps({"name": name, "skills_count": len(skills) if isinstance(skills, list) else None}))
+PYEOF
+    ) || true
+
+    if [[ -z "${out}" ]]; then
+        log_warning "Agent Card verification FAILED (${label})"
+        return 0
+    fi
+    local name skills_count
+    name=$(echo "${out}" | jq -r '.name // empty' 2>/dev/null || echo "")
+    skills_count=$(echo "${out}" | jq -r '.skills_count // empty' 2>/dev/null || echo "")
+    log_success "Agent Card OK (${label}) name=${name:-unknown} skills=${skills_count:-unknown}"
+}
+
 require_commands() {
     for cmd in "$@"; do
         command -v "$cmd" &>/dev/null || { log_error "${cmd} is not installed"; exit 1; }
@@ -305,10 +345,10 @@ cmd_deploy() {
     pre_time_arn=$(get_stack_output "${TIME_STACK}" "TimeAgentRuntimeArn")
     pre_fetch_arn=$(get_stack_output "${WEB_FETCH_STACK}" "WebFetchAgentRuntimeArn")
     if [[ -n "${pre_exec_arn}" && "${pre_exec_arn}" != "None" ]]; then
-        preflight_execution_agent_arns_json=$(build_execution_agent_arns_json "${pre_exec_arn}" "${pre_docs_arn}" "${pre_time_arn}" "${pre_fetch_arn}")
+        # Save current ARNs to config so CDK can read them for IAM scoping
+        save_execution_agent_arns_to_config "${pre_exec_arn}" "${pre_docs_arn}" "${pre_time_arn}" "${pre_fetch_arn}"
         log_info "========== Preflight: Deploying Verification Stack with current runtime ARNs =========="
         DEPLOYMENT_ENV="${DEPLOYMENT_ENV}" AWS_REGION="${AWS_REGION}" \
-            EXECUTION_AGENT_ARNS_JSON="${preflight_execution_agent_arns_json}" \
             "${PROJECT_ROOT}/verification-zones/verification-agent/scripts/deploy.sh" \
             || { log_error "Preflight failed: could not deploy ${VERIFY_STACK}"; exit 1; }
         log_success "Preflight Verification deploy completed"
@@ -391,12 +431,9 @@ cmd_deploy() {
     save_execution_agent_arns_to_config "${exec_arn}" "${docs_arn}" "${time_arn}" "${fetch_arn}"
 
     # Phase 6: Verification Stack (deployed from verification-zones/verification-agent/cdk/)
+    # ARNs already saved to config file (after Phase 5) for IAM scoping; no env var handoff needed.
     log_info "========== Phase 6/8: Deploying Verification Stack =========="
-    local execution_agent_arns_json
-    execution_agent_arns_json=$(build_execution_agent_arns_json "${exec_arn}" "${docs_arn}" "${time_arn}" "${fetch_arn}")
     DEPLOYMENT_ENV="${DEPLOYMENT_ENV}" AWS_REGION="${AWS_REGION}" \
-        EXECUTION_AGENT_ARNS_JSON="${execution_agent_arns_json}" \
-        SLACK_SEARCH_AGENT_ARN="${slack_search_arn:-}" \
         "${PROJECT_ROOT}/verification-zones/verification-agent/scripts/deploy.sh" \
         || { log_error "Failed to deploy ${VERIFY_STACK}"; exit 1; }
     log_success "Verification Stack deployed"
@@ -445,6 +482,15 @@ cmd_deploy() {
     [[ -n "${fid}" ]] && wait_for_agent_ready "Web Fetch Agent" "${fid}" 120
     [[ -n "${ssid}" ]] && wait_for_agent_ready "Slack Search Agent" "${ssid}" 120
     [[ -n "${vid}" ]] && wait_for_agent_ready "Verification Agent" "${vid}" 120
+
+    echo ""
+    log_info "========== Agent Card Verification (best-effort) =========="
+    verify_agent_card_runtime "File Creator" "${exec_arn}"
+    verify_agent_card_runtime "Docs" "${docs_arn}"
+    verify_agent_card_runtime "Time" "${time_arn}"
+    verify_agent_card_runtime "Web Fetch" "${fetch_arn}"
+    verify_agent_card_runtime "Slack Search" "${slack_search_arn:-}"
+    verify_agent_card_runtime "Verification" "${verify_arn}"
 
     # Summary
     echo ""

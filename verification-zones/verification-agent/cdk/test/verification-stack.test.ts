@@ -162,9 +162,9 @@ describe("VerificationStack", () => {
   });
 
   describe("DynamoDB Tables", () => {
-    it("should create 6 DynamoDB tables", () => {
+    it("should create 7 DynamoDB tables", () => {
       const tables = template.findResources("AWS::DynamoDB::Table");
-      expect(Object.keys(tables).length).toBe(6);
+      expect(Object.keys(tables).length).toBe(7);
     });
 
     it("should create tables with PAY_PER_REQUEST billing", () => {
@@ -418,6 +418,66 @@ describe("VerificationStack", () => {
             AUTO_REPLY_CHANNEL_IDS: "C0AFSG79T8D,C1BBBBBBBBB",
           }),
         },
+      });
+    });
+  });
+
+  describe("DynamoDB Agent Registry", () => {
+    it("should create agent-registry DynamoDB table", () => {
+      template.hasResourceProperties("AWS::DynamoDB::Table", {
+        TableName: Match.stringLikeRegexp("agent-registry"),
+        KeySchema: Match.arrayWith([
+          Match.objectLike({ AttributeName: "env", KeyType: "HASH" }),
+          Match.objectLike({ AttributeName: "agent_id", KeyType: "RANGE" }),
+        ]),
+      });
+    });
+
+    it("should set AGENT_REGISTRY_TABLE on AgentCore Runtime", () => {
+      const runtimes = template.findResources("AWS::BedrockAgentCore::Runtime");
+      const envVarsList = Object.values(runtimes).map(
+        (r) => (r as { Properties?: { EnvironmentVariables?: Record<string, string> } }).Properties?.EnvironmentVariables ?? {}
+      );
+      expect(envVarsList.some((env) => env["AGENT_REGISTRY_TABLE"])).toBe(true);
+    });
+
+    it("should set AGENT_REGISTRY_ENV on AgentCore Runtime", () => {
+      const runtimes = template.findResources("AWS::BedrockAgentCore::Runtime");
+      const envVarsList = Object.values(runtimes).map(
+        (r) => (r as { Properties?: { EnvironmentVariables?: Record<string, string> } }).Properties?.EnvironmentVariables ?? {}
+      );
+      expect(envVarsList.some((env) => env["AGENT_REGISTRY_ENV"])).toBe(true);
+    });
+
+    it("should NOT set AGENT_REGISTRY_BUCKET on AgentCore Runtime", () => {
+      const runtimes = template.findResources("AWS::BedrockAgentCore::Runtime");
+      const envVarsList = Object.values(runtimes).map(
+        (r) => (r as { Properties?: { EnvironmentVariables?: Record<string, string> } }).Properties?.EnvironmentVariables ?? {}
+      );
+      envVarsList.forEach((env) => {
+        expect(env["AGENT_REGISTRY_BUCKET"]).toBeUndefined();
+      });
+    });
+
+    it("should NOT set AGENT_REGISTRY_KEY_PREFIX on AgentCore Runtime", () => {
+      const runtimes = template.findResources("AWS::BedrockAgentCore::Runtime");
+      const envVarsList = Object.values(runtimes).map(
+        (r) => (r as { Properties?: { EnvironmentVariables?: Record<string, string> } }).Properties?.EnvironmentVariables ?? {}
+      );
+      envVarsList.forEach((env) => {
+        expect(env["AGENT_REGISTRY_KEY_PREFIX"]).toBeUndefined();
+      });
+    });
+
+    it("verification agent role should have DynamoDB read permissions for agent registry", () => {
+      const policies = template.findResources("AWS::IAM::Policy");
+      expect(policyHasAction(policies, "dynamodb:BatchGetItem")).toBe(true);
+      expect(policyHasAction(policies, "dynamodb:Query")).toBe(true);
+    });
+
+    it("should output AgentRegistryTableName", () => {
+      template.hasOutput("AgentRegistryTableName", {
+        Description: Match.stringLikeRegexp("agent registry"),
       });
     });
   });

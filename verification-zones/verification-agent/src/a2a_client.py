@@ -516,6 +516,22 @@ def invoke_execution_agent(
             "duration_ms": round(duration_ms, 2),
         })
 
+        # Best-effort agent card verification on failure (helps detect stale/incorrect registry entries).
+        try:
+            card = discover_agent_card(agent_arn)
+            _log("INFO", "agent_card_verified_on_invoke_failure", {
+                "correlation_id": correlation_id,
+                "execution_agent_arn": agent_arn,
+                "verified": bool(card),
+            })
+        except Exception as verify_exc:
+            _log("WARN", "agent_card_verify_on_invoke_failure_failed", {
+                "correlation_id": correlation_id,
+                "execution_agent_arn": agent_arn,
+                "error": str(verify_exc),
+                "error_type": type(verify_exc).__name__,
+            })
+
         # Map AWS errors to user-friendly responses (include execution_agent_arn for errors log debugging)
         if error_code == "ThrottlingException":
             return json.dumps({

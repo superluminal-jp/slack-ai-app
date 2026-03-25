@@ -67,4 +67,55 @@ DEPLOYMENT_ENV="${DEPLOYMENT_ENV}" "${CDK_CLI}" deploy "${TIME_STACK}" \
     ${PROFILE_ARGS:+${PROFILE_ARGS}} \
     --region "${AWS_REGION}"
 
+# ── DynamoDB Agent Registry ───────────────────────────────
+register_agent_in_dynamodb() {
+    local agent_id="time"
+    local verify_stack="SlackAI-Verification-${ENV_SUFFIX}"
+
+    # Get table name from env var (root deploy) or CloudFormation output
+    local table_name="${AGENT_REGISTRY_TABLE:-}"
+    if [[ -z "${table_name}" ]]; then
+        table_name=$(aws cloudformation describe-stacks \
+            --stack-name "${verify_stack}" --region "${AWS_REGION}" ${PROFILE_ARGS} \
+            --query "Stacks[0].Outputs[?OutputKey=='AgentRegistryTableName'].OutputValue" \
+            --output text 2>/dev/null || echo "")
+    fi
+    if [[ -z "${table_name}" || "${table_name}" == "None" ]]; then
+        log_warning "Agent registry table not found; skipping DynamoDB registration"
+        return 0
+    fi
+
+    # Get runtime ARN from stack output
+    local runtime_arn
+    runtime_arn=$(aws cloudformation describe-stacks \
+        --stack-name "${TIME_STACK}" --region "${AWS_REGION}" ${PROFILE_ARGS} \
+        --query "Stacks[0].Outputs[?OutputKey=='TimeAgentRuntimeArn'].OutputValue" \
+        --output text 2>/dev/null || echo "")
+    if [[ -z "${runtime_arn}" || "${runtime_arn}" == "None" ]]; then
+        log_warning "TimeAgentRuntimeArn not found; skipping DynamoDB registration"
+        return 0
+    fi
+
+    local updated_at
+    updated_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    log_info "Registering ${agent_id} in DynamoDB registry: ${table_name}"
+    aws dynamodb put-item \
+        --table-name "${table_name}" \
+        --region "${AWS_REGION}" ${PROFILE_ARGS} \
+        --item "{
+            \"env\": {\"S\": \"${DEPLOYMENT_ENV}\"},
+            \"agent_id\": {\"S\": \"${agent_id}\"},
+            \"arn\": {\"S\": \"${runtime_arn}\"},
+            \"api\": {\"M\": {\"protocol\": {\"S\": \"a2a\"}, \"transport\": {\"S\": \"agentcore\"}, \"agent_card_method\": {\"S\": \"get_agent_card\"}, \"well_known_path\": {\"S\": \"/.well-known/agent-card.json\"}}},
+            \"description\": {\"S\": \"現在日時取得専用エージェント。ユーザーが今何時等の時刻に関する質問をした際に呼び出される。\"},
+            \"skills\": {\"L\": [{\"M\": {\"id\": {\"S\": \"current-time\"}, \"name\": {\"S\": \"Current Time\"}, \"description\": {\"S\": \"Returns current date and time in the specified timezone\"}}}]},
+            \"updated_at\": {\"S\": \"${updated_at}\"}
+        }" \
+        && log_success "Agent ${agent_id} registered in DynamoDB" \
+        || log_warning "Failed to register ${agent_id} in DynamoDB (non-fatal)"
+}
+
+register_agent_in_dynamodb
+
 log_success "Time Agent zone deployed successfully"

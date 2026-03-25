@@ -26,6 +26,7 @@ import { UsageHistoryBucket } from "./constructs/usage-history-bucket";
 import { DynamoDbExportJob } from "./constructs/dynamodb-export-job";
 import { UsageHistoryArchiveBucket } from "./constructs/usage-history-archive-bucket";
 import { UsageHistoryReplication } from "./constructs/usage-history-replication";
+import { AgentRegistryTable } from "./constructs/agent-registry-table";
 import { VerificationStackProps } from "./types/stack-config";
 
 /**
@@ -210,6 +211,11 @@ export class VerificationStack extends cdk.Stack {
       );
     }
 
+    const agentRegistryTable = new AgentRegistryTable(
+      this,
+      "AgentRegistryTable",
+    );
+
     // Runtime name must be unique per account (Dev and Prod coexist); default includes env from stack name
     const verificationAgentName =
       props.verificationAgentName ||
@@ -272,6 +278,8 @@ export class VerificationStack extends cdk.Stack {
           props.slackSearchAgentArn ||
           (this.node.tryGetContext("slackSearchAgentArn") as string | undefined) ||
           undefined,
+        agentRegistryTable: agentRegistryTable.table,
+        agentRegistryEnv: deploymentEnv,
         lifecycleConfiguration: {
           idleRuntimeSessionTimeoutSeconds: 900,
           maxLifetimeSeconds: 3600,
@@ -467,6 +475,12 @@ export class VerificationStack extends cdk.Stack {
       value: this.verificationAgentRuntime.runtimeArn,
       description: "Verification Agent AgentCore Runtime ARN",
       exportName: `${this.stackName}-VerificationAgentArn`,
+    });
+
+    new cdk.CfnOutput(this, "AgentRegistryTableName", {
+      value: agentRegistryTable.table.tableName,
+      description: "DynamoDB table for agent registry",
+      exportName: `${this.stackName}-AgentRegistryTableName`,
     });
 
     this.lambdaRoleArn = this.slackEventHandler.function.role!.roleArn;

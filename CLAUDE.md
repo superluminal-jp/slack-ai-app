@@ -1,6 +1,6 @@
 # slack-ai-app Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-03-23
+Auto-generated from all feature plans. Last updated: 2026-03-25
 
 ## Active Technologies
 - Python 3.11 (コンテナ: `python:3.11-slim`, ARM64) + `strands-agents[a2a]~=1.25.0`, `fastapi`, `uvicorn`, `boto3`, `slack-sdk` (021-strands-migration-cleanup)
@@ -35,6 +35,10 @@ Auto-generated from all feature plans. Last updated: 2026-03-23
 - N/A（調査タスク — コード変更なし） + AWS CLI (aws bedrock-agentcore), AWS MCP Server, boto3（調査スクリプト用） (051-investigate-agentcore-idle-costs)
 - Python 3.11 (`python:3.11-slim`, ARM64) + `aws-opentelemetry-distro~=0.10.0` (already installed in all agents), `strands-agents[a2a,otel]~=1.25.0`, `pytest` (052-fix-agentcore-logging)
 - N/A (logging infrastructure change only) (052-fix-agentcore-logging)
+- Python 3.11 (agents), TypeScript 5.x (CDK), Bash 5.x (deploy scripts) + `boto3 ~=1.42.0` (DynamoDB client), `aws-cdk-lib` 2.215.0 (DynamoDB table + IAM grants), `strands-agents[a2a,otel] ~=1.25.0` (055-dynamodb-agent-registry)
+- DynamoDB (agent-registry table: PK=env, SK=agent_id, PAY_PER_REQUEST) (055-dynamodb-agent-registry)
+- Python 3.11 (`python:3.11-slim`, ARM64), TypeScript 5.x (CDK), Bash 5.x (deploy scripts) + `boto3 ~=1.42.0` (DynamoDB client), `aws-cdk-lib` 2.215.0 (`aws-dynamodb`), `pydantic` (validation), `strands-agents[a2a,otel] ~=1.25.0` (055-dynamodb-agent-registry)
+- DynamoDB (new `{stack}-agent-registry` table, replacing S3 `{stack}-agent-registry` bucket) (055-dynamodb-agent-registry)
 
 - Python 3.11 (コンテナ: `python:3.11-slim`, ARM64) + `bedrock-agentcore` v1.2.0 (Starlette ベース), `starlette`, `uvicorn` (020-fix-a2a-routing)
 
@@ -178,12 +182,11 @@ def check_whitelist(channel: str) -> bool:
 Python 3.11 (コンテナ: `python:3.11-slim`, ARM64): Follow standard conventions
 
 ## Recent Changes
+- 055-dynamodb-agent-registry: Added Python 3.11 (`python:3.11-slim`, ARM64), TypeScript 5.x (CDK), Bash 5.x (deploy scripts) + `boto3 ~=1.42.0` (DynamoDB client), `aws-cdk-lib` 2.215.0 (`aws-dynamodb`), `pydantic` (validation), `strands-agents[a2a,otel] ~=1.25.0`
+- 055-dynamodb-agent-registry: Migrated agent registry storage from S3 to DynamoDB. Single table (`{stack}-agent-registry`, PK=`env`, SK=`agent_id`) replaces S3 per-agent JSON files. VerificationAgent reads all agent cards via single DynamoDB Query. Deploy scripts write via `aws dynamodb put-item`. Removed `AGENT_REGISTRY_BUCKET`/`AGENT_REGISTRY_KEY_PREFIX` env vars; replaced with `AGENT_REGISTRY_TABLE`/`AGENT_REGISTRY_ENV`. Deleted S3 agent-registry bucket construct.
+- 054-ssm-agent-registry: Migrated agent registry from runtime `invoke_agent_runtime` discovery to S3 per-agent JSON files. Each deploy script self-registers in S3 after CDK deploy. Eliminates cascade startup. SlackSearch unified into same registry. New `agent-registry` S3 bucket construct. Removed `EXECUTION_AGENT_ARNS`/`ENABLE_AGENT_CARD_DISCOVERY`/`SLACK_SEARCH_AGENT_ARN` env vars from runtime; replaced with `AGENT_REGISTRY_BUCKET` + `AGENT_REGISTRY_KEY_PREFIX`.
 - 053-remove-legacy-code: Removed legacy `agent/verification-agent/` directory (~33 files), unused `api_gateway_client.py` + test, and deprecated `router.py` + test. Pure deletion — no new code. All targets confirmed unreferenced by production code via research.md analysis.
-- 052-fix-agentcore-logging: Added Python 3.11 (`python:3.11-slim`, ARM64) + `aws-opentelemetry-distro~=0.10.0` (already installed in all agents), `strands-agents[a2a,otel]~=1.25.0`, `pytest`
-- 051-investigate-agentcore-idle-costs: Added N/A（調査タスク — コード変更なし） + AWS CLI (aws bedrock-agentcore), AWS MCP Server, boto3（調査スクリプト用）
-- 050-per-agent-deploy-scripts: Each agent zone now has a self-contained `scripts/deploy.sh` (auto npm install, `--force`, `--force-rebuild` flag). Root orchestrator delegates all CDK calls to per-agent scripts; verification script accepts `EXECUTION_AGENT_ARNS_JSON` + `SLACK_SEARCH_AGENT_ARN` env vars. ARN handoff via `get_stack_output` (CloudFormation). `scripts/README.md` documents standalone per-agent usage.
 
 
 <!-- MANUAL ADDITIONS START -->
-- 2026-03-23: `052-fix-agentcore-logging` implementation completed for runtime logging propagation. Removed `logger.propagate = False` in six deployed `src/logger_util.py` files and added `tests/test_logger_util.py` in each affected agent to enforce propagation + stdout compatibility.
 <!-- MANUAL ADDITIONS END -->
