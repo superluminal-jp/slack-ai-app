@@ -14,7 +14,7 @@
 
 import { DockerImageAsset, Platform } from "aws-cdk-lib/aws-ecr-assets";
 import { Construct } from "constructs";
-import * as path from "path";
+import { resolveZoneSrcDir } from "@slack-ai-app/cdk-tooling";
 
 export interface VerificationAgentEcrProps {
   /** Optional: Override the path to the Dockerfile directory */
@@ -34,9 +34,7 @@ export class VerificationAgentEcr extends Construct {
   ) {
     super(scope, id);
 
-    const dockerDir =
-      props?.dockerfilePath ||
-      path.join(__dirname, "../../../src");
+    const dockerDir = props?.dockerfilePath ?? resolveZoneSrcDir(__dirname);
 
     // Build and push Docker image to ECR
     // Platform: linux/arm64 (required by AgentCore Runtime)
