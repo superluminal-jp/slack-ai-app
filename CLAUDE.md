@@ -182,6 +182,7 @@ def check_whitelist(channel: str) -> bool:
 Python 3.11 (コンテナ: `python:3.11-slim`, ARM64): Follow standard conventions
 
 ## Recent Changes
+- apply-resource-policy: Compatible with boto3 delegates that omit `put_resource_policy` on `bedrock-agentcore-control` (uses `_make_api_call` or `_client` fallback).
 - 056-verification-s3-bucket-account-suffix: Verification-agent CDK S3 buckets (file-exchange, usage-history, usage-history-archive) use `{stack}-{accountId}-{suffix}` for global name uniqueness.
 - 055-dynamodb-agent-registry: Added Python 3.11 (`python:3.11-slim`, ARM64), TypeScript 5.x (CDK), Bash 5.x (deploy scripts) + `boto3 ~=1.42.0` (DynamoDB client), `aws-cdk-lib` 2.215.0 (`aws-dynamodb`), `pydantic` (validation), `strands-agents[a2a,otel] ~=1.25.0`
 - 055-dynamodb-agent-registry: Migrated agent registry storage from S3 to DynamoDB. Single table (`{stack}-agent-registry`, PK=`env`, SK=`agent_id`) replaces S3 per-agent JSON files. VerificationAgent reads all agent cards via single DynamoDB Query. Deploy scripts write via `aws dynamodb put-item`. Removed `AGENT_REGISTRY_BUCKET`/`AGENT_REGISTRY_KEY_PREFIX` env vars; replaced with `AGENT_REGISTRY_TABLE`/`AGENT_REGISTRY_ENV`. Deleted S3 agent-registry bucket construct.

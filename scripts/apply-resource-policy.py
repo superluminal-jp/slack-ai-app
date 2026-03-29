@@ -44,12 +44,58 @@ def build_policy(execution_agent_arn: str, verification_role_arn: str, account_i
     }
 
 
+def _put_resource_policy(
+    client: object,
+    *,
+    resource_arn: str,
+    policy_body: str,
+    _depth: int = 0,
+) -> None:
+    """
+    Invoke PutResourcePolicy.
+
+    Some botocore builds wrap bedrock-agentcore-control in a delegate
+    (e.g. BedrockAgentCoreControlPlaneFrontingLayer) that does not expose
+    generated methods; fall back to _make_api_call or the inner client.
+    """
+    if _depth > 8:
+        raise AttributeError("Excessive bedrock-agentcore-control client wrapper depth")
+    args = {"resourceArn": resource_arn, "policy": policy_body}
+    put = getattr(client, "put_resource_policy", None)
+    if callable(put):
+        put(**args)
+        return
+    make = getattr(client, "_make_api_call", None)
+    if callable(make):
+        make("PutResourcePolicy", args)
+        return
+    inner = getattr(client, "_client", None)
+    if inner is not None and inner is not client:
+        _put_resource_policy(
+            inner,
+            resource_arn=resource_arn,
+            policy_body=policy_body,
+            _depth=_depth + 1,
+        )
+        return
+    raise AttributeError(
+        f"{type(client).__name__} has no put_resource_policy, _make_api_call, or _client fallback"
+    )
+
+
 def apply_policy(execution_agent_arn: str, policy: dict, region: str | None = None) -> None:
     """Call PutResourcePolicy via boto3."""
     session = boto3.Session(region_name=region if region else None)
     client = session.client("bedrock-agentcore-control")
     try:
-        client.put_resource_policy(resourceArn=execution_agent_arn, policy=json.dumps(policy))
+        _put_resource_policy(
+            client,
+            resource_arn=execution_agent_arn,
+            policy_body=json.dumps(policy),
+        )
+    except AttributeError as exc:
+        print(f"ERROR: boto3 client cannot invoke PutResourcePolicy: {exc}", file=sys.stderr)
+        sys.exit(2)
     except ClientError as exc:
         code = exc.response["Error"]["Code"]
         msg = exc.response["Error"]["Message"]

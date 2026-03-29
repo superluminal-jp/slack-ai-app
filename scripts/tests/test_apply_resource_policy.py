@@ -96,6 +96,43 @@ class TestRegionNoneConversion:
         mock_boto3.Session.assert_called_once_with(region_name="ap-northeast-1")
 
 
+# ── PutResourcePolicy compat (boto3 delegate wrappers) ────────────────────────
+
+
+class TestPutResourcePolicyCompat:
+    def test_delegates_to_inner_client_when_wrapper_hides_put_resource_policy(self):
+        """Mirrors botocore BedrockAgentCoreControlPlaneFrontingLayer-style wrappers."""
+        inner = MagicMock()
+
+        class TopWrapper:
+            __slots__ = ("_client",)
+
+            def __init__(self) -> None:
+                self._client = inner
+
+        with patch("apply_resource_policy.boto3") as mock_boto3:
+            mock_boto3.Session.return_value.client.return_value = TopWrapper()
+            arp.apply_policy(VALID_ARN, VALID_POLICY, "ap-northeast-1")
+
+        inner.put_resource_policy.assert_called_once_with(
+            resourceArn=VALID_ARN,
+            policy=json.dumps(VALID_POLICY),
+        )
+
+    def test_uses_make_api_call_when_only_low_level_available(self):
+        inner = MagicMock(spec=["_make_api_call"])
+        inner._make_api_call = MagicMock()
+
+        with patch("apply_resource_policy.boto3") as mock_boto3:
+            mock_boto3.Session.return_value.client.return_value = inner
+            arp.apply_policy(VALID_ARN, VALID_POLICY, "ap-northeast-1")
+
+        inner._make_api_call.assert_called_once_with(
+            "PutResourcePolicy",
+            {"resourceArn": VALID_ARN, "policy": json.dumps(VALID_POLICY)},
+        )
+
+
 # ── T005: --dry-run → put_resource_policy not called ─────────────────────────
 
 class TestDryRun:
