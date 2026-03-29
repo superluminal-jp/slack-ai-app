@@ -1,6 +1,7 @@
 """Tests for scripts/apply-resource-policy.py."""
 
 import json
+import subprocess
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -152,6 +153,43 @@ class TestPutResourcePolicyCompat:
             resourceArn=VALID_ARN,
             policy=json.dumps(VALID_POLICY),
         )
+
+
+# ── AWS CLI fallback (stale botocore / FrontingLayer) ─────────────────────────
+
+
+class TestAwsCliFallback:
+    def test_invokes_aws_cli_when_boto3_cannot_call_put_resource_policy(self):
+        with patch("apply_resource_policy._put_resource_policy", side_effect=AttributeError("no usable API")):
+            with patch("apply_resource_policy.subprocess.run") as mock_run:
+                mock_run.return_value = subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout="",
+                    stderr="",
+                )
+                arp.apply_policy(VALID_ARN, VALID_POLICY, "ap-northeast-1")
+
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        assert cmd[:3] == ["aws", "bedrock-agentcore-control", "put-resource-policy"]
+        assert "--resource-arn" in cmd and VALID_ARN in cmd
+        assert "--policy" in cmd
+        ri = cmd.index("--region")
+        assert cmd[ri + 1] == "ap-northeast-1"
+
+    def test_cli_failure_exits_2(self):
+        with patch("apply_resource_policy._put_resource_policy", side_effect=AttributeError("no usable API")):
+            with patch("apply_resource_policy.subprocess.run") as mock_run:
+                mock_run.side_effect = subprocess.CalledProcessError(
+                    255,
+                    ["aws"],
+                    stderr="Unknown operation",
+                )
+                with pytest.raises(SystemExit) as exc_info:
+                    arp.apply_policy(VALID_ARN, VALID_POLICY, "us-east-1")
+
+        assert exc_info.value.code == 2
 
 
 # ── T005: --dry-run → put_resource_policy not called ─────────────────────────
