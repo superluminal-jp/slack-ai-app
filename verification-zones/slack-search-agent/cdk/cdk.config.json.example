@@ -1,0 +1,9 @@
+{
+  "_comment": "Copy to cdk.config.dev.json (or cdk.config.prod.json) and replace 000000000000 with your AWS account IDs. Files matching cdk.config.*.json are gitignored. Deploy this stack before Verification if you use Slack search tools.",
+  "awsRegion": "ap-northeast-1",
+  "bedrockModelId": "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
+  "deploymentEnv": "dev",
+  "slackSearchStackName": "SlackAI-SlackSearch",
+  "verificationAccountId": "000000000000",
+  "slackSearchAccountId": "000000000000"
+}

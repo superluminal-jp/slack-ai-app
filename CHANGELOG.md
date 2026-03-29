@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CDK config templates for execution-style stacks**: Added `cdk.config.json.example` under each execution agent CDK app (`file-creator-agent`, `docs-agent`, `time-agent`, `fetch-url-agent`) and `verification-zones/slack-search-agent/cdk`, so new clones can copy a tracked template before editing gitignored `cdk.config.{env}.json`. Config loaders now point missing-file errors at the same template name consistently.
+
 ### Changed
 
+- **Developer quickstart**: Corrected execution-zone JSON field names (they differ per agent), documented the copy-from-example workflow, added a mandatory Docker preflight (`docker info`, `linux/arm64` smoke test) before deploy/synth, and added troubleshooting for Docker daemon and container-image build failures.
 - **Agent registry storage migrated from S3 to DynamoDB** (`055-dynamodb-agent-registry`): Replaced S3 per-agent JSON files with a single DynamoDB table (`{stack}-agent-registry`, PK=`env`, SK=`agent_id`). VerificationAgent reads all agent cards via a single DynamoDB Query instead of ListObjectsV2 + N x GetObject. Deploy scripts write agent cards via `aws dynamodb put-item` instead of `aws s3 cp`. Unifies storage with the existing 5 DynamoDB tables (dedupe, whitelist, rate_limit, existence_check_cache, usage-history) for consistent operations, monitoring, and IAM. Removed `AGENT_REGISTRY_BUCKET`/`AGENT_REGISTRY_KEY_PREFIX` env vars; replaced with `AGENT_REGISTRY_TABLE`/`AGENT_REGISTRY_ENV`. Deleted S3 agent-registry bucket construct.
 
 - **Agent registry migrated from runtime discovery to S3 per-agent files** (`054-ssm-agent-registry`): VerificationAgent now reads agent cards from S3 (`{env}/agent-registry/{agent-id}.json`) at startup instead of invoking `invoke_agent_runtime` on each execution agent. Each agent's deploy script writes its own JSON file to S3 after CDK deploy. Eliminates cascade startup of 4+ execution agents during AgentCore's periodic container restarts, reducing unnecessary vCPU/memory billing. SlackSearch agent unified into the same registry (no longer uses separate `SLACK_SEARCH_AGENT_ARN` env var). CDK creates a dedicated `agent-registry` S3 bucket with versioning, encryption, and enforce-SSL.

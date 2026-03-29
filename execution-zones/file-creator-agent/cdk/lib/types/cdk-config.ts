@@ -98,7 +98,7 @@ export function loadCdkConfig(env: "dev" | "prod", cdkDir?: string): CdkConfig {
   if (!envConfig) {
     throw new Error(
       `Environment-specific configuration file not found: ${configDir}/cdk.config.${env}.json\n` +
-        `Please create cdk.config.${env}.json or use cdk.config.json.example as a template.`
+        `Please create cdk.config.${env}.json or copy cdk.config.json.example as a starting template.`
     );
   }
   configs.push(envConfig);

@@ -41,16 +41,20 @@ cd cdk && npm install
 
 ## Configuration
 
-Create `cdk/cdk.config.dev.json` (already provided as example):
+`cdk/cdk.config.*.json` is gitignored. Copy the template and edit account IDs:
+
+```bash
+cp cdk/cdk.config.json.example cdk/cdk.config.dev.json
+```
 
 ```json
 {
   "awsRegion": "ap-northeast-1",
   "bedrockModelId": "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
   "deploymentEnv": "dev",
-  "executionStackName": "SlackAI-Execution",
-  "verificationAccountId": "<YOUR_ACCOUNT_ID>",
-  "executionAccountId": "<YOUR_ACCOUNT_ID>"
+  "fileCreatorStackName": "SlackAI-FileCreator",
+  "verificationAccountId": "123456789012",
+  "fileCreatorAccountId": "123456789012"
 }
 ```
 

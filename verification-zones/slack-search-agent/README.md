@@ -30,7 +30,8 @@ verification-zones/slack-search-agent/
 │   │   ├── slack-search-agent-stack.ts
 │   │   ├── constructs/
 │   │   └── types/
-│   ├── cdk.config.dev.json
+│   ├── cdk.config.json.example
+│   ├── cdk.config.dev.json   # gitignored — copy from .example
 │   └── package.json
 └── scripts/
     └── deploy.sh
@@ -62,7 +63,7 @@ cd verification-zones/slack-search-agent/cdk
 npm install
 ```
 
-Update `cdk.config.dev.json` with your AWS account details, then deploy:
+Create `cdk.config.dev.json` from the template (`cp cdk.config.json.example cdk.config.dev.json` from the `cdk/` directory), set account IDs, then deploy:
 
 ```bash
 DEPLOYMENT_ENV=dev ./verification-zones/slack-search-agent/scripts/deploy.sh

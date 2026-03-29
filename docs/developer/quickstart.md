@@ -2,7 +2,7 @@
 
 **目的**: Slack AI App の環境構築からデプロイ、動作確認までの手順を提供する。
 **対象読者**: 開発者、DevOps エンジニア
-**最終更新日**: 2026-03-18
+**最終更新日**: 2026-03-29
 
 ### このガイドでできること
 
@@ -126,20 +126,42 @@ pip install -r requirements.txt
 
 ### ステップ 3: 設定ファイルの作成
 
-プロジェクトはゾーンごとに独立した CDK 設定ファイルを使用します。各ゾーンの設定ファイルに AWS アカウント ID と Slack 認証情報を設定してください：
+プロジェクトはゾーンごとに独立した CDK 設定ファイルを使用します。`cdk.config.dev.json` / `cdk.config.prod.json` は `.gitignore` 対象のため、リポジトリには含まれません。各 CDK アプリの **`cdk.config.json.example`** をコピーしてから編集してください（キー名はゾーンごとに異なります）。
 
-**実行ゾーン**（`execution-zones/*/cdk/cdk.config.dev.json` を編集）:
+**実行ゾーン**（各ディレクトリで `cdk.config.dev.json` を作成）:
+
+```bash
+# 同一アカウントで検証ゾーンとデプロイする場合、verification / execution（または zone 専用）の各 ID は同じ 12 桁でよい
+ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+
+cp execution-zones/file-creator-agent/cdk/cdk.config.json.example \
+   execution-zones/file-creator-agent/cdk/cdk.config.dev.json
+cp execution-zones/docs-agent/cdk/cdk.config.json.example \
+   execution-zones/docs-agent/cdk/cdk.config.dev.json
+cp execution-zones/time-agent/cdk/cdk.config.json.example \
+   execution-zones/time-agent/cdk/cdk.config.dev.json
+cp execution-zones/fetch-url-agent/cdk/cdk.config.json.example \
+   execution-zones/fetch-url-agent/cdk/cdk.config.dev.json
+cp verification-zones/slack-search-agent/cdk/cdk.config.json.example \
+   verification-zones/slack-search-agent/cdk/cdk.config.dev.json
+
+# 上記ファイル内の 000000000000 を ACCOUNT_ID に置換（エディタまたは sed 等で）
+```
+
+**File Creator Agent**（`execution-zones/file-creator-agent/cdk/cdk.config.dev.json`）のフィールド例:
 
 ```json
 {
   "awsRegion": "ap-northeast-1",
-  "bedrockModelId": "jp.anthropic.claude-haiku-4-5-20251001-v1:0",
+  "bedrockModelId": "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
   "deploymentEnv": "dev",
-  "executionStackName": "SlackAI-Execution",
-  "verificationAccountId": "YOUR_AWS_ACCOUNT_ID",
-  "executionAccountId": "YOUR_AWS_ACCOUNT_ID"
+  "fileCreatorStackName": "SlackAI-FileCreator",
+  "verificationAccountId": "123456789012",
+  "fileCreatorAccountId": "123456789012"
 }
 ```
+
+**Docs / Time Agent**（`docsExecutionStackName` + `executionAccountId`、`timeExecutionStackName` + `executionAccountId`）、**Web Fetch Agent**（`webFetchStackName` + `webFetchAccountId`）、**Slack Search Agent**（`slackSearchStackName` + `slackSearchAccountId`）は、それぞれ同ディレクトリの `cdk.config.json.example` と `cdk/lib/types/cdk-config.ts` の必須フィールドと一致させてください。
 
 **検証ゾーン**（`verification-zones/verification-agent/cdk/cdk.config.dev.json` を設定ファイル例からコピーして編集）:
 
@@ -178,6 +200,22 @@ cdk bootstrap aws://ACCOUNT-ID/REGION
 ```bash
 cdk bootstrap aws://123456789012/ap-northeast-1
 ```
+
+### ステップ 5: デプロイ前チェック（Docker 必須）
+
+Execution / Verification / Slack Search の CDK は **AgentCore 用コンテナイメージ**を Docker でビルドします（`DockerImageAsset`、プラットフォーム **linux/arm64**）。Docker デーモンに接続できない状態で `cdk deploy` すると、`Cannot connect to the Docker daemon`、`failed to find image`、`no basic auth credentials`、または日本語の **コンテナが見つかりません** に近いメッセージでビルドが止まります。
+
+デプロイまたは `cd cdk && npx cdk synth` の直前に必ず次を確認してください。
+
+```bash
+# 1. Docker が応答するか（エラーなら Colima / Docker Desktop を起動）
+docker info
+
+# 2. このリポジトリのビルドは ARM64 前提。動作確認（失敗時は Colima の arch や Docker Desktop の Rosetta/QEMU 設定を確認）
+docker run --rm --platform linux/arm64 alpine echo ok
+```
+
+macOS + Colima の場合は **`colima start`** 済みで、`docker context ls` の `current` が `colima` であることを確認してください。CI や Docker のない環境では synth が失敗するため、ローカルまたは Docker 利用可能なランナーでデプロイしてください。
 
 ---
 
@@ -244,6 +282,8 @@ cdk bootstrap aws://123456789012/ap-northeast-1
 ---
 
 ## 初回デプロイ
+
+セットアップ手順の「ステップ 5: デプロイ前チェック（Docker 必須）」を済ませてから続行してください。
 
 ### ステップ 1: CDK スタックのデプロイ
 
@@ -490,7 +530,7 @@ AWS コンソールで CloudWatch メトリクスを確認：
 
 ### 問題 1: CDK デプロイが失敗する
 
-**原因**: 環境変数が設定されていない、または権限不足
+**原因**: 環境変数が設定されていない、権限不足、**Docker 未起動**、または `cdk.config.{env}.json` 未作成
 
 **解決策**:
 
@@ -504,7 +544,24 @@ aws sts get-caller-identity
 
 # CDK ブートストラップを確認
 cdk bootstrap --show-template
+
+# Docker（コンテナイメージビルドに必須）
+docker info
 ```
+
+### 問題 1b: Docker / コンテナ関連のエラー（デプロイや synth の途中で失敗）
+
+**症状**: `Cannot connect to the Docker daemon`、`error during connect`、`failed to solve`、`no matching manifest for linux/arm64`、`コンテナ` や `image` が見つからないといったメッセージ。
+
+**解決策**:
+
+1. **Docker を起動**する（macOS: `colima start` または Docker Desktop）。
+2. `docker context ls` で意図したコンテキスト（例: `colima`）が `current` か確認する。
+3. `docker run --rm --platform linux/arm64 alpine echo ok` が成功するか確認する（ARM64 ビルドの前提）。
+4. 企業プロキシ環境では Docker のプロキシ設定が必要な場合がある。
+5. 設定ファイルが無いゾーンがないか確認する（各 `cdk/cdk.config.json.example` を `cdk.config.dev.json` にコピー済みか）。
+
+詳細は [トラブルシューティング](./troubleshooting.md) の Docker / ECR 節も参照してください。
 
 ### 問題 2: Slack からのリクエストが 403 で拒否される
 
