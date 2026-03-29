@@ -120,8 +120,10 @@ class TestPutResourcePolicyCompat:
         )
 
     def test_uses_make_api_call_when_only_low_level_available(self):
-        inner = MagicMock(spec=["_make_api_call"])
+        inner = MagicMock(spec=["_make_api_call", "meta"])
         inner._make_api_call = MagicMock()
+        inner.meta.service_model.operation_names = ["PutResourcePolicy", "GetResourcePolicy"]
+        inner._client = None
 
         with patch("apply_resource_policy.boto3") as mock_boto3:
             mock_boto3.Session.return_value.client.return_value = inner
@@ -130,6 +132,25 @@ class TestPutResourcePolicyCompat:
         inner._make_api_call.assert_called_once_with(
             "PutResourcePolicy",
             {"resourceArn": VALID_ARN, "policy": json.dumps(VALID_POLICY)},
+        )
+
+    def test_skips_stale_make_api_call_and_uses_inner_client_first(self):
+        """Delegate may expose _make_api_call on a model without PutResourcePolicy; real client is on _client."""
+        real = MagicMock()
+        stale = MagicMock()
+        stale.put_resource_policy = None
+        stale._make_api_call = MagicMock()
+        stale.meta.service_model.operation_names = ["CreateAgentRuntime"]
+        stale._client = real
+
+        with patch("apply_resource_policy.boto3") as mock_boto3:
+            mock_boto3.Session.return_value.client.return_value = stale
+            arp.apply_policy(VALID_ARN, VALID_POLICY, "ap-northeast-1")
+
+        stale._make_api_call.assert_not_called()
+        real.put_resource_policy.assert_called_once_with(
+            resourceArn=VALID_ARN,
+            policy=json.dumps(VALID_POLICY),
         )
 
 
