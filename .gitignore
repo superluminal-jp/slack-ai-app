@@ -70,3 +70,6 @@ coverage.xml
 
 # Execution Agent: copied docs/ at deploy time (Pattern 1); do not commit copy
 execution-zones/execution-agent/src/docs/
+
+# Agent zone Dockerfiles must stay tracked for CDK DockerImageAsset (clone must include src/Dockerfile).
+# If a developer’s global excludes file lists "Dockerfile", uncommitted copies are skipped until: git add -f <path>

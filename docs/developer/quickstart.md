@@ -570,6 +570,7 @@ docker info
 4. 企業プロキシ環境では Docker のプロキシ設定が必要な場合がある。
 5. 設定ファイルが無いゾーンがないか確認する（各 `cdk/cdk.config.json.example` を `cdk.config.dev.json` にコピー済みか）。
 6. synth / deploy の先頭ログが **別ゾーンのアプリ**（例: File Creator なのに `Verification Zone CDK app starting`）になっている場合、`node_modules/.bin/cdk` が誤ったパッケージを指している可能性があります。リポジトリルートで `npm install` をやり直し、まだ直らなければ `rm -f node_modules/.bin/cdk && npm install` で **aws-cdk** の CLI に向け直してください。
+7. **`Agent Dockerfile not found`** かつ `ls execution-zones/file-creator-agent/src/Dockerfile` でファイルが無い場合、**古いコミットのクローン**か、グローバル gitignore で `Dockerfile` が除外されている可能性があります。`git pull` で最新にし、`git ls-files execution-zones/file-creator-agent/src/Dockerfile` でリポジトリに含まれることを確認してください。手元だけ欠けている場合は `git checkout -- execution-zones/*/src/Dockerfile verification-zones/*/src/Dockerfile` で復元できます。
 
 詳細は [トラブルシューティング](./troubleshooting.md) の Docker / ECR 節も参照してください。
 

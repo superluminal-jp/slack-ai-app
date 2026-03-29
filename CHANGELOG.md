@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Agent `Dockerfile` missing from repository**: All six agent `src/Dockerfile` files (execution zones + Slack Search + Verification) were never committed because many environments use a global gitignore pattern for `Dockerfile`. They are now force-added and tracked so fresh clones include the CDK Docker build context.
 - **Docker build context path for agent ECR assets**: Added `resolveZoneSrcDir()` in `@slack-ai-app/cdk-tooling` and wired all zone `*AgentEcr` constructs to use it. Resolves `<zone>/src` from `cdk/lib/constructs` via `path.resolve`, with a fallback when `process.cwd()` is the zone `cdk/` directory (so synth/deploy still find `Dockerfile` if `__dirname` is unexpected). Clear error if `src/Dockerfile` is missing (e.g. sparse clone).
 - **Workspace `npx cdk` invoked wrong CDK app (Dockerfile / path errors)**: Each zone `cdk/package.json` registered `"bin": { "cdk": "bin/cdk.js" }`, so npm workspaces hoisted one zone app (verification) to `node_modules/.bin/cdk` and **ignored** each directory’s `cdk.json` `app` entry. Running `npx cdk` from an execution zone could synthesize the verification stack and fail asset paths (e.g. missing `file-creator-agent/src/Dockerfile`). Removed the `bin` field from all zone CDK packages so `node_modules/.bin/cdk` resolves to the **aws-cdk** CLI. After upgrading, run `npm install` at the repo root (if `.bin/cdk` still points at a zone app, remove `node_modules/.bin/cdk` once and run `npm install` again).
 
