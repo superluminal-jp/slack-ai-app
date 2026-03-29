@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Verification zone S3 bucket names** (`056-verification-s3-bucket-account-suffix`): File-exchange, usage-history, and usage-history-archive buckets now use `{stack}-{accountId}-{suffix}` so names stay unique across AWS accounts when reusing the same stack name. Existing stacks that used the old names will create new buckets on deploy; old buckets must be emptied and removed or imported separately.
+
 - **Developer quickstart**: Corrected execution-zone JSON field names (they differ per agent), documented the copy-from-example workflow, added a mandatory Docker preflight (`docker info`, `linux/arm64` smoke test) before deploy/synth, and added troubleshooting for Docker daemon and container-image build failures.
 - **Agent registry storage migrated from S3 to DynamoDB** (`055-dynamodb-agent-registry`): Replaced S3 per-agent JSON files with a single DynamoDB table (`{stack}-agent-registry`, PK=`env`, SK=`agent_id`). VerificationAgent reads all agent cards via a single DynamoDB Query instead of ListObjectsV2 + N x GetObject. Deploy scripts write agent cards via `aws dynamodb put-item` instead of `aws s3 cp`. Unifies storage with the existing 5 DynamoDB tables (dedupe, whitelist, rate_limit, existence_check_cache, usage-history) for consistent operations, monitoring, and IAM. Removed `AGENT_REGISTRY_BUCKET`/`AGENT_REGISTRY_KEY_PREFIX` env vars; replaced with `AGENT_REGISTRY_TABLE`/`AGENT_REGISTRY_ENV`. Deleted S3 agent-registry bucket construct.
 
