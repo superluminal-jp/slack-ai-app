@@ -1,0 +1,9 @@
+{
+  "_comment": "Copy to cdk.config.dev.json (or cdk.config.prod.json) and replace 000000000000 with your AWS account IDs. Files matching cdk.config.*.json are gitignored.",
+  "awsRegion": "ap-northeast-1",
+  "bedrockModelId": "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
+  "deploymentEnv": "dev",
+  "webFetchStackName": "SlackAI-WebFetch",
+  "verificationAccountId": "000000000000",
+  "webFetchAccountId": "000000000000"
+}
