@@ -21,6 +21,7 @@ Exit codes:
 import argparse
 import json
 import os
+import subprocess
 import sys
 
 import boto3
@@ -102,28 +103,73 @@ def _put_resource_policy(
     )
 
 
+def _put_resource_policy_via_aws_cli(
+    resource_arn: str,
+    policy_body: str,
+    region: str | None,
+) -> None:
+    """
+    Invoke PutResourcePolicy via AWS CLI v2.
+
+    The CLI ships with service definitions that often include bedrock-agentcore-control
+    operations missing from older botocore (e.g. BedrockAgentCoreControlPlaneFrontingLayer).
+    """
+    cmd = [
+        "aws",
+        "bedrock-agentcore-control",
+        "put-resource-policy",
+        "--resource-arn",
+        resource_arn,
+        "--policy",
+        policy_body,
+    ]
+    if region:
+        cmd.extend(["--region", region])
+    try:
+        proc = subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+            env=os.environ.copy(),
+        )
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(
+            "aws CLI not found in PATH; install AWS CLI v2 "
+            "(https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)"
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        err = (exc.stderr or exc.stdout or "").strip() or str(exc)
+        raise RuntimeError(err) from exc
+    if proc.stdout.strip():
+        print(proc.stdout, end="")
+
+
 def apply_policy(execution_agent_arn: str, policy: dict, region: str | None = None) -> None:
-    """Call PutResourcePolicy via boto3."""
+    """Call PutResourcePolicy via boto3, falling back to AWS CLI when botocore lacks the API."""
+    policy_body = json.dumps(policy)
     session = boto3.Session(region_name=region if region else None)
     client = session.client("bedrock-agentcore-control")
     try:
         _put_resource_policy(
             client,
             resource_arn=execution_agent_arn,
-            policy_body=json.dumps(policy),
+            policy_body=policy_body,
         )
-    except AttributeError as exc:
-        print(f"ERROR: boto3 client cannot invoke PutResourcePolicy: {exc}", file=sys.stderr)
-        sys.exit(2)
-    except OperationNotFoundError as exc:
+    except (AttributeError, OperationNotFoundError) as exc:
         print(
-            "ERROR: botocore service model has no PutResourcePolicy operation. "
-            "Upgrade boto3 and botocore, or run: "
-            "aws bedrock-agentcore-control put-resource-policy ...",
+            f"[INFO] boto3 cannot call PutResourcePolicy ({type(exc).__name__}: {exc}); "
+            "using AWS CLI put-resource-policy.",
             file=sys.stderr,
         )
-        print(f"Detail: {exc}", file=sys.stderr)
-        sys.exit(2)
+        try:
+            _put_resource_policy_via_aws_cli(execution_agent_arn, policy_body, region)
+        except FileNotFoundError as fnf:
+            print(f"ERROR: {fnf}", file=sys.stderr)
+            sys.exit(2)
+        except RuntimeError as run_exc:
+            print(f"ERROR: AWS CLI failed: {run_exc}", file=sys.stderr)
+            sys.exit(2)
     except ClientError as exc:
         code = exc.response["Error"]["Code"]
         msg = exc.response["Error"]["Message"]
