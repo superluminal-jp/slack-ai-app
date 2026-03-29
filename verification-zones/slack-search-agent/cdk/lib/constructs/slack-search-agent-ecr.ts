@@ -6,7 +6,7 @@
 
 import { DockerImageAsset, Platform } from "aws-cdk-lib/aws-ecr-assets";
 import { Construct } from "constructs";
-import * as path from "path";
+import { resolveZoneSrcDir } from "@slack-ai-app/cdk-tooling";
 
 export interface SlackSearchAgentEcrProps {
   readonly dockerfilePath?: string;
@@ -20,9 +20,7 @@ export class SlackSearchAgentEcr extends Construct {
   constructor(scope: Construct, id: string, props?: SlackSearchAgentEcrProps) {
     super(scope, id);
 
-    const dockerDir =
-      props?.dockerfilePath ||
-      path.join(__dirname, "../../../src");
+    const dockerDir = props?.dockerfilePath ?? resolveZoneSrcDir(__dirname);
 
     this.imageAsset = new DockerImageAsset(this, "Image", {
       directory: dockerDir,

@@ -12,5 +12,8 @@ export * from "./src/utils/cdk-logger";
 export * from "./src/utils/cdk-error";
 export * from "./src/utils/cost-allocation-tags";
 export * from "./src/utils/config-loader";
+export {
+  resolveZoneSrcDir,
+} from "./src/utils/resolve-zone-src-dir";
 export * from "./src/aspects/log-retention-aspect";
 export * from "./src/nag/nag-packs";

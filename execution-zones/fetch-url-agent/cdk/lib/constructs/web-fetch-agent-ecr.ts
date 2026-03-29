@@ -6,7 +6,7 @@
 
 import { DockerImageAsset, Platform } from "aws-cdk-lib/aws-ecr-assets";
 import { Construct } from "constructs";
-import * as path from "path";
+import { resolveZoneSrcDir } from "@slack-ai-app/cdk-tooling";
 
 export interface WebFetchAgentEcrProps {
   /** Optional: Override the path to the Dockerfile directory */
@@ -24,9 +24,7 @@ export class WebFetchAgentEcr extends Construct {
   constructor(scope: Construct, id: string, props?: WebFetchAgentEcrProps) {
     super(scope, id);
 
-    const dockerDir =
-      props?.dockerfilePath ||
-      path.join(__dirname, "../../../src");
+    const dockerDir = props?.dockerfilePath ?? resolveZoneSrcDir(__dirname);
 
     this.imageAsset = new DockerImageAsset(this, "Image", {
       directory: dockerDir,
