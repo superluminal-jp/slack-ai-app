@@ -2,6 +2,7 @@ import * as cdk from "aws-cdk-lib";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import { Construct } from "constructs";
 import { NagSuppressions } from "cdk-nag";
+import { scopedBucketName } from "./s3-bucket-name";
 
 /**
  * Usage history S3 bucket construct.
@@ -27,7 +28,7 @@ export class UsageHistoryBucket extends Construct {
     const stackName = cdk.Stack.of(this).stackName;
 
     this.bucket = new s3.Bucket(this, "Bucket", {
-      bucketName: `${stackName.toLowerCase()}-usage-history`,
+      bucketName: scopedBucketName(stackName.toLowerCase(), "usage-history"),
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,

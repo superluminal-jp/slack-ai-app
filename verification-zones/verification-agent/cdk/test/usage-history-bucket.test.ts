@@ -12,10 +12,16 @@ describe("UsageHistoryBucket", () => {
     template = Template.fromStack(stack);
   });
 
-  it("should create S3 bucket with name pattern {stackName.toLowerCase()}-usage-history", () => {
-    template.hasResourceProperties("AWS::S3::Bucket", {
-      BucketName: "teststack-usage-history",
-    });
+  it("should embed account ID in bucket name for global uniqueness", () => {
+    const resources = template.findResources("AWS::S3::Bucket");
+    const names = Object.values(resources).map(
+      (r) => (r as { Properties?: { BucketName?: unknown } }).Properties?.BucketName
+    );
+    expect(names).toHaveLength(1);
+    const serialized = JSON.stringify(names[0]);
+    expect(serialized).toContain("AWS::AccountId");
+    expect(serialized).toContain("teststack");
+    expect(serialized).toContain("usage-history");
   });
 
   it("should have SSE-S3 encryption (AES256)", () => {

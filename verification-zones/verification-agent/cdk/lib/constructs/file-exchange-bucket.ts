@@ -2,6 +2,7 @@ import * as cdk from "aws-cdk-lib";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import { Construct } from "constructs";
 import { NagSuppressions } from "cdk-nag";
+import { scopedBucketName } from "./s3-bucket-name";
 
 /**
  * S3 bucket for temporary file exchange between verification and execution zones.
@@ -32,7 +33,7 @@ export class FileExchangeBucket extends Construct {
     const stackName = cdk.Stack.of(this).stackName;
 
     this.bucket = new s3.Bucket(this, "Bucket", {
-      bucketName: `${stackName.toLowerCase()}-file-exchange`,
+      bucketName: scopedBucketName(stackName.toLowerCase(), "file-exchange"),
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,

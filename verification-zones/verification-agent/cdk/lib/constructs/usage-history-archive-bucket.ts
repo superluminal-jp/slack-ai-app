@@ -2,6 +2,7 @@ import * as cdk from "aws-cdk-lib";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import { Construct } from "constructs";
 import { NagSuppressions } from "cdk-nag";
+import { scopedBucketName } from "./s3-bucket-name";
 
 /**
  * Usage history S3 archive bucket construct.
@@ -30,7 +31,7 @@ export class UsageHistoryArchiveBucket extends Construct {
 
     // autoDeleteObjects adds a Lambda-backed Custom Resource; NagSuppressions added after bucket creation below
     this.bucket = new s3.Bucket(this, "Bucket", {
-      bucketName: `${stackName.toLowerCase()}-usage-history-archive`,
+      bucketName: scopedBucketName(stackName.toLowerCase(), "usage-history-archive"),
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,

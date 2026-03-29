@@ -1,0 +1,13 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.scopedBucketName = scopedBucketName;
+const aws_cdk_lib_1 = require("aws-cdk-lib");
+/**
+ * Builds an S3 bucket name `{stackLower}-{accountId}-{suffix}`.
+ * S3 bucket names are globally unique across all AWS accounts; including the
+ * account ID avoids collisions when the same stack name is deployed elsewhere.
+ */
+function scopedBucketName(stackNameLower, suffix) {
+    return `${stackNameLower}-${aws_cdk_lib_1.Aws.ACCOUNT_ID}-${suffix}`;
+}
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiczMtYnVja2V0LW5hbWUuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyJzMy1idWNrZXQtbmFtZS50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiOztBQU9BLDRDQUVDO0FBVEQsNkNBQWtDO0FBRWxDOzs7O0dBSUc7QUFDSCxTQUFnQixnQkFBZ0IsQ0FBQyxjQUFzQixFQUFFLE1BQWM7SUFDckUsT0FBTyxHQUFHLGNBQWMsSUFBSSxpQkFBRyxDQUFDLFVBQVUsSUFBSSxNQUFNLEVBQUUsQ0FBQztBQUN6RCxDQUFDIiwic291cmNlc0NvbnRlbnQiOlsiaW1wb3J0IHsgQXdzIH0gZnJvbSBcImF3cy1jZGstbGliXCI7XG5cbi8qKlxuICogQnVpbGRzIGFuIFMzIGJ1Y2tldCBuYW1lIGB7c3RhY2tMb3dlcn0te2FjY291bnRJZH0te3N1ZmZpeH1gLlxuICogUzMgYnVja2V0IG5hbWVzIGFyZSBnbG9iYWxseSB1bmlxdWUgYWNyb3NzIGFsbCBBV1MgYWNjb3VudHM7IGluY2x1ZGluZyB0aGVcbiAqIGFjY291bnQgSUQgYXZvaWRzIGNvbGxpc2lvbnMgd2hlbiB0aGUgc2FtZSBzdGFjayBuYW1lIGlzIGRlcGxveWVkIGVsc2V3aGVyZS5cbiAqL1xuZXhwb3J0IGZ1bmN0aW9uIHNjb3BlZEJ1Y2tldE5hbWUoc3RhY2tOYW1lTG93ZXI6IHN0cmluZywgc3VmZml4OiBzdHJpbmcpOiBzdHJpbmcge1xuICByZXR1cm4gYCR7c3RhY2tOYW1lTG93ZXJ9LSR7QXdzLkFDQ09VTlRfSUR9LSR7c3VmZml4fWA7XG59XG4iXX0=

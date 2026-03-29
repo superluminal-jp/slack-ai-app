@@ -331,10 +331,10 @@ Every request processed by the verification agent is automatically recorded for 
 | Data | Storage | Retention |
 |------|---------|-----------|
 | Request metadata (channel, user, timestamps, pipeline results, duration) | DynamoDB `{stack}-usage-history` | 90 days (TTL) |
-| Input text (user message) | S3 `{stack}-usage-history` `content/` prefix | 90 days (lifecycle rule) |
-| Output text (agent response) | S3 `{stack}-usage-history` `content/` prefix | 90 days (lifecycle rule) |
-| Slack file attachments | S3 `{stack}-usage-history` `attachments/` prefix | 90 days (lifecycle rule) |
-| Full DynamoDB table snapshots | S3 `{stack}-usage-history` `dynamodb-exports/` prefix | 90 days (lifecycle rule) |
+| Input text (user message) | S3 `{stackName.toLowerCase()}-{accountId}-usage-history` `content/` prefix | 90 days (lifecycle rule) |
+| Output text (agent response) | S3 `{stackName.toLowerCase()}-{accountId}-usage-history` `content/` prefix | 90 days (lifecycle rule) |
+| Slack file attachments | S3 `{stackName.toLowerCase()}-{accountId}-usage-history` `attachments/` prefix | 90 days (lifecycle rule) |
+| Full DynamoDB table snapshots | S3 `{stackName.toLowerCase()}-{accountId}-usage-history` `dynamodb-exports/` prefix | 90 days (lifecycle rule) |
 
 Input/output text is stored in S3 only (not in DynamoDB) for confidentiality — the DynamoDB record holds a pointer (`s3_content_prefix`) and metadata only.
 
@@ -343,12 +343,12 @@ Input/output text is stored in S3 only (not in DynamoDB) for confidentiality —
 | Resource | Name pattern |
 |----------|-------------|
 | DynamoDB table | `{stackName}-usage-history` |
-| S3 bucket | `{stackName.toLowerCase()}-usage-history` |
-| S3 archive bucket | `{stackName.toLowerCase()}-usage-history-archive` |
+| S3 bucket | `{stackName.toLowerCase()}-{accountId}-usage-history` |
+| S3 archive bucket | `{stackName.toLowerCase()}-{accountId}-usage-history-archive` |
 
 ### Archive Replication (041)
 
-All objects written to the usage-history S3 bucket (`content/`, `attachments/`, `dynamodb-exports/` prefixes) are automatically replicated to an independent archive bucket (`{stack}-usage-history-archive`) via S3 Same-Region Replication.
+All objects written to the usage-history S3 bucket (`content/`, `attachments/`, `dynamodb-exports/` prefixes) are automatically replicated to an independent archive bucket (`{stack}-{accountId}-usage-history-archive`) via S3 Same-Region Replication.
 
 - **Scope**: All prefixes — conversations, attachments, and DynamoDB exports.
 - **Delete isolation**: Deletes in the primary bucket do NOT propagate to the archive (`deleteMarkerReplication: Disabled`).

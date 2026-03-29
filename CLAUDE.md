@@ -1,6 +1,6 @@
 # slack-ai-app Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-03-25
+Auto-generated from all feature plans. Last updated: 2026-03-29
 
 ## Active Technologies
 - Python 3.11 (コンテナ: `python:3.11-slim`, ARM64) + `strands-agents[a2a]~=1.25.0`, `fastapi`, `uvicorn`, `boto3`, `slack-sdk` (021-strands-migration-cleanup)
@@ -182,6 +182,7 @@ def check_whitelist(channel: str) -> bool:
 Python 3.11 (コンテナ: `python:3.11-slim`, ARM64): Follow standard conventions
 
 ## Recent Changes
+- 056-verification-s3-bucket-account-suffix: Verification-agent CDK S3 buckets (file-exchange, usage-history, usage-history-archive) use `{stack}-{accountId}-{suffix}` for global name uniqueness.
 - 055-dynamodb-agent-registry: Added Python 3.11 (`python:3.11-slim`, ARM64), TypeScript 5.x (CDK), Bash 5.x (deploy scripts) + `boto3 ~=1.42.0` (DynamoDB client), `aws-cdk-lib` 2.215.0 (`aws-dynamodb`), `pydantic` (validation), `strands-agents[a2a,otel] ~=1.25.0`
 - 055-dynamodb-agent-registry: Migrated agent registry storage from S3 to DynamoDB. Single table (`{stack}-agent-registry`, PK=`env`, SK=`agent_id`) replaces S3 per-agent JSON files. VerificationAgent reads all agent cards via single DynamoDB Query. Deploy scripts write via `aws dynamodb put-item`. Removed `AGENT_REGISTRY_BUCKET`/`AGENT_REGISTRY_KEY_PREFIX` env vars; replaced with `AGENT_REGISTRY_TABLE`/`AGENT_REGISTRY_ENV`. Deleted S3 agent-registry bucket construct.
 - 054-ssm-agent-registry: Migrated agent registry from runtime `invoke_agent_runtime` discovery to S3 per-agent JSON files. Each deploy script self-registers in S3 after CDK deploy. Eliminates cascade startup. SlackSearch unified into same registry. New `agent-registry` S3 bucket construct. Removed `EXECUTION_AGENT_ARNS`/`ENABLE_AGENT_CARD_DISCOVERY`/`SLACK_SEARCH_AGENT_ARN` env vars from runtime; replaced with `AGENT_REGISTRY_BUCKET` + `AGENT_REGISTRY_KEY_PREFIX`.
