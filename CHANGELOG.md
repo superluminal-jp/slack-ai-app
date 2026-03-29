@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Workspace `npx cdk` invoked wrong CDK app (Dockerfile / path errors)**: Each zone `cdk/package.json` registered `"bin": { "cdk": "bin/cdk.js" }`, so npm workspaces hoisted one zone app (verification) to `node_modules/.bin/cdk` and **ignored** each directory’s `cdk.json` `app` entry. Running `npx cdk` from an execution zone could synthesize the verification stack and fail asset paths (e.g. missing `file-creator-agent/src/Dockerfile`). Removed the `bin` field from all zone CDK packages so `node_modules/.bin/cdk` resolves to the **aws-cdk** CLI. After upgrading, run `npm install` at the repo root (if `.bin/cdk` still points at a zone app, remove `node_modules/.bin/cdk` once and run `npm install` again).
+
 ### Added
 
 - **CDK config templates for execution-style stacks**: Added `cdk.config.json.example` under each execution agent CDK app (`file-creator-agent`, `docs-agent`, `time-agent`, `fetch-url-agent`) and `verification-zones/slack-search-agent/cdk`, so new clones can copy a tracked template before editing gitignored `cdk.config.{env}.json`. Config loaders now point missing-file errors at the same template name consistently.
