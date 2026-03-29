@@ -3,13 +3,13 @@ SlackSearchClient — calls Slack Search Agent via A2A (AgentCore Runtime).
 
 Wraps invoke_execution_agent to route search requests to the dedicated
 Slack Search Agent rather than the general execution agents.
-The agent ARN is read from SLACK_SEARCH_AGENT_ARN env var.
+The agent ARN is resolved from the S3 agent registry (agent-id: "slack-search").
 """
 
 import json
-import os
 from typing import Optional
 
+import agent_registry
 from a2a_client import invoke_execution_agent
 
 
@@ -57,8 +57,8 @@ class SlackSearchClient:
     """
     Client for the Slack Search Agent (verification-zone A2A).
 
-    Uses SLACK_SEARCH_AGENT_ARN env var to locate the AgentCore Runtime.
-    Raises ValueError if the ARN is not configured.
+    Uses the S3 agent registry to locate the AgentCore Runtime ARN.
+    Raises ValueError if the ARN is not found in the registry.
     """
 
     def search(
@@ -83,13 +83,13 @@ class SlackSearchClient:
             Response text string from the Slack Search Agent.
 
         Raises:
-            ValueError: If SLACK_SEARCH_AGENT_ARN is not set.
+            ValueError: If slack-search agent is not found in the registry.
         """
-        agent_arn = os.environ.get("SLACK_SEARCH_AGENT_ARN", "")
+        agent_arn = agent_registry.get_agent_arn("slack-search")
         if not agent_arn:
             raise ValueError(
-                "SLACK_SEARCH_AGENT_ARN environment variable is required. "
-                "Set it to the ARN of the Slack Search Agent Runtime."
+                "slack-search agent not found in agent registry. "
+                "Ensure the Slack Search Agent is registered in S3."
             )
 
         payload: dict = {

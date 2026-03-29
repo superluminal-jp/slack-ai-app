@@ -1,7 +1,6 @@
-"""Unit tests for slack_search_client.py — TDD (RED phase)."""
+"""Unit tests for slack_search_client.py — uses S3 agent registry."""
 
 import json
-import os
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -41,7 +40,8 @@ def _make_error_result(error_code: str = "slack_api_error") -> str:
 def test_search_calls_invoke_execution_agent():
     """SlackSearchClient.search invokes the execution agent via A2A."""
     with patch("slack_search_client.invoke_execution_agent") as mock_invoke, \
-         patch.dict("os.environ", {"SLACK_SEARCH_AGENT_ARN": SLACK_SEARCH_AGENT_ARN}):
+         patch("slack_search_client.agent_registry") as mock_registry:
+        mock_registry.get_agent_arn.return_value = SLACK_SEARCH_AGENT_ARN
         mock_invoke.return_value = _make_success_result("3件のメッセージが見つかりました")
 
         client = SlackSearchClient()
@@ -62,21 +62,23 @@ def test_search_calls_invoke_execution_agent():
 
 
 def test_missing_arn_raises_value_error():
-    """SlackSearchClient raises ValueError when SLACK_SEARCH_AGENT_ARN is not set."""
-    env = {k: v for k, v in os.environ.items() if k != "SLACK_SEARCH_AGENT_ARN"}
-    with patch.dict("os.environ", env, clear=True):
+    """SlackSearchClient raises ValueError when slack-search is not in registry."""
+    with patch("slack_search_client.agent_registry") as mock_registry:
+        mock_registry.get_agent_arn.return_value = ""
+
         client = SlackSearchClient()
         try:
             client.search(text="test", channel="C123", bot_token="xoxb-test")
             assert False, "Should have raised ValueError"
         except ValueError as e:
-            assert "SLACK_SEARCH_AGENT_ARN" in str(e)
+            assert "slack-search" in str(e)
 
 
 def test_a2a_error_returns_graceful_message():
     """A2A invocation error returns a graceful error string, not raises."""
     with patch("slack_search_client.invoke_execution_agent") as mock_invoke, \
-         patch.dict("os.environ", {"SLACK_SEARCH_AGENT_ARN": SLACK_SEARCH_AGENT_ARN}):
+         patch("slack_search_client.agent_registry") as mock_registry:
+        mock_registry.get_agent_arn.return_value = SLACK_SEARCH_AGENT_ARN
         mock_invoke.return_value = _make_error_result()
 
         client = SlackSearchClient()
@@ -94,7 +96,8 @@ def test_a2a_error_returns_graceful_message():
 def test_search_passes_thread_ts():
     """SlackSearchClient.search passes thread_ts when provided."""
     with patch("slack_search_client.invoke_execution_agent") as mock_invoke, \
-         patch.dict("os.environ", {"SLACK_SEARCH_AGENT_ARN": SLACK_SEARCH_AGENT_ARN}):
+         patch("slack_search_client.agent_registry") as mock_registry:
+        mock_registry.get_agent_arn.return_value = SLACK_SEARCH_AGENT_ARN
         mock_invoke.return_value = _make_success_result()
 
         client = SlackSearchClient()
@@ -112,7 +115,8 @@ def test_search_passes_thread_ts():
 def test_search_passes_correlation_id():
     """SlackSearchClient.search passes correlation_id when provided."""
     with patch("slack_search_client.invoke_execution_agent") as mock_invoke, \
-         patch.dict("os.environ", {"SLACK_SEARCH_AGENT_ARN": SLACK_SEARCH_AGENT_ARN}):
+         patch("slack_search_client.agent_registry") as mock_registry:
+        mock_registry.get_agent_arn.return_value = SLACK_SEARCH_AGENT_ARN
         mock_invoke.return_value = _make_success_result()
 
         client = SlackSearchClient()

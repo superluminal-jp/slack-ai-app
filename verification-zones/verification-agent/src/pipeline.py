@@ -625,6 +625,59 @@ def run(payload: dict) -> str:
             {"correlation_id": correlation_id, "channel": channel},
         )
 
+        # Refresh registry periodically to avoid warm-runtime stale cache after deploy.
+        try:
+            from agent_registry import refresh_registry_if_stale
+
+            did_refresh = refresh_registry_if_stale(max_age_seconds=60)
+            if did_refresh:
+                try:
+                    # Verify agent cards from the actual runtimes (best-effort).
+                    # This is intentionally not per-request; it only runs after refresh (TTL-gated).
+                    from a2a_client import discover_agent_card
+                    from agent_registry import get_agent_ids, get_agent_arn
+
+                    verified = 0
+                    failed = 0
+                    for agent_id in get_agent_ids():
+                        arn = get_agent_arn(agent_id)
+                        if not arn:
+                            continue
+                        card = discover_agent_card(arn)
+                        if isinstance(card, dict) and card:
+                            verified += 1
+                        else:
+                            failed += 1
+                    _log(
+                        "INFO",
+                        "agent_card_verification_completed",
+                        {
+                            "correlation_id": correlation_id,
+                            "verified": verified,
+                            "failed": failed,
+                        },
+                    )
+                except Exception as e:
+                    _log(
+                        "WARN",
+                        "agent_card_verification_failed",
+                        {
+                            "correlation_id": correlation_id,
+                            "error": str(e),
+                            "error_type": type(e).__name__,
+                        },
+                    )
+        except Exception as e:
+            _log(
+                "WARN",
+                "agent_registry_periodic_refresh_failed",
+                {
+                    "correlation_id": correlation_id,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                },
+            )
+
         max_turns = int(os.environ.get("MAX_AGENT_TURNS", "5"))
         orch_request = OrchestrationRequest(
             user_text=text,

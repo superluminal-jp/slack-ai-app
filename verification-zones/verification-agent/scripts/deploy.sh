@@ -12,9 +12,6 @@
 #   AWS_PROFILE                 AWS CLI profile (optional)
 #   SLACK_BOT_TOKEN             Required (or set in cdk.config.{env}.json)
 #   SLACK_SIGNING_SECRET        Required (or set in cdk.config.{env}.json)
-#   EXECUTION_AGENT_ARNS_JSON   JSON object of execution agent ARNs (optional;
-#                               falls back to cdk.config when unset)
-#   SLACK_SEARCH_AGENT_ARN      Slack Search Agent runtime ARN (optional)
 #
 set -euo pipefail
 
@@ -82,18 +79,12 @@ if [[ "${FORCE_REBUILD}" == "true" ]]; then
     CONTEXT_ARGS="${CONTEXT_ARGS} --context forceVerificationImageRebuild=$(date +%s)"
     log_info "Force image rebuild enabled"
 fi
-# Accept execution agent ARNs from the orchestrator; fall back to config file value
-if [[ -n "${EXECUTION_AGENT_ARNS_JSON:-}" ]]; then
-    CONTEXT_ARGS="${CONTEXT_ARGS} --context executionAgentArns=${EXECUTION_AGENT_ARNS_JSON}"
-fi
-
 log_info "Deploying Verification Agent zone (env: ${DEPLOYMENT_ENV}, stack: ${VERIFY_STACK})"
 
 OUTPUTS_FILE="$(mktemp)"
 trap "rm -f '${OUTPUTS_FILE}'" EXIT
 
 cd "${CDK_DIR}"
-SLACK_SEARCH_AGENT_ARN="${SLACK_SEARCH_AGENT_ARN:-}" \
 DEPLOYMENT_ENV="${DEPLOYMENT_ENV}" "${CDK_CLI}" deploy "${VERIFY_STACK}" \
     --require-approval never --force \
     --outputs-file "${OUTPUTS_FILE}" \
