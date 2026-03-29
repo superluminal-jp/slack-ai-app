@@ -25,6 +25,7 @@ import sys
 
 import boto3
 from botocore.exceptions import ClientError
+from botocore.model import OperationNotFoundError
 
 
 def build_policy(execution_agent_arn: str, verification_role_arn: str, account_id: str) -> dict:
@@ -44,6 +45,20 @@ def build_policy(execution_agent_arn: str, verification_role_arn: str, account_i
     }
 
 
+def _service_has_operation(client: object, operation_name: str) -> bool:
+    """True if this botocore client's service model lists the operation (API name)."""
+    try:
+        meta = getattr(client, "meta", None)
+        if meta is None:
+            return False
+        sm = getattr(meta, "service_model", None)
+        if sm is None:
+            return False
+        return operation_name in sm.operation_names
+    except Exception:
+        return False
+
+
 def _put_resource_policy(
     client: object,
     *,
@@ -56,7 +71,10 @@ def _put_resource_policy(
 
     Some botocore builds wrap bedrock-agentcore-control in a delegate
     (e.g. BedrockAgentCoreControlPlaneFrontingLayer) that does not expose
-    generated methods; fall back to _make_api_call or the inner client.
+    generated methods. The delegate may also expose _make_api_call bound to a
+    stale service model without PutResourcePolicy — unwrap _client first, then
+    call put_resource_policy or _make_api_call only when the model includes
+    PutResourcePolicy.
     """
     if _depth > 8:
         raise AttributeError("Excessive bedrock-agentcore-control client wrapper depth")
@@ -64,10 +82,6 @@ def _put_resource_policy(
     put = getattr(client, "put_resource_policy", None)
     if callable(put):
         put(**args)
-        return
-    make = getattr(client, "_make_api_call", None)
-    if callable(make):
-        make("PutResourcePolicy", args)
         return
     inner = getattr(client, "_client", None)
     if inner is not None and inner is not client:
@@ -78,8 +92,13 @@ def _put_resource_policy(
             _depth=_depth + 1,
         )
         return
+    make = getattr(client, "_make_api_call", None)
+    if callable(make) and _service_has_operation(client, "PutResourcePolicy"):
+        make("PutResourcePolicy", args)
+        return
     raise AttributeError(
-        f"{type(client).__name__} has no put_resource_policy, _make_api_call, or _client fallback"
+        f"{type(client).__name__} has no usable PutResourcePolicy "
+        f"(upgrade boto3/botocore, or use AWS CLI v2 put-resource-policy)"
     )
 
 
@@ -95,6 +114,15 @@ def apply_policy(execution_agent_arn: str, policy: dict, region: str | None = No
         )
     except AttributeError as exc:
         print(f"ERROR: boto3 client cannot invoke PutResourcePolicy: {exc}", file=sys.stderr)
+        sys.exit(2)
+    except OperationNotFoundError as exc:
+        print(
+            "ERROR: botocore service model has no PutResourcePolicy operation. "
+            "Upgrade boto3 and botocore, or run: "
+            "aws bedrock-agentcore-control put-resource-policy ...",
+            file=sys.stderr,
+        )
+        print(f"Detail: {exc}", file=sys.stderr)
         sys.exit(2)
     except ClientError as exc:
         code = exc.response["Error"]["Code"]

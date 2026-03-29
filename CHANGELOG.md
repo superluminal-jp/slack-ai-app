@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **apply-resource-policy.py with newer boto3/botocore**: Some releases wrap `bedrock-agentcore-control` in a delegate (e.g. `BedrockAgentCoreControlPlaneFrontingLayer`) that does not expose `put_resource_policy`. The script now falls back to `_make_api_call("PutResourcePolicy", …)` or the inner `_client` so deploy can attach Execution Agent resource policies.
+- **apply-resource-policy.py with newer boto3/botocore**: Some releases wrap `bedrock-agentcore-control` in a delegate that omits `put_resource_policy` or binds `_make_api_call` to a stale service model without `PutResourcePolicy`. The script unwraps `_client` first, then calls `put_resource_policy` or `_make_api_call` only when `PutResourcePolicy` exists on that client’s model; catches `OperationNotFoundError` with an upgrade/CLI hint.
 
 - **Agent `Dockerfile` missing from repository**: All six agent `src/Dockerfile` files (execution zones + Slack Search + Verification) were never committed because many environments use a global gitignore pattern for `Dockerfile`. They are now force-added and tracked so fresh clones include the CDK Docker build context.
 - **Docker build context path for agent ECR assets**: Added `resolveZoneSrcDir()` in `@slack-ai-app/cdk-tooling` and wired all zone `*AgentEcr` constructs to use it. Resolves `<zone>/src` from `cdk/lib/constructs` via `path.resolve`, with a fallback when `process.cwd()` is the zone `cdk/` directory (so synth/deploy still find `Dockerfile` if `__dirname` is unexpected). Clear error if `src/Dockerfile` is missing (e.g. sparse clone).
