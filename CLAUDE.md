@@ -1,6 +1,6 @@
 # slack-ai-app Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-03-29
+Auto-generated from all feature plans. Last updated: 2026-03-30
 
 ## Active Technologies
 - Python 3.11 (コンテナ: `python:3.11-slim`, ARM64) + `strands-agents[a2a]~=1.25.0`, `fastapi`, `uvicorn`, `boto3`, `slack-sdk` (021-strands-migration-cleanup)
@@ -182,6 +182,11 @@ def check_whitelist(channel: str) -> bool:
 Python 3.11 (コンテナ: `python:3.11-slim`, ARM64): Follow standard conventions
 
 ## Recent Changes
+- **Docs Agent CDK / deploy naming**: `docsAgentStackName` + `SlackAI-DocsAgent` (legacy `docsExecutionStackName` / `DOCS_EXECUTION_STACK_NAME` still honored where documented).
+- **Time / Fetch URL CDK stack bases**: `timeAgentStackName` + `SlackAI-TimeAgent` (legacy `timeExecutionStackName` / `TIME_EXECUTION_STACK_NAME`); `fetchUrlAgentStackName` + `SlackAI-FetchUrlAgent` (legacy `webFetchStackName` / `WEB_FETCH_EXECUTION_STACK_NAME`). Agent runtime names and CFN output IDs unchanged.
+- **Verification Agent prompts**: Orchestrator system prompt refined (routing, context priority, language, Slack format, secrets); unrouted fallback prompt aligned.
+- **Documentation corpus (user/developer/decision-maker `docs/`)**: Inquiry coverage checklist, SC-002 heading guard script, Docs Agent `.dockerignore` fix for bundled `docs/**/*.md`, README links to checklist; mirror repo root `docs/` under `execution-zones/docs-agent/src/docs/` for image builds.
+- Unified deploy (`scripts/deploy.sh deploy`) no longer builds or deploys the Time or Web Fetch execution zones; preflight and `executionAgentArns` omit their ARNs; after Verification deploy the script deletes DynamoDB agent-registry items for `time` and `fetch-url`. Opt-in via per-zone `execution-zones/time-agent/scripts/deploy.sh` and `execution-zones/fetch-url-agent/scripts/deploy.sh`. Added `tests/scripts/test_execution_agent_arns_json.sh` for the ARN JSON helper.
 - apply-resource-policy: Compatible with boto3 delegates that omit `put_resource_policy` on `bedrock-agentcore-control` (uses `_make_api_call` or `_client` fallback).
 - 056-verification-s3-bucket-account-suffix: Verification-agent CDK S3 buckets (file-exchange, usage-history, usage-history-archive) use `{stack}-{accountId}-{suffix}` for global name uniqueness.
 - 055-dynamodb-agent-registry: Added Python 3.11 (`python:3.11-slim`, ARM64), TypeScript 5.x (CDK), Bash 5.x (deploy scripts) + `boto3 ~=1.42.0` (DynamoDB client), `aws-cdk-lib` 2.215.0 (`aws-dynamodb`), `pydantic` (validation), `strands-agents[a2a,otel] ~=1.25.0`

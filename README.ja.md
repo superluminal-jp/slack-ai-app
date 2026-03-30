@@ -78,7 +78,7 @@ DEPLOYMENT_ENV=dev ./scripts/deploy.sh deploy
 
 このプロジェクトは開発環境（`dev`）と本番環境（`prod`）の分離をサポートしています：
 
-- **スタック名**: 自動的に `-Dev` または `-Prod` のサフィックスが付加されます（例: `SlackAI-FileCreator-Dev`, `SlackAI-WebFetch-Dev`, `SlackAI-Verification-Prod`）
+- **スタック名**: 自動的に `-Dev` または `-Prod` のサフィックスが付加されます（例: `SlackAI-FileCreator-Dev`, `SlackAI-FetchUrlAgent-Dev`, `SlackAI-Verification-Prod`）
 - **リソース分離**: すべてのリソース（Lambda 関数、DynamoDB テーブル、Secrets Manager、AgentCore Runtime など）が環境ごとに自動的に分離されます
 - **リソースタグ付け**: すべてのリソースに以下のタグが付与されます：
   - `Environment`: `dev` または `prod`
@@ -227,6 +227,8 @@ DEPLOYMENT_ENV=prod ./scripts/deploy.sh deploy
 - **Docs Agent Zone** (`execution-zones/docs-agent/cdk`): ドキュメント検索エージェント（AgentCore Runtime + ECR）
 - **Web Fetch Agent Zone** (`execution-zones/fetch-url-agent/cdk`): URL 取得エージェント（AgentCore Runtime + ECR）
 
+**統合デプロイの既定**（`scripts/deploy.sh deploy`）: **File Creator**、**Docs**、**Slack Search**、**Verification** のみをデプロイします。**Time Agent** と **Web Fetch Agent** は含みません（運用コストに対する独自価値が限定的であること、Web Fetch は任意 URL 取得に伴うリスクが増えること）。これらが必要な場合はセキュリティレビューのうえ `execution-zones/time-agent/scripts/deploy.sh` および／または `execution-zones/fetch-url-agent/scripts/deploy.sh` を個別に実行してください。統合スクリプトはデプロイ後に DynamoDB の agent registry から `time` と `fetch-url` の項目を削除するため、当該ゾーンを再デプロイして再登録しない限りオーケストレーションからは利用されません。
+
 この構成は以下をサポートします：
 
 - ✅ AgentCore A2A プロトコルによるゾーン間通信
@@ -244,6 +246,7 @@ DEPLOYMENT_ENV=prod ./scripts/deploy.sh deploy
 | **開発者**             | [アーキテクチャ](docs/developer/architecture.md)                                                                              |
 | **セキュリティチーム** | [セキュリティ](docs/developer/security.md)                                                                                    |
 | **運用**               | [運用ガイド](docs/developer/runbook.md)                                                                                       |
+| **問い合わせカバレッジ** | [レビュー用チェックリスト](docs/developer/inquiry-coverage-checklist.md)（代表質問と文書の対応）                                      |
 | **意思決定者**         | [プロジェクト提案書](docs/decision-maker/proposal.md)                                                                         |
 
 **全ドキュメント**: [docs/README.md](docs/README.md)
@@ -337,7 +340,7 @@ aws logs tail /aws/bedrock-agentcore/runtimes/SlackAI_VerificationAgent_Dev-<run
 | `SLACK_BOT_TOKEN`               | Slack ボット OAuth トークン（初回デプロイのみ）     | -                                              |
 | `BEDROCK_MODEL_ID`              | Bedrock モデル（cdk.json で設定）                   | -                                              |
 | `VERIFICATION_AGENT_ARN`        | Verification Agent の AgentCore Runtime ARN（CDK で設定） | - |
-| `EXECUTION_AGENT_ARNS`          | 実行エージェント ARN マップ（file-creator/docs/time/fetch-url） | - |
+| `EXECUTION_AGENT_ARNS`          | 実行エージェント ARN マップ（file-creator/docs；time/fetch-url は任意） | - |
 
 シークレットは初回デプロイ後、AWS Secrets Manager に保存されます。
 

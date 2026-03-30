@@ -147,9 +147,9 @@ Stack names are constructed as `<base>-<Env>` where `Env` is `Dev` or `Prod`.
 | Stack | Default base name | Override variable |
 |-------|-------------------|-------------------|
 | File Creator | `SlackAI-FileCreator` | `FILE_CREATOR_STACK_NAME` |
-| Docs Execution | `SlackAI-DocsExecution` | `DOCS_EXECUTION_STACK_NAME` |
-| Time Execution | `SlackAI-TimeExecution` | `TIME_EXECUTION_STACK_NAME` |
-| Web Fetch | `SlackAI-WebFetch` | `WEB_FETCH_EXECUTION_STACK_NAME` |
+| Docs Agent | `SlackAI-DocsAgent` | `DOCS_AGENT_STACK_NAME`（互換: `DOCS_EXECUTION_STACK_NAME`） |
+| Time Agent | `SlackAI-TimeAgent` | `TIME_AGENT_STACK_NAME`（`TIME_EXECUTION_STACK_NAME` も可） |
+| Fetch URL | `SlackAI-FetchUrlAgent` | `FETCH_URL_AGENT_STACK_NAME`（`WEB_FETCH_EXECUTION_STACK_NAME` も可） |
 | Slack Search | `SlackAI-SlackSearch` | `SLACK_SEARCH_STACK_NAME` |
 | Verification | `SlackAI-Verification` | `VERIFICATION_STACK_NAME` |
 

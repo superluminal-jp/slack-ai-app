@@ -12,7 +12,7 @@ export interface CdkConfig {
   awsRegion: string;
   bedrockModelId: string;
   deploymentEnv: "dev" | "prod";
-  timeExecutionStackName: string;
+  timeAgentStackName: string;
   verificationAccountId: string;
   executionAccountId: string;
   timeAgentName?: string;
@@ -22,15 +22,29 @@ const CdkConfigSchema = z.object({
   awsRegion: z.string().regex(/^[a-z]+-[a-z]+-[0-9]+$/, "Invalid AWS region format"),
   bedrockModelId: z.string().min(1, "bedrockModelId is required"),
   deploymentEnv: z.enum(["dev", "prod"]),
-  timeExecutionStackName: z.string().min(1, "timeExecutionStackName is required"),
+  timeAgentStackName: z.string().min(1, "timeAgentStackName is required"),
   verificationAccountId: z.string().regex(/^\d{12}$/, "verificationAccountId must be a 12-digit AWS account ID"),
   executionAccountId: z.string().regex(/^\d{12}$/, "executionAccountId must be a 12-digit AWS account ID"),
   timeAgentName: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]{0,47}$/).optional(),
 });
 
 export function validateConfig(config: unknown): CdkConfig {
+  const raw =
+    config && typeof config === "object"
+      ? { ...(config as Record<string, unknown>) }
+      : config;
+  if (
+    raw &&
+    typeof raw === "object" &&
+    !(raw as Record<string, unknown>).timeAgentStackName &&
+    (raw as Record<string, unknown>).timeExecutionStackName
+  ) {
+    (raw as Record<string, unknown>).timeAgentStackName = (
+      raw as Record<string, unknown>
+    ).timeExecutionStackName;
+  }
   try {
-    return CdkConfigSchema.parse(config);
+    return CdkConfigSchema.parse(raw);
   } catch (error: unknown) {
     if (error instanceof z.ZodError) {
       const messages = error.errors.map((e) => `  - ${e.path.join(".")}: ${e.message}`);

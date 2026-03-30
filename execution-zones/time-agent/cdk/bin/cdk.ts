@@ -102,8 +102,8 @@ function getConfigString(key: string, defaultValue = ""): string {
 
 const region = getConfigValue("awsRegion", DEFAULT_REGION);
 const baseTimeStackName = getConfigValue(
-  "timeExecutionStackName",
-  "SlackAI-TimeExecution",
+  "timeAgentStackName",
+  getConfigValue("timeExecutionStackName", "SlackAI-TimeAgent"),
 );
 const environmentSuffix = deploymentEnv === "prod" ? "Prod" : "Dev";
 const timeStackName = `${baseTimeStackName}-${environmentSuffix}`;
@@ -122,7 +122,7 @@ if (config) {
   app.node.setContext("awsRegion", region);
   app.node.setContext("bedrockModelId", config.bedrockModelId);
   app.node.setContext("deploymentEnv", deploymentEnv);
-  app.node.setContext("timeExecutionStackName", baseTimeStackName);
+  app.node.setContext("timeAgentStackName", baseTimeStackName);
   app.node.setContext("verificationAccountId", verificationAccountId);
   app.node.setContext("executionAccountId", executionAccountId);
   app.node.setContext("timeAgentName", timeAgentName);

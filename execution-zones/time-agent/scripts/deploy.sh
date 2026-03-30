@@ -57,7 +57,7 @@ if [[ "${FORCE_REBUILD}" == "true" ]]; then
 fi
 
 ENV_SUFFIX=$([[ "${DEPLOYMENT_ENV}" == "prod" ]] && echo "Prod" || echo "Dev")
-TIME_STACK="SlackAI-TimeExecution-${ENV_SUFFIX}"
+TIME_STACK="${TIME_AGENT_STACK_NAME:-${TIME_EXECUTION_STACK_NAME:-SlackAI-TimeAgent}}-${ENV_SUFFIX}"
 
 log_info "Deploying stack: ${TIME_STACK}"
 cd "${CDK_DIR}"

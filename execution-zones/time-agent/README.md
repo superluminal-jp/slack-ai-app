@@ -2,6 +2,8 @@
 
 Standalone CDK application for the Time Agent execution zone. Deploys an AWS Bedrock AgentCore Runtime that runs the Time Agent container via the A2A protocol.
 
+**Not part of the default unified deploy**: The repository root `scripts/deploy.sh deploy` does not invoke this zone. Use this directory’s `./scripts/deploy.sh` when you need the Time capability; it registers the agent in the DynamoDB agent registry after a successful deploy.
+
 ## Structure
 
 ```

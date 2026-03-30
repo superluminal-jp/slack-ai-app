@@ -6,7 +6,7 @@ import { DocsAgentEcr } from "./constructs/docs-agent-ecr";
 import { DocsAgentStackProps } from "./types/stack-config";
 
 /**
- * Docs Agent Stack (Docs Execution Zone)
+ * Docs Agent Stack (execution zone — docs search)
  */
 export class DocsAgentStack extends cdk.Stack {
   public readonly docsAgentRuntime: DocsAgentRuntime;

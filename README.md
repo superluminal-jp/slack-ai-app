@@ -78,7 +78,7 @@ DEPLOYMENT_ENV=dev ./scripts/deploy.sh deploy
 
 This project supports environment separation for development (`dev`) and production (`prod`) deployments:
 
-- **Stack Names**: Automatically suffixed with `-Dev` or `-Prod` (e.g., `SlackAI-FileCreator-Dev`, `SlackAI-WebFetch-Dev`, `SlackAI-Verification-Prod`)
+- **Stack Names**: Automatically suffixed with `-Dev` or `-Prod` (e.g., `SlackAI-FileCreator-Dev`, `SlackAI-FetchUrlAgent-Dev`, `SlackAI-Verification-Prod`)
 - **Resource Isolation**: All resources (Lambda functions, DynamoDB tables, Secrets Manager, AgentCore runtimes, etc.) are automatically separated by environment
 - **Resource Tagging**: All resources are tagged with:
   - `Environment`: `dev` or `prod`
@@ -228,6 +228,8 @@ The application uses **six independent CDK apps** (one per agent zone), each dep
 - **Docs Agent Zone** (`execution-zones/docs-agent/cdk`): Document-search agent (AgentCore Runtime + ECR)
 - **Web Fetch Agent Zone** (`execution-zones/fetch-url-agent/cdk`): URL-fetch agent (AgentCore Runtime + ECR)
 
+**Unified deploy default** (`scripts/deploy.sh deploy`): deploys **File Creator**, **Docs**, **Slack Search**, and **Verification** only. It does **not** deploy the **Time Agent** or **Web Fetch Agent** (limited unique value versus cost; Web Fetch increases risk from retrieving arbitrary URLs on behalf of users). To enable those capabilities, run `execution-zones/time-agent/scripts/deploy.sh` and/or `execution-zones/fetch-url-agent/scripts/deploy.sh` after security review. The unified script clears `time` and `fetch-url` entries from the DynamoDB agent registry after deploy so the assistant does not route to them unless you re-register by deploying those zones.
+
 This structure supports:
 
 - ✅ AgentCore A2A protocol for inter-zone communication
@@ -245,6 +247,7 @@ For technical details, see [Architecture Overview](docs/developer/architecture.m
 | **Developers**      | [Architecture](docs/developer/architecture.md)                                                                                      |
 | **Security Team**   | [Security](docs/developer/security.md)                                                                                             |
 | **Operations**      | [Runbook](docs/developer/runbook.md)                                                                                               |
+| **Doc coverage (review)** | [Inquiry coverage checklist](docs/developer/inquiry-coverage-checklist.md)                                                    |
 | **Decision Makers** | [Proposal](docs/decision-maker/proposal.md)                                                                                        |
 
 **Full Documentation**: [docs/README.md](docs/README.md)
@@ -335,7 +338,7 @@ aws logs tail /aws/bedrock-agentcore/runtimes/SlackAI_VerificationAgent_Dev-<run
 | `SLACK_BOT_TOKEN`               | Slack bot OAuth token (first deploy only)                       | -                                                |
 | `BEDROCK_MODEL_ID`              | Bedrock model (configured in cdk.json)                          | -                                                |
 | `VERIFICATION_AGENT_ARN`        | Verification Agent AgentCore Runtime ARN (set by CDK) | - |
-| `EXECUTION_AGENT_ARNS`          | Execution agent ARN map (file-creator/docs/time/fetch-url)       | - |
+| `EXECUTION_AGENT_ARNS`          | Execution agent ARN map (file-creator/docs; time/fetch-url optional) | - |
 
 Secrets are stored in AWS Secrets Manager after first deployment.
 

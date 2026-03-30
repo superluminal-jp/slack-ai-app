@@ -4,7 +4,7 @@
 #
 # Subcommands:
 #   (default)                               Full pipeline: deploy --force-rebuild + status + check-access + logs
-#   deploy [--force-rebuild]               Deploy only (no diagnostics)
+#   deploy [--force-rebuild]               Deploy only — File Creator → Docs → Slack Search → Verification (6 phases); Time/Web Fetch optional per-zone
 #   status                                 Stack status + image tag
 #   check-access                           A2A authorization troubleshooting
 #   logs [--latest|--correlation-id ID]    Request tracing across all stages
@@ -76,9 +76,9 @@ esac
 # Stack names
 ENV_SUFFIX=$([[ "${DEPLOYMENT_ENV}" == "prod" ]] && echo "Prod" || echo "Dev")
 EXEC_STACK="${FILE_CREATOR_STACK_NAME:-SlackAI-FileCreator}-${ENV_SUFFIX}"
-DOCS_STACK="${DOCS_EXECUTION_STACK_NAME:-SlackAI-DocsExecution}-${ENV_SUFFIX}"
-TIME_STACK="${TIME_EXECUTION_STACK_NAME:-SlackAI-TimeExecution}-${ENV_SUFFIX}"
-WEB_FETCH_STACK="${WEB_FETCH_EXECUTION_STACK_NAME:-SlackAI-WebFetch}-${ENV_SUFFIX}"
+DOCS_STACK="${DOCS_AGENT_STACK_NAME:-${DOCS_EXECUTION_STACK_NAME:-SlackAI-DocsAgent}}-${ENV_SUFFIX}"
+TIME_STACK="${TIME_AGENT_STACK_NAME:-${TIME_EXECUTION_STACK_NAME:-SlackAI-TimeAgent}}-${ENV_SUFFIX}"
+WEB_FETCH_STACK="${FETCH_URL_AGENT_STACK_NAME:-${WEB_FETCH_EXECUTION_STACK_NAME:-SlackAI-FetchUrlAgent}}-${ENV_SUFFIX}"
 SLACK_SEARCH_STACK="${SLACK_SEARCH_STACK_NAME:-SlackAI-SlackSearch}-${ENV_SUFFIX}"
 VERIFY_STACK="${VERIFICATION_STACK_NAME:-SlackAI-Verification}-${ENV_SUFFIX}"
 
@@ -132,6 +132,30 @@ save_execution_agent_arns_to_config() {
 
     mv "${tmp_file}" "${config_file}"
     log_success "Updated executionAgentArns in ${config_file}"
+}
+
+# Remove DynamoDB agent-registry items for agents not included in standard unified deploy.
+# Infrastructure: fail-open — log WARNING on failure; do not abort deploy.
+delete_excluded_agent_registry_entries() {
+    local table_name
+    table_name=$(get_stack_output "${VERIFY_STACK}" "AgentRegistryTableName")
+    if [[ -z "${table_name}" || "${table_name}" == "None" ]]; then
+        log_warning "AgentRegistryTableName not found; skipping registry cleanup for excluded agents"
+        return 0
+    fi
+    local reg_env="${DEPLOYMENT_ENV}"
+    local agent_id
+    for agent_id in time fetch-url; do
+        if aws dynamodb delete-item \
+            --table-name "${table_name}" \
+            --region "${AWS_REGION}" ${PROFILE_ARGS} \
+            --key "{\"env\":{\"S\":\"${reg_env}\"},\"agent_id\":{\"S\":\"${agent_id}\"}}" \
+            2>/dev/null; then
+            log_info "Removed agent registry entry: ${agent_id} (env=${reg_env})"
+        else
+            log_warning "Could not delete registry item ${agent_id} (env=${reg_env})"
+        fi
+    done
 }
 
 save_slack_search_arn_to_config() {
@@ -311,7 +335,7 @@ _fetch_logs() {
 
 cmd_deploy() {
     local force_rebuild="false"
-    local pre_exec_arn pre_docs_arn pre_time_arn pre_fetch_arn preflight_execution_agent_arns_json=""
+    local pre_exec_arn pre_docs_arn
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -337,16 +361,15 @@ cmd_deploy() {
     require_commands aws node jq
     [[ -x "${CDK_CLI}" ]] || { log_error "CDK CLI not found at ${CDK_CLI}. Run: npm install (from project root)"; exit 1; }
     [[ -x "${VERIFY_CDK_CLI}" ]] || { log_error "Verification CDK CLI not found. Run: cd ${VERIFY_CDK_DIR} && npm install"; exit 1; }
-    log_success "Prerequisites OK (Execution: ${EXEC_STACK}, Docs: ${DOCS_STACK}, Time: ${TIME_STACK}, Verification: ${VERIFY_STACK})"
+    log_success "Prerequisites OK (Execution: ${EXEC_STACK}, Docs: ${DOCS_STACK}, Verification: ${VERIFY_STACK})"
 
     # Preflight: deploy Verification first with current runtime ARNs to remove any legacy cross-stack import refs.
     pre_exec_arn=$(get_stack_output "${EXEC_STACK}" "FileCreatorAgentRuntimeArn")
     pre_docs_arn=$(get_stack_output "${DOCS_STACK}" "DocsAgentRuntimeArn")
-    pre_time_arn=$(get_stack_output "${TIME_STACK}" "TimeAgentRuntimeArn")
-    pre_fetch_arn=$(get_stack_output "${WEB_FETCH_STACK}" "WebFetchAgentRuntimeArn")
     if [[ -n "${pre_exec_arn}" && "${pre_exec_arn}" != "None" ]]; then
-        # Save current ARNs to config so CDK can read them for IAM scoping
-        save_execution_agent_arns_to_config "${pre_exec_arn}" "${pre_docs_arn}" "${pre_time_arn}" "${pre_fetch_arn}"
+        # Save current ARNs to config so CDK can read them for IAM scoping.
+        # Time and Web Fetch are not part of standard deploy — omit from config even if legacy stacks exist.
+        save_execution_agent_arns_to_config "${pre_exec_arn}" "${pre_docs_arn}" "" ""
         log_info "========== Preflight: Deploying Verification Stack with current runtime ARNs =========="
         DEPLOYMENT_ENV="${DEPLOYMENT_ENV}" AWS_REGION="${AWS_REGION}" \
             "${PROJECT_ROOT}/verification-zones/verification-agent/scripts/deploy.sh" \
@@ -357,7 +380,7 @@ cmd_deploy() {
     fi
 
     # Phase 1: File Creator Agent
-    log_info "========== Phase 1/8: Deploying Execution Stack =========="
+    log_info "========== Phase 1/6: Deploying Execution Stack =========="
     local exec_force_arg=""
     [[ "${force_rebuild}" == "true" || -n "${FORCE_EXECUTION_IMAGE_REBUILD:-}" ]] && exec_force_arg="--force-rebuild"
     DEPLOYMENT_ENV="${DEPLOYMENT_ENV}" AWS_REGION="${AWS_REGION}" \
@@ -368,7 +391,7 @@ cmd_deploy() {
     log_success "File Creator Stack deployed (ARN: ${exec_arn})"
 
     # Phase 2: Docs Agent
-    log_info "========== Phase 2/8: Deploying Docs Execution Stack =========="
+    log_info "========== Phase 2/6: Deploying Docs Agent Stack =========="
     local docs_src="${PROJECT_ROOT}/docs"
     local docs_agent_docs="${DOCS_CDK_DIR}/lib/docs-agent/docs"
     if [[ -d "${docs_src}" && -d "$(dirname "${docs_agent_docs}")" ]]; then
@@ -383,21 +406,13 @@ cmd_deploy() {
         || { log_error "Failed to deploy Docs Agent"; exit 1; }
     docs_arn=$(get_stack_output "${DOCS_STACK}" "DocsAgentRuntimeArn")
     [[ -z "${docs_arn}" || "${docs_arn}" == "None" ]] && { log_error "DocsAgentRuntimeArn not found"; exit 1; }
-    log_success "Docs Execution Stack deployed (ARN: ${docs_arn})"
+    log_success "Docs Agent Stack deployed (ARN: ${docs_arn})"
 
-    # Phase 3: Time Agent
-    log_info "========== Phase 3/8: Deploying Time Execution Stack =========="
-    local time_force_arg=""
-    [[ "${force_rebuild}" == "true" || -n "${FORCE_TIME_IMAGE_REBUILD:-}" ]] && time_force_arg="--force-rebuild"
-    DEPLOYMENT_ENV="${DEPLOYMENT_ENV}" AWS_REGION="${AWS_REGION}" \
-        "${PROJECT_ROOT}/execution-zones/time-agent/scripts/deploy.sh" ${time_force_arg} \
-        || { log_error "Failed to deploy Time Agent"; exit 1; }
-    time_arn=$(get_stack_output "${TIME_STACK}" "TimeAgentRuntimeArn")
-    [[ -z "${time_arn}" || "${time_arn}" == "None" ]] && { log_error "TimeAgentRuntimeArn not found"; exit 1; }
-    log_success "Time Execution Stack deployed (ARN: ${time_arn})"
+    # Time and Web Fetch agents are not deployed by unified deploy (optional per-zone scripts).
+    local time_arn="" fetch_arn=""
 
-    # Phase 4: Slack Search Agent Stack
-    log_info "========== Phase 4/8: Deploying Slack Search Agent Stack =========="
+    # Phase 3: Slack Search Agent Stack
+    log_info "========== Phase 3/6: Deploying Slack Search Agent Stack =========="
     local slack_search_force_arg=""
     [[ "${force_rebuild}" == "true" || -n "${FORCE_SLACK_SEARCH_IMAGE_REBUILD:-}" ]] && slack_search_force_arg="--force-rebuild"
     DEPLOYMENT_ENV="${DEPLOYMENT_ENV}" AWS_REGION="${AWS_REGION}" \
@@ -412,33 +427,19 @@ cmd_deploy() {
         log_warning "SlackSearchAgentRuntimeArn not found; Slack search will be disabled"
     fi
 
-    # Phase 5: Web Fetch Agent Stack
-    log_info "========== Phase 5/8: Deploying Web Fetch Agent Stack =========="
-    local fetch_force_arg=""
-    [[ "${force_rebuild}" == "true" || -n "${FORCE_WEB_FETCH_IMAGE_REBUILD:-}" ]] && fetch_force_arg="--force-rebuild"
-    DEPLOYMENT_ENV="${DEPLOYMENT_ENV}" AWS_REGION="${AWS_REGION}" \
-        "${PROJECT_ROOT}/execution-zones/fetch-url-agent/scripts/deploy.sh" ${fetch_force_arg} \
-        || { log_error "Failed to deploy Web Fetch Agent"; exit 1; }
-    fetch_arn=$(get_stack_output "${WEB_FETCH_STACK}" "WebFetchAgentRuntimeArn")
-    if [[ -n "${fetch_arn}" && "${fetch_arn}" != "None" ]]; then
-        log_success "Web Fetch Stack deployed (ARN: ${fetch_arn})"
-    else
-        fetch_arn=""
-        log_warning "WebFetchAgentRuntimeArn not found; continuing without fetch-url route"
-    fi
-
     # Persist agent ARNs so future deploys/policy checks use the latest runtime targets.
     save_execution_agent_arns_to_config "${exec_arn}" "${docs_arn}" "${time_arn}" "${fetch_arn}"
 
-    # Phase 6: Verification Stack (deployed from verification-zones/verification-agent/cdk/)
-    # ARNs already saved to config file (after Phase 5) for IAM scoping; no env var handoff needed.
-    log_info "========== Phase 6/8: Deploying Verification Stack =========="
+    # Phase 4: Verification Stack (deployed from verification-zones/verification-agent/cdk/)
+    log_info "========== Phase 4/6: Deploying Verification Stack =========="
     DEPLOYMENT_ENV="${DEPLOYMENT_ENV}" AWS_REGION="${AWS_REGION}" \
         "${PROJECT_ROOT}/verification-zones/verification-agent/scripts/deploy.sh" \
         || { log_error "Failed to deploy ${VERIFY_STACK}"; exit 1; }
     log_success "Verification Stack deployed"
 
-    # Phase 7: Resource policy
+    delete_excluded_agent_registry_entries
+
+    # Phase 5: Resource policy
     local account_id verify_account
     account_id=$(aws sts get-caller-identity ${PROFILE_ARGS} --query Account --output text 2>/dev/null || echo "")
     if [[ -n "${account_id}" ]]; then
@@ -467,8 +468,8 @@ cmd_deploy() {
         fi
     fi
 
-    # Phase 8: Validate AgentCore runtimes
-    log_info "========== Phase 8/8: AgentCore Validation =========="
+    # Phase 6: Validate AgentCore runtimes
+    log_info "========== Phase 6/6: AgentCore Validation =========="
     local handler_url verify_arn
     handler_url=$(get_stack_output "${VERIFY_STACK}" "SlackEventHandlerApiGatewayUrl")
     verify_arn=$(get_stack_output "${VERIFY_STACK}" "VerificationAgentRuntimeArn")
@@ -499,8 +500,8 @@ cmd_deploy() {
     echo "Slack Event Handler URL:   ${handler_url:-N/A} (API Gateway + WAF)"
     echo "Execution Agent ARN:       ${exec_arn:-N/A}"
     echo "Docs Agent ARN:            ${docs_arn:-N/A}"
-    echo "Time Agent ARN:            ${time_arn:-N/A}"
-    echo "Fetch URL Agent ARN:       ${fetch_arn:-N/A}"
+    echo "Time Agent ARN:              ${time_arn:-excluded from default deploy}"
+    echo "Fetch URL Agent ARN:         ${fetch_arn:-excluded from default deploy}"
     echo "Slack Search Agent ARN:    ${slack_search_arn:-N/A (disabled)}"
     echo "Verification Agent ARN:    ${verify_arn:-N/A}"
     echo ""
@@ -530,14 +531,14 @@ cmd_status() {
           --output table 2>/dev/null || echo "Stack not found or no access."; \
       echo ""; } > "${out_exec}" 2>&1 &
 
-    { echo "=== Docs Execution Stack status (${DOCS_STACK}) ==="; \
+    { echo "=== Docs Agent Stack status (${DOCS_STACK}) ==="; \
       aws cloudformation describe-stacks --stack-name "${DOCS_STACK}" \
           --region "${AWS_REGION}" ${PROFILE_ARGS} \
           --query 'Stacks[0].{LastUpdated:LastUpdatedTime,Status:StackStatus}' \
           --output table 2>/dev/null || echo "Stack not found or no access."; \
       echo ""; } > "${out_docs}" 2>&1 &
 
-    { echo "=== Time Execution Stack status (${TIME_STACK}) ==="; \
+    { echo "=== Time Agent Stack status (${TIME_STACK}) — optional zone (not deployed by unified deploy) ==="; \
       aws cloudformation describe-stacks --stack-name "${TIME_STACK}" \
           --region "${AWS_REGION}" ${PROFILE_ARGS} \
           --query 'Stacks[0].{LastUpdated:LastUpdatedTime,Status:StackStatus}' \

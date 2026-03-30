@@ -102,8 +102,8 @@ function getConfigString(key: string, defaultValue = ""): string {
 
 const region = getConfigValue("awsRegion", DEFAULT_REGION);
 const baseDocsStackName = getConfigValue(
-  "docsExecutionStackName",
-  "SlackAI-DocsExecution",
+  "docsAgentStackName",
+  getConfigValue("docsExecutionStackName", "SlackAI-DocsAgent"),
 );
 const environmentSuffix = deploymentEnv === "prod" ? "Prod" : "Dev";
 const docsStackName = `${baseDocsStackName}-${environmentSuffix}`;
@@ -122,7 +122,7 @@ if (config) {
   app.node.setContext("awsRegion", region);
   app.node.setContext("bedrockModelId", config.bedrockModelId);
   app.node.setContext("deploymentEnv", deploymentEnv);
-  app.node.setContext("docsExecutionStackName", baseDocsStackName);
+  app.node.setContext("docsAgentStackName", baseDocsStackName);
   app.node.setContext("verificationAccountId", verificationAccountId);
   app.node.setContext("executionAccountId", executionAccountId);
   app.node.setContext("docsAgentName", docsAgentName);
