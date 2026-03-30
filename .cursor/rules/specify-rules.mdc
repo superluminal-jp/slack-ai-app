@@ -6,7 +6,7 @@ alwaysApply: true
 
 # slack-ai-app Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-03-24
+Auto-generated from all feature plans. Last updated: 2026-03-30
 
 ## Active Technologies
 - Python 3.11（Execution / Verification エージェント）、TypeScript 5.x（CDK） (014-a2a-file-to-slack)
@@ -32,6 +32,10 @@ Auto-generated from all feature plans. Last updated: 2026-03-24
 - N/A (tags are template metadata; Cost Explorer uses tags from deployed resources) (031-cdk-cost-allocation-tags)
 - Python 3.11 (コンテナ: `python:3.11-slim`, ARM64), TypeScript 5.x (CDK) + 変更なし（削除のみ） (053-remove-legacy-code)
 - 変更なし（DynamoDB / S3 スキーマに影響なし） (053-remove-legacy-code)
+- Bash 5.x (unified deploy), TypeScript 5.x (CDK unchanged structurally), Python 3.11 (verification agent — likely no logic change if registry is clean) + `aws` CLI, `jq`, existing CDK config pattern, DynamoDB agent-registry table (existing) (057-exclude-time-fetch-deploy)
+- DynamoDB agent registry (existing; delete items for `time`, `fetch-url`); verification `cdk.config.<env>.json` (`executionAgentArns`) (057-exclude-time-fetch-deploy)
+- Markdown (GitHub-flavored); repository standards in `docs/DOCUMENTATION_STANDARDS.md` + None new for authoring; existing Docs Agent reads `.md`/`.txt`/`.rst` under `/app/docs` or `DOCS_PATH` (058-docs-agent-knowledge)
+- Files under repository `docs/` (no new DynamoDB/S3) (058-docs-agent-knowledge)
 
 - Python 3.11（エージェントコード）、TypeScript 5.x（CDK インフラ） (013-agentcore-a2a-zones)
 
@@ -51,9 +55,9 @@ cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLO
 Python 3.11（エージェントコード）、TypeScript 5.x（CDK インフラ）: Follow standard conventions
 
 ## Recent Changes
+- 058-docs-agent-knowledge: Added Markdown (GitHub-flavored); repository standards in `docs/DOCUMENTATION_STANDARDS.md` + None new for authoring; existing Docs Agent reads `.md`/`.txt`/`.rst` under `/app/docs` or `DOCS_PATH`
+- 057-exclude-time-fetch-deploy: Added Bash 5.x (unified deploy), TypeScript 5.x (CDK unchanged structurally), Python 3.11 (verification agent — likely no logic change if registry is clean) + `aws` CLI, `jq`, existing CDK config pattern, DynamoDB agent-registry table (existing)
 - 053-remove-legacy-code: Added Python 3.11 (コンテナ: `python:3.11-slim`, ARM64), TypeScript 5.x (CDK) + 変更なし（削除のみ）
-- 031-cdk-cost-allocation-tags: Added TypeScript 5.x (CDK app in `cdk/`) + aws-cdk-lib, constructs; Jest for CDK assertions (Template.fromStack)
-- 001-docs-restructure: Added Documentation only — Markdown; no application language in scope. + None (file moves, link updates, optional link-checker tooling).
 
 
 <!-- MANUAL ADDITIONS START -->

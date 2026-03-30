@@ -9,6 +9,14 @@
 - **Execution Agent のビルド**: `execution-zones/execution-agent/cdk/lib/constructs/execution-agent-ecr.ts` で Docker イメージのビルドコンテキストは `execution-zones/execution-agent/src` のみ。**リポジトリルートの `docs/` はイメージに含まれていない**。
 - **ランタイム**: AgentCore Runtime 上のコンテナ（FastAPI, port 9000）。Strands ツールで「ドキュメント検索」を追加する前提で検討する。
 
+### Docs Agent 向けの現状（Current state）
+
+- **目的**: リポジトリのプロジェクトドキュメント（`docs/` 相当）を検索し、ユーザー質問に答える **Docs Agent**（`execution-zones/docs-agent/`）が存在する。ランタイムは `search_docs` ツールで **`/app/docs`**（環境変数 `DOCS_PATH` で上書き可）以下の `.md` / `.txt` / `.rst` を走査する。
+- **Docker ビルドコンテキスト**: CDK の `DockerImageAsset` は **`execution-zones/docs-agent/src/`** をコンテキストとする。`Dockerfile` は `COPY . .` でアプリと `src/docs/` 配下をイメージに含める。
+- **`.dockerignore`**: コンテキスト直下の不要な `*.md` を除外しつつ、**`docs/**` 配下の Markdown はイメージに含める**（`docs/` を negation で除外解除）。これにより `docs/search_docs` が参照する文書がコンテナに同梱される。
+- **リポジトリルートの `docs/` との関係**: 編集の正本は **`docs/`（リポジトリルート）**。統合デプロイでは `scripts/deploy.sh` がルートの `docs/` を `execution-zones/docs-agent/cdk/lib/docs-agent/docs` にコピーするが、**現行の Docker ビルドコンテキストは `src/` のみ**のため、イメージに反映したい内容は **`execution-zones/docs-agent/src/docs/`** にミラーするか、ローカル検証時に `DOCS_PATH` でルート `docs/` を指す。詳細は `execution-zones/docs-agent/README.md` を参照。
+- **Legacy 記述との関係**: 本ファイルの「Execution Agent」は File Creator 等の実行エージェントを指す。Docs Agent は別ゾーンのため、**ドキュメント同梱の方法は Docs Agent の `src/` と `.dockerignore` が正**である。
+
 ---
 
 ## 実現パターン

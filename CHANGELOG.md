@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Documentation corpus for inquiry assistance**: Expanded `docs/user/` (FAQ, user guide, usage policy), `docs/developer/` (architecture synonyms, quickstart deploy order, runbook redeploy pointers, troubleshooting quick reference, execution-agent-docs-access Docs Agent section), and `docs/decision-maker/` (governance ↔ usage policy, security overview ↔ developer security, cost drivers). Added `docs/developer/inquiry-coverage-checklist.md` and `tests/scripts/check_user_doc_heading_count.sh` (minimum 15 combined `###` headings in user FAQ + user guide). Docs Agent: `execution-zones/docs-agent/src/.dockerignore` now includes `docs/**/*.md` so bundled Markdown is not excluded by `*.md`; `execution-zones/docs-agent/README.md` documents `DOCS_PATH` and syncing with repo root `docs/`.
+
+### Changed
+
+- **Docs Agent naming (aligned with other execution zones)**: CDK config key is now `docsAgentStackName` (default stack base `SlackAI-DocsAgent`, e.g. `SlackAI-DocsAgent-Dev`). Legacy `docsExecutionStackName` in JSON is still accepted at parse time. Environment variables: prefer `DOCS_AGENT_STACK_NAME`; `DOCS_EXECUTION_STACK_NAME` remains as fallback in `scripts/deploy.sh` and `execution-zones/docs-agent/scripts/deploy.sh`. Log labels use “Docs Agent Stack” instead of “Docs Execution Stack”.
+
+- **Time Agent and Fetch URL Agent stack naming**: Time Agent CDK uses `timeAgentStackName` (default `SlackAI-TimeAgent`); legacy `timeExecutionStackName` is accepted at parse. Prefer env `TIME_AGENT_STACK_NAME`; `TIME_EXECUTION_STACK_NAME` remains a fallback in unified and zone `deploy.sh`. Fetch URL Agent CDK uses `fetchUrlAgentStackName` (default `SlackAI-FetchUrlAgent`); legacy `webFetchStackName` is accepted. Prefer `FETCH_URL_AGENT_STACK_NAME`; `WEB_FETCH_EXECUTION_STACK_NAME` remains a fallback. Runtime/agent card identifiers (e.g. `SlackAI_WebFetchAgent`, CloudFormation output `WebFetchAgentRuntimeArn`) are unchanged.
+
+- **Verification Agent orchestration prompt**: Tuned `ORCHESTRATOR_SYSTEM_PROMPT` in `verification-zones/verification-agent/src/orchestrator.py` for clearer specialist routing (docs vs `slack_search`), thread/attachment priority, Japanese default with optional same-language reply for non-Japanese-only input, Slack-friendly formatting, safety around secrets, and sequential tool use. Updated unrouted fallback `system_prompt` in `pipeline.py` for aligned tone and guardrails.
+
+- **Unified deploy excludes Time and Web Fetch agents**: `scripts/deploy.sh deploy` no longer builds or deploys the Time or Web Fetch execution stacks. The default pipeline is File Creator → Docs → Slack Search → Verification (plus resource policy and AgentCore validation). After Verification deploy, the script deletes DynamoDB agent-registry items for `agent_id` `time` and `fetch-url` for the current `DEPLOYMENT_ENV` so the assistant does not route to those capabilities unless operators re-deploy those zones with the per-zone scripts. Preflight and `executionAgentArns` in verification CDK config omit Time and Web Fetch ARNs even when legacy CloudFormation stacks still exist.
+
 ### Fixed
 
 - **apply-resource-policy.py with newer boto3/botocore**: Some releases wrap `bedrock-agentcore-control` in a delegate that omits `put_resource_policy` or binds `_make_api_call` to a stale service model without `PutResourcePolicy`. The script unwraps `_client` first, then calls `put_resource_policy` or `_make_api_call` only when `PutResourcePolicy` exists on that client’s model. If boto3 still cannot call the API (`AttributeError` / `OperationNotFoundError`), it **falls back to `aws bedrock-agentcore-control put-resource-policy`** (AWS CLI v2) so deploy succeeds without upgrading Python dependencies.

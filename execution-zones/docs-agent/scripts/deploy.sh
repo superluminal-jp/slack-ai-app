@@ -57,7 +57,7 @@ if [[ "${FORCE_REBUILD}" == "true" ]]; then
 fi
 
 ENV_SUFFIX=$([[ "${DEPLOYMENT_ENV}" == "prod" ]] && echo "Prod" || echo "Dev")
-DOCS_STACK="SlackAI-DocsExecution-${ENV_SUFFIX}"
+DOCS_STACK="${DOCS_AGENT_STACK_NAME:-${DOCS_EXECUTION_STACK_NAME:-SlackAI-DocsAgent}}-${ENV_SUFFIX}"
 
 log_info "Deploying stack: ${DOCS_STACK}"
 cd "${CDK_DIR}"

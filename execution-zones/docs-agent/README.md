@@ -62,3 +62,7 @@ cd cdk && npm test
 # Python agent tests
 python -m pytest tests/ -v
 ```
+
+## Project documentation (`docs/`)
+
+The agent searches Markdown under `/app/docs` in the container (from `src/docs/` in the Docker build context). The canonical corpus is the repository root **`docs/`**; keep it in sync with `execution-zones/docs-agent/src/docs/` when you need local or image builds to match (e.g. `rsync -a --delete docs/ execution-zones/docs-agent/src/docs/`). For local runs without rebuilding the image, set **`DOCS_PATH`** to the absolute path of the repo root `docs/` folder so `search_docs` reads the same files you edited.

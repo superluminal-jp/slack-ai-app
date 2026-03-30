@@ -3,7 +3,7 @@
   "awsRegion": "ap-northeast-1",
   "bedrockModelId": "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
   "deploymentEnv": "dev",
-  "docsExecutionStackName": "SlackAI-DocsExecution",
+  "docsAgentStackName": "SlackAI-DocsAgent",
   "verificationAccountId": "000000000000",
   "executionAccountId": "000000000000"
 }

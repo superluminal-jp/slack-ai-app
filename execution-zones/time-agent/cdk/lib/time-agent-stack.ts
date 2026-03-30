@@ -6,7 +6,7 @@ import { TimeAgentEcr } from "./constructs/time-agent-ecr";
 import { TimeAgentStackProps } from "./types/stack-config";
 
 /**
- * Time Agent Stack (Time Execution Zone)
+ * Time Agent Stack (execution zone — time / clock)
  */
 export class TimeAgentStack extends cdk.Stack {
   public readonly timeAgentRuntime: TimeAgentRuntime;

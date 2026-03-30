@@ -113,7 +113,10 @@ function getConfigString(key: string, defaultValue = ""): string {
 }
 
 const region = getConfigValue("awsRegion", DEFAULT_REGION);
-const baseStackName = getConfigValue("webFetchStackName", "SlackAI-WebFetch");
+const baseStackName = getConfigValue(
+  "fetchUrlAgentStackName",
+  getConfigValue("webFetchStackName", "SlackAI-FetchUrlAgent"),
+);
 const environmentSuffix = deploymentEnv === "prod" ? "Prod" : "Dev";
 const stackName = `${baseStackName}-${environmentSuffix}`;
 const verificationAccountId = getConfigString("verificationAccountId");
@@ -131,7 +134,7 @@ if (config) {
   app.node.setContext("awsRegion", region);
   app.node.setContext("bedrockModelId", config.bedrockModelId);
   app.node.setContext("deploymentEnv", deploymentEnv);
-  app.node.setContext("webFetchStackName", baseStackName);
+  app.node.setContext("fetchUrlAgentStackName", baseStackName);
   app.node.setContext("verificationAccountId", verificationAccountId);
   app.node.setContext("webFetchAccountId", webFetchAccountId);
   app.node.setContext("webFetchAgentName", webFetchAgentName);

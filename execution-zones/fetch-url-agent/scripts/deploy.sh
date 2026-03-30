@@ -57,7 +57,7 @@ if [[ "${FORCE_REBUILD}" == "true" ]]; then
 fi
 
 ENV_SUFFIX=$([[ "${DEPLOYMENT_ENV}" == "prod" ]] && echo "Prod" || echo "Dev")
-WEB_FETCH_STACK="SlackAI-WebFetch-${ENV_SUFFIX}"
+WEB_FETCH_STACK="${FETCH_URL_AGENT_STACK_NAME:-${WEB_FETCH_EXECUTION_STACK_NAME:-SlackAI-FetchUrlAgent}}-${ENV_SUFFIX}"
 
 log_info "Deploying stack: ${WEB_FETCH_STACK}"
 cd "${CDK_DIR}"

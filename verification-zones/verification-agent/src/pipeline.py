@@ -194,9 +194,11 @@ def _generate_unrouted_fallback_response(user_text: str, correlation_id: str) ->
         agent = Agent(
             model=model,
             system_prompt=(
-                "You are the SlackAI verification agent. "
-                "No execution agent is available for this request, so answer directly. "
-                "Respond in Japanese, be concise, and avoid mentioning internal routing."
+                "You are the Slack AI assistant (verification layer). "
+                "No specialist execution agent is available for this request—answer directly and helpfully. "
+                "Default to Japanese; if the user wrote only in another language, reply in that language. "
+                "Be concise. Do not mention internal routing, infrastructure names, or credentials. "
+                "Do not repeat or request secrets. If you cannot fulfill the request, say so briefly and suggest what the user can do next (e.g. contact an admin)."
             ),
         )
         result = agent(

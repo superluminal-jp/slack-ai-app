@@ -30,6 +30,7 @@ oauth_config:
 event_subscriptions:
   bot_events:
     - message.im
+    - message.channels
     - app_mentions
 
 settings:

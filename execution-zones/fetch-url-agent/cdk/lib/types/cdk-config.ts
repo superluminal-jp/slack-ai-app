@@ -12,7 +12,7 @@ export interface CdkConfig {
   awsRegion: string;
   bedrockModelId: string;
   deploymentEnv: "dev" | "prod";
-  webFetchStackName: string;
+  fetchUrlAgentStackName: string;
   verificationAccountId: string;
   webFetchAccountId: string;
   webFetchAgentName?: string;
@@ -24,7 +24,7 @@ const CdkConfigSchema = z.object({
     .regex(/^[a-z]+-[a-z]+-[0-9]+$/, "Invalid AWS region format"),
   bedrockModelId: z.string().min(1, "bedrockModelId is required"),
   deploymentEnv: z.enum(["dev", "prod"]),
-  webFetchStackName: z.string().min(1, "webFetchStackName is required"),
+  fetchUrlAgentStackName: z.string().min(1, "fetchUrlAgentStackName is required"),
   verificationAccountId: z
     .string()
     .regex(
@@ -38,8 +38,22 @@ const CdkConfigSchema = z.object({
 });
 
 export function validateConfig(config: unknown): CdkConfig {
+  const raw =
+    config && typeof config === "object"
+      ? { ...(config as Record<string, unknown>) }
+      : config;
+  if (
+    raw &&
+    typeof raw === "object" &&
+    !(raw as Record<string, unknown>).fetchUrlAgentStackName &&
+    (raw as Record<string, unknown>).webFetchStackName
+  ) {
+    (raw as Record<string, unknown>).fetchUrlAgentStackName = (
+      raw as Record<string, unknown>
+    ).webFetchStackName;
+  }
   try {
-    return CdkConfigSchema.parse(config);
+    return CdkConfigSchema.parse(raw);
   } catch (error: unknown) {
     if (error instanceof z.ZodError) {
       const messages = error.errors.map(
